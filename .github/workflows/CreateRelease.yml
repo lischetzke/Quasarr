@@ -33,10 +33,6 @@ jobs:
       - name: Compile Linux AMD64 wheel
         run: |
           python setup.py sdist bdist_wheel
-      - name: Rename AMD64 wheel
-        run: |
-          wheel_file=$(find ./dist -name "quasarr*-py3-none-any.whl")
-          mv "$wheel_file" "${wheel_file//any/amd64}"
       - name: Upload Linux AMD64 wheel
         uses: actions/upload-artifact@v4
         with:
@@ -52,24 +48,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}-${{ hashFiles('setup.py') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-
-      - name: Install Python dependencies
+      - name: Install dependencies
         run: |
           pip install wheel
           pip install pyinstaller
           pip install -r requirements.txt
-      - name: Compile Linux ARM64 wheel
+      - name: Build Linux ARM64 wheel
         run: |
-          python setup.py sdist bdist_wheel
-      - name: Rename ARM64 wheel
-        run: |
-          wheel_file=$(find ./dist -name "quasarr*-py3-none-any.whl")
-          mv "$wheel_file" "${wheel_file//any/arm64}"
+          python setup.py sdist bdist_wheel --plat-name=linux_arm64
       - name: Upload Linux ARM64 wheel
         uses: actions/upload-artifact@v4
         with:
@@ -138,7 +124,7 @@ jobs:
       - name: Create Release
         uses: ncipollo/release-action@v1
         with:
-          artifacts: "./artifact-exe-amd64/*.whl,./artifact-exe-arm64/*.whl,./artifact-exe-amd64/*.exe"
+          artifacts: "./artifact-wheel-amd64/*.whl,./artifact-wheel-arm64/*.whl,./artifact-exe-amd64/*.exe"
           artifactErrorsFailBuild: true
           bodyFile: ".github/Changelog.md"
           tag: v.${{ steps.version.outputs.version }}
