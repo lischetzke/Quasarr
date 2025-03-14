@@ -55,7 +55,7 @@ jobs:
           pip install -r requirements.txt
       - name: Build Linux ARM64 wheel
         run: |
-          python setup.py sdist bdist_wheel --plat-name=linux_arm64
+          python setup.py sdist bdist_wheel --plat-name=manylinux2014_aarch64
       - name: Upload Linux ARM64 wheel
         uses: actions/upload-artifact@v4
         with:
