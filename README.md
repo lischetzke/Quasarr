@@ -184,8 +184,6 @@ Image access is limited to [active GitHub sponsors](https://github.com/users/rix
 
 ## 🔑 GitHub Token Setup
 
-⚠️ **Without a valid GitHub token linked to an active sponsorship, the image will not run.**
-
 1. Start your [sponsorship](https://github.com/users/rix1337/sponsorship) first.
 2. Open [GitHub Classic Token Settings](https://github.com/settings/tokens/new?type=classic)
 3. Name it (e.g., `SponsorsHelper`) and choose unlimited expiration  
@@ -208,6 +206,10 @@ echo "GITHUB_TOKEN" | docker login ghcr.io -u USERNAME --password-stdin
 
 ---
 
+⚠️ **Before logging in, the image will not download.**
+
+---
+
 ## ▶️ Run SponsorsHelper
 
 ```bash
@@ -216,14 +218,22 @@ docker run -d \
   -e 'QUASARR_URL'='http://192.168.0.1:8080' \
   -e 'DEATHBYCAPTCHA_TOKEN'='2FMum5zuDBxMmbXDIsADnllEFl73bomydIpzo7...' \
   -e 'GITHUB_TOKEN'='ghp_123.....456789' \
+  -e 'FLARESOLVERR_URL'='http://10.10.0.1:8191/v1' \
   ghcr.io/rix1337-sponsors/docker/helper:latest
 ```
 
 ### Required Parameters
 
-* `QUASARR_URL` — Local URL of Quasarr
-* `DEATHBYCAPTCHA_TOKEN` — [DeathByCaptcha](https://deathbycaptcha.com/register?refid=6184288242b) account token
-* `GITHUB_TOKEN` — Classic GitHub PAT with the scopes listed above
+* `QUASARR_URL` → Local URL of Quasarr
+* `DEATHBYCAPTCHA_TOKEN` → [DeathByCaptcha](https://deathbycaptcha.com/register?refid=6184288242b) account token
+* `GITHUB_TOKEN` → Classic GitHub PAT with the scopes listed above
+* `FLARESOLVERR_URL` → Local URL of [FlareSolverr](https://github.com/FlareSolverr/FlareSolverr)
+
+---
+
+⚠️ **Without a valid GitHub token linked to an active sponsorship, the image will not run.**
+
+---
 
 # Development Setup for Pull Requests
 

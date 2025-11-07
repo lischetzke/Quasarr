@@ -109,7 +109,7 @@ def handle_sl(shared_state, title, password, package_id, imdb_id, url, mirror, s
 
 def handle_wd(shared_state, title, password, package_id, imdb_id, url, mirror, size_mb):
     data = get_wd_download_links(shared_state, url, mirror, title)
-    links = data.get("links")
+    links = data.get("links", [])
     if not links:
         fail(title, package_id, shared_state,
              reason=f'Offline / no links found for "{title}" on WD - "{url}"')

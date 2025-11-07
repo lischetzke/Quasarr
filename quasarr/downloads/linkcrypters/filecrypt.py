@@ -130,6 +130,91 @@ class DLC:
         return all_urls
 
 
+def is_cloudflare_challenge(html: str) -> bool:
+    soup = BeautifulSoup(html, "html.parser")
+
+    # Check <title>
+    title = (soup.title.string or "").strip().lower() if soup.title else ""
+    if "just a moment" in title or "attention required" in title:
+        return True
+
+    # Check known Cloudflare elements
+    if soup.find(id="challenge-form"):
+        return True
+    if soup.find("div", {"class": "cf-browser-verification"}):
+        return True
+    if soup.find("div", {"id": "cf-challenge-running"}):
+        return True
+
+    # Check scripts referencing Cloudflare
+    for script in soup.find_all("script", src=True):
+        if "cdn-cgi/challenge-platform" in script["src"]:
+            return True
+
+    # Optional: look for Cloudflare comment or beacon
+    if "data-cf-beacon" in html or "<!-- cloudflare -->" in html.lower():
+        return True
+
+    return False
+
+
+def update_session_via_flaresolverr(shared_state,
+                           sess,
+                           target_url: str,
+                           timeout: int = 60):
+
+    flaresolverr_url = shared_state.values["config"]('FlareSolverr').get('url')
+    if not flaresolverr_url:
+        info("Cannot proceed without FlareSolverr. Please set it up to try again!")
+        return False
+
+    fs_payload = {
+        "cmd": "request.get",
+        "url": target_url,
+        "maxTimeout": timeout * 1000,
+    }
+
+    # Send the JSON request to FlareSolverr
+    fs_headers = {"Content-Type": "application/json"}
+    try:
+        resp = requests.post(
+            flaresolverr_url,
+            headers=fs_headers,
+            json=fs_payload,
+            timeout=timeout + 10
+        )
+        resp.raise_for_status()
+    except requests.exceptions.RequestException as e:
+        info(f"Could not reach FlareSolverr: {e}")
+        return {
+            "status_code": None,
+            "headers": {},
+            "json": None,
+            "text": "",
+            "cookies": [],
+            "error": f"FlareSolverr request failed: {e}"
+        }
+    except Exception as e:
+        raise RuntimeError(f"Could not reach FlareSolverr: {e}")
+
+    fs_json = resp.json()
+    if fs_json.get("status") != "ok" or "solution" not in fs_json:
+        raise RuntimeError(f"FlareSolverr did not return a valid solution: {fs_json.get('message', '<no message>')}")
+
+    solution = fs_json["solution"]
+
+    # Replace our requests.Session cookies with whatever FlareSolverr solved
+    sess.cookies.clear()
+    for ck in solution.get("cookies", []):
+        sess.cookies.set(
+            ck.get("name"),
+            ck.get("value"),
+            domain=ck.get("domain"),
+            path=ck.get("path", "/")
+        )
+    return {"session": sess, "user_agent": solution.get("userAgent", {})}
+
+
 def get_filecrypt_links(shared_state, token, title, url, password=None, mirror=None):
     info("Attempting to decrypt Filecrypt link: " + url)
     session = requests.Session()
@@ -140,7 +225,24 @@ def get_filecrypt_links(shared_state, token, title, url, password=None, mirror=N
     if password:
         try:
             output = session.get(url, headers=headers)
+
+            if output.status_code == 403 or is_cloudflare_challenge(output.text):
+                info("Encountered Cloudflare protection. Solving challenge...")
+                flaresolverr_result = update_session_via_flaresolverr(shared_state, session, url)
+                if flaresolverr_result:
+                    session = flaresolverr_result["session"]
+                    user_agent = flaresolverr_result["user_agent"]
+                    if user_agent:
+                        headers = {'User-Agent': user_agent}
+
+                    output = session.get(url, headers=headers)
+
+                    if output.status_code == 403 or is_cloudflare_challenge(output.text):
+                        info("Could not bypass Cloudflare protection with FlareSolverr!")
+                        return False
+
             soup = BeautifulSoup(output.text, 'html.parser')
+
             input_element = soup.find('input', placeholder=lambda value: value and 'password' in value.lower())
             password_field = input_element['name']
             info("Password field name identified: " + password_field)

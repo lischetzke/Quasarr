@@ -149,6 +149,12 @@ def run():
         if not api_key:
             api_key = shared_state.generate_api_key()
 
+        flaresolverr_url = Config('FlareSolverr').get('url')
+        if not flaresolverr_url:
+            flaresolverr_config(shared_state)
+        else:
+            print(f'Using Flaresolverr URL: "{flaresolverr_url}"')
+
         hostnames = get_clean_hostnames(shared_state)
         if not hostnames:
             hostnames_config(shared_state)
@@ -158,11 +164,6 @@ def run():
 
         al = Config('Hostnames').get('al')
         if al:
-            flaresolverr_url = Config('FlareSolverr').get('url')
-            if not flaresolverr_url:
-                flaresolverr_config(shared_state)
-            else:
-                print(f'Using Flaresolverr URL: "{flaresolverr_url}"')
             user = Config('AL').get('user')
             password = Config('AL').get('password')
             if not user or not password:
