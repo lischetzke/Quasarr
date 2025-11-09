@@ -51,7 +51,13 @@ def get_by_download_links(shared_state, url, mirror, title): # signature must al
         url_hosters = []
         for content, source in async_results:
             host_soup = BeautifulSoup(content, "html.parser")
-            link = host_soup.find("a", href=re.compile(r"/go\.php\?"))
+            link = host_soup.find("a", href=re.compile(
+                r"https?://(?:www\.)?(?:hide\.cx|filecrypt\.(?:cc|co|to))/container/"))
+
+            # Fallback to the old format
+            if not link:
+                link = host_soup.find("a", href=re.compile(r"/go\.php\?"))
+
             if not link:
                 continue
 

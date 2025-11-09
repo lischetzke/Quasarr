@@ -159,10 +159,9 @@ def is_cloudflare_challenge(html: str) -> bool:
 
 
 def update_session_via_flaresolverr(shared_state,
-                           sess,
-                           target_url: str,
-                           timeout: int = 60):
-
+                                    sess,
+                                    target_url: str,
+                                    timeout: int = 60):
     flaresolverr_url = shared_state.values["config"]('FlareSolverr').get('url')
     if not flaresolverr_url:
         info("Cannot proceed without FlareSolverr. Please set it up to try again!")
@@ -212,51 +211,107 @@ def update_session_via_flaresolverr(shared_state,
             domain=ck.get("domain"),
             path=ck.get("path", "/")
         )
-    return {"session": sess, "user_agent": solution.get("userAgent", {})}
+    return {"session": sess, "user_agent": solution.get("userAgent", None)}
+
+
+def ensure_cf_bypassed(shared_state, session, url, headers):
+    """
+    Performs a GET and, if Cloudflare challenge or 403 is present, tries FlareSolverr.
+    Returns tuple: (session, headers, response) or (None, None, None) on failure.
+    """
+    try:
+        resp = session.get(url, headers=headers, timeout=30)
+    except requests.RequestException as e:
+        info(f"Initial GET failed: {e}")
+        return None, None, None
+
+    # If page is protected, try FlareSolverr
+    if resp.status_code == 403 or is_cloudflare_challenge(resp.text):
+        info("Encountered Cloudflare protection. Solving challenge with FlareSolverr...")
+        flaresolverr_result = update_session_via_flaresolverr(shared_state, session, url)
+        if not flaresolverr_result:
+            info("FlareSolverr did not return a result.")
+            return None, None, None
+
+        # update session and possibly user-agent
+        session = flaresolverr_result.get("session", session)
+        user_agent = flaresolverr_result.get("user_agent")
+        if user_agent and user_agent != shared_state.values.get("user_agent"):
+            info("Updating User-Agent from FlareSolverr solution: " + user_agent)
+            shared_state.update("user_agent", user_agent)
+            headers = {'User-Agent': shared_state.values["user_agent"]}
+
+        # re-fetch using the new session/headers
+        try:
+            resp = session.get(url, headers=headers, timeout=30)
+        except requests.RequestException as e:
+            info(f"GET after FlareSolverr failed: {e}")
+            return None, None, None
+
+        if resp.status_code == 403 or is_cloudflare_challenge(resp.text):
+            info("Could not bypass Cloudflare protection with FlareSolverr!")
+            return None, None, None
+
+    return session, headers, resp
 
 
 def get_filecrypt_links(shared_state, token, title, url, password=None, mirror=None):
+    """
+    Robust Filecrypt fetch:
+    - Always check & bypass Cloudflare with FlareSolverr when necessary.
+    - Detect password input more reliably.
+    - Use session consistently and update user-agent cleanly.
+    """
+
     info("Attempting to decrypt Filecrypt link: " + url)
     session = requests.Session()
-
     headers = {'User-Agent': shared_state.values["user_agent"]}
 
+    # Ensure we are not blocked by Cloudflare before parsing or posting
+    session, headers, output = ensure_cf_bypassed(shared_state, session, url, headers)
+    if not session or not output:
+        return False
+
+    soup = BeautifulSoup(output.text, 'html.parser')
+
     password_field = None
-    if password:
-        try:
-            output = session.get(url, headers=headers)
-
-            if output.status_code == 403 or is_cloudflare_challenge(output.text):
-                info("Encountered Cloudflare protection. Solving challenge...")
-                flaresolverr_result = update_session_via_flaresolverr(shared_state, session, url)
-                if flaresolverr_result:
-                    session = flaresolverr_result["session"]
-                    user_agent = flaresolverr_result["user_agent"]
-                    if user_agent:
-                        headers = {'User-Agent': user_agent}
-
-                    output = session.get(url, headers=headers)
-
-                    if output.status_code == 403 or is_cloudflare_challenge(output.text):
-                        info("Could not bypass Cloudflare protection with FlareSolverr!")
-                        return False
-
-            soup = BeautifulSoup(output.text, 'html.parser')
-
-            input_element = soup.find('input', placeholder=lambda value: value and 'password' in value.lower())
-            password_field = input_element['name']
+    try:
+        # Search for input elements that look like password fields:
+        input_elem = soup.find('input', attrs={'type': 'password'})
+        if not input_elem:
+            input_elem = soup.find('input', placeholder=lambda v: v and 'password' in v.lower())
+        if not input_elem:
+            # fallback: name contains 'pass' or 'password'
+            input_elem = soup.find('input',
+                                   attrs={'name': lambda v: v and ('pass' in v.lower() or 'password' in v.lower())})
+        if input_elem and input_elem.has_attr('name'):
+            password_field = input_elem['name']
             info("Password field name identified: " + password_field)
-            url = output.url
-        except:
-            info("No password field found. Skipping password entry!")
+    except Exception as e:
+        # narrow catch so real errors bubble up elsewhere
+        info(f"Password-field detection error: {e}")
 
+    # If we have a password to submit and a field to submit to, post it.
     if password and password_field:
         info("Using Password: " + password)
-        output = session.post(url, data=password_field + "=" + password,
-                              headers={'User-Agent': shared_state.values["user_agent"],
-                                       'Content-Type': 'application/x-www-form-urlencoded'})
+        post_headers = {'User-Agent': shared_state.values["user_agent"],
+                        'Content-Type': 'application/x-www-form-urlencoded'}
+        data = {password_field: password}
+        try:
+            output = session.post(output.url, data=data, headers=post_headers, timeout=30)
+        except requests.RequestException as e:
+            info(f"POSTing password failed: {e}")
+            return False
+
+        # After posting, Cloudflare could reappear; ensure still bypassed
+        if output.status_code == 403 or is_cloudflare_challenge(output.text):
+            info("Encountered Cloudflare after password POST. Re-running FlareSolverr...")
+            session, headers, output = ensure_cf_bypassed(shared_state, session, output.url, headers)
+            if not session or not output:
+                return False
+
     else:
-        output = session.get(url, headers=headers)
+        pass
 
     url = output.url
     soup = BeautifulSoup(output.text, 'html.parser')
