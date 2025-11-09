@@ -17,6 +17,16 @@ Alternatively, follow the link from the console output (or discord notification)
 Quasarr will confidently handle the rest.
 
 # Instructions
+1. Set up and run [FlareSolverr](https://github.com/FlareSolverr/FlareSolverr) 3.4.4 or later.
+2. Set up and run [JDownloader 2](https://jdownloader.org/download/index).
+3. Follow the next steps.
+
+---
+
+## FlareSolverr
+1. Ensure your running FlareSolverr is reachable by Quasarr.
+2. Provide your FlareSolverr URL to Quasarr during the setup process.
+3. The full URL must include the version path, e.g., `http://192.168.1.1:8191/v1`.
 
 ---
 
@@ -33,7 +43,7 @@ Tell Quasarr which sites to search for releases. It requires at least one valid 
 
 ## JDownloader
 
-1. Run JDownloader and connect it to the My JDownloader service.  
+1. Ensure your running JDownloader is connected to the My JDownloader service.  
 2. Provide your [My‑JDownloader‑Credentials](https://my.jdownloader.org) to Quasarr during the setup process.
 
 > - Consider setting up a fresh JDownloader before you begin.  
@@ -134,6 +144,8 @@ Use this only in case you can't run the docker image.
 `pip install quasarr`
 
 * Requires Python 3.12 or later
+* Requires [FlareSolverr](https://github.com/FlareSolverr/FlareSolverr)
+* Requires [JDownloader 2](https://jdownloader.org/download/index) with [My JDownloader](https://my.jdownloader.org/)
 
 ```
   --port=8080
@@ -176,7 +188,7 @@ Most feature requests can be satisfied by:
 <img src="https://imgur.com/iHBqLwT.png" width="64" height="64" />
 
 SponsorsHelper is a Docker image that solves CAPTCHAs and decrypts links for Quasarr.  
-Image access is limited to [active GitHub sponsors](https://github.com/users/rix1337/sponsorship).
+Image access is limited to [active monthly GitHub sponsors](https://github.com/users/rix1337/sponsorship).
 
 [![Github Sponsorship](https://img.shields.io/badge/support-me-red.svg)](https://github.com/users/rix1337/sponsorship)
 
