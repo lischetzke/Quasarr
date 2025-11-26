@@ -14,6 +14,7 @@ import requests
 from Cryptodome.Cipher import AES
 from bs4 import BeautifulSoup
 
+from quasarr.providers.cloudflare import is_cloudflare_challenge, ensure_session_cf_bypassed
 from quasarr.providers.log import info, debug
 
 
@@ -130,131 +131,6 @@ class DLC:
         return all_urls
 
 
-def is_cloudflare_challenge(html: str) -> bool:
-    soup = BeautifulSoup(html, "html.parser")
-
-    # Check <title>
-    title = (soup.title.string or "").strip().lower() if soup.title else ""
-    if "just a moment" in title or "attention required" in title:
-        return True
-
-    # Check known Cloudflare elements
-    if soup.find(id="challenge-form"):
-        return True
-    if soup.find("div", {"class": "cf-browser-verification"}):
-        return True
-    if soup.find("div", {"id": "cf-challenge-running"}):
-        return True
-
-    # Check scripts referencing Cloudflare
-    for script in soup.find_all("script", src=True):
-        if "cdn-cgi/challenge-platform" in script["src"]:
-            return True
-
-    # Optional: look for Cloudflare comment or beacon
-    if "data-cf-beacon" in html or "<!-- cloudflare -->" in html.lower():
-        return True
-
-    return False
-
-
-def update_session_via_flaresolverr(shared_state,
-                                    sess,
-                                    target_url: str,
-                                    timeout: int = 60):
-    flaresolverr_url = shared_state.values["config"]('FlareSolverr').get('url')
-    if not flaresolverr_url:
-        info("Cannot proceed without FlareSolverr. Please set it up to try again!")
-        return False
-
-    fs_payload = {
-        "cmd": "request.get",
-        "url": target_url,
-        "maxTimeout": timeout * 1000,
-    }
-
-    # Send the JSON request to FlareSolverr
-    fs_headers = {"Content-Type": "application/json"}
-    try:
-        resp = requests.post(
-            flaresolverr_url,
-            headers=fs_headers,
-            json=fs_payload,
-            timeout=timeout + 10
-        )
-        resp.raise_for_status()
-    except requests.exceptions.RequestException as e:
-        info(f"Could not reach FlareSolverr: {e}")
-        return {
-            "status_code": None,
-            "headers": {},
-            "json": None,
-            "text": "",
-            "cookies": [],
-            "error": f"FlareSolverr request failed: {e}"
-        }
-    except Exception as e:
-        raise RuntimeError(f"Could not reach FlareSolverr: {e}")
-
-    fs_json = resp.json()
-    if fs_json.get("status") != "ok" or "solution" not in fs_json:
-        raise RuntimeError(f"FlareSolverr did not return a valid solution: {fs_json.get('message', '<no message>')}")
-
-    solution = fs_json["solution"]
-
-    # Replace our requests.Session cookies with whatever FlareSolverr solved
-    sess.cookies.clear()
-    for ck in solution.get("cookies", []):
-        sess.cookies.set(
-            ck.get("name"),
-            ck.get("value"),
-            domain=ck.get("domain"),
-            path=ck.get("path", "/")
-        )
-    return {"session": sess, "user_agent": solution.get("userAgent", None)}
-
-
-def ensure_cf_bypassed(shared_state, session, url, headers):
-    """
-    Performs a GET and, if Cloudflare challenge or 403 is present, tries FlareSolverr.
-    Returns tuple: (session, headers, response) or (None, None, None) on failure.
-    """
-    try:
-        resp = session.get(url, headers=headers, timeout=30)
-    except requests.RequestException as e:
-        info(f"Initial GET failed: {e}")
-        return None, None, None
-
-    # If page is protected, try FlareSolverr
-    if resp.status_code == 403 or is_cloudflare_challenge(resp.text):
-        info("Encountered Cloudflare protection. Solving challenge with FlareSolverr...")
-        flaresolverr_result = update_session_via_flaresolverr(shared_state, session, url)
-        if not flaresolverr_result:
-            info("FlareSolverr did not return a result.")
-            return None, None, None
-
-        # update session and possibly user-agent
-        session = flaresolverr_result.get("session", session)
-        user_agent = flaresolverr_result.get("user_agent")
-        if user_agent and user_agent != shared_state.values.get("user_agent"):
-            info("Updating User-Agent from FlareSolverr solution: " + user_agent)
-            shared_state.update("user_agent", user_agent)
-            headers = {'User-Agent': shared_state.values["user_agent"]}
-
-        # re-fetch using the new session/headers
-        try:
-            resp = session.get(url, headers=headers, timeout=30)
-        except requests.RequestException as e:
-            info(f"GET after FlareSolverr failed: {e}")
-            return None, None, None
-
-        if resp.status_code == 403 or is_cloudflare_challenge(resp.text):
-            info("Could not bypass Cloudflare protection with FlareSolverr!")
-            return None, None, None
-
-    return session, headers, resp
-
-
 def get_filecrypt_links(shared_state, token, title, url, password=None, mirror=None):
     """
     Robust Filecrypt fetch:
@@ -268,7 +144,7 @@ def get_filecrypt_links(shared_state, token, title, url, password=None, mirror=N
     headers = {'User-Agent': shared_state.values["user_agent"]}
 
     # Ensure we are not blocked by Cloudflare before parsing or posting
-    session, headers, output = ensure_cf_bypassed(shared_state, session, url, headers)
+    session, headers, output = ensure_session_cf_bypassed(info, shared_state, session, url, headers)
     if not session or not output:
         return False
 
@@ -306,7 +182,7 @@ def get_filecrypt_links(shared_state, token, title, url, password=None, mirror=N
         # After posting, Cloudflare could reappear; ensure still bypassed
         if output.status_code == 403 or is_cloudflare_challenge(output.text):
             info("Encountered Cloudflare after password POST. Re-running FlareSolverr...")
-            session, headers, output = ensure_cf_bypassed(shared_state, session, output.url, headers)
+            session, headers, output = ensure_session_cf_bypassed(info, shared_state, session, output.url, headers)
             if not session or not output:
                 return False
 
