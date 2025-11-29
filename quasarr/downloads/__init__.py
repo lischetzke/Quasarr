@@ -49,10 +49,18 @@ def handle_protected(shared_state, title, password, package_id, imdb_id, url,
                      mirror=None, size_mb=None, func=None, label=""):
     links = func(shared_state, url, mirror, title)
     if links:
-        if len(links) == 1 and "/404.html" in links[0]:
-            fail(title, package_id, shared_state,
-                 reason=f'IP was banned during download of "{title}" on {label} - "{url}"')
+        valid_links = [pair for pair in links if "/404.html" not in pair[0]]
+
+        # If none left, IP was banned
+        if not valid_links:
+            fail(
+                title,
+                package_id,
+                shared_state,
+                reason=f'IP was banned during download of "{title}" on {label} - "{url}"'
+            )
             return {"success": False, "title": title}
+        links = valid_links
 
         info(f'CAPTCHA-Solution required for "{title}" at: "{shared_state.values['external_address']}/captcha"')
         send_discord_message(shared_state, title=title, case="captcha", imdb_id=imdb_id, source=url)

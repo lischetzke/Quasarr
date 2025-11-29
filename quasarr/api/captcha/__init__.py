@@ -5,7 +5,7 @@
 import json
 import re
 from base64 import urlsafe_b64encode, urlsafe_b64decode
-from urllib.parse import quote, unquote
+from urllib.parse import quote, unquote, urljoin
 
 import requests
 from bottle import request, response, redirect
@@ -493,25 +493,33 @@ def setup_captcha_routes(app):
         post_data = request.forms
         data = {k: v for k, v in post_data.items()}
 
-        resp = requests.post(url, cookies=cookies, headers=headers, data=data, verify=False)
+        sesh = requests.Session()
+
+        resp = sesh.post(url, cookies=cookies, headers=headers, data=data, verify=False)
 
         response.content_type = resp.headers.get('Content-Type', 'text/html')
 
         solution = "You did not solve the CAPTCHA correctly. Please try again."
         match = re.search(r"top\.location\.href\s*=\s*['\"]([^'\"]+)['\"]", resp.text)
         if match:
-            solution = match.group(1)
+            redirect = match.group(1)
+            solution = urljoin(url, redirect)
             info(f"Redirect URL: {solution}")
             try:
-                redirect_resp = requests.get(solution, headers=headers, cookies=cookies, allow_redirects=True,
+                redirect_resp = sesh.get(solution, headers=headers, cookies=cookies, allow_redirects=True,
                                              timeout=10, verify=False)
+
                 if "expired" in redirect_resp.text.lower():
                     solution = f"The CAPTCHA session has expired. Deleting package: {package_id}"
                     info(solution)
                     shared_state.get_db("protected").delete(package_id)
                 else:
                     download_link = redirect_resp.url
-                    if redirect_resp.ok:
+                    if "linkonclick.com" in download_link:
+                        solution = f"Failed to resolve download link, got malicious redirect page: {download_link}"
+                        info(solution)
+                        shared_state.get_db("protected").delete(package_id)
+                    elif redirect_resp.ok:
                         solution = f"Successfully resolved download link!"
                         info(solution)
 

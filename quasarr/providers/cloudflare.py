@@ -186,6 +186,7 @@ def flaresolverr_get(shared_state, url, timeout=60):
     solution = data.get("solution", {})
     html = solution.get("response", "")
     status_code = solution.get("status", 200)
+    url = solution.get("url", url)
 
     # headers → convert list-of-keyvals to dict
     fs_headers = {h["name"]: h["value"] for h in solution.get("headers", [])}

@@ -12,7 +12,7 @@ from bs4 import BeautifulSoup
 from quasarr.providers.log import info, debug
 
 
-def get_by_download_links(shared_state, url, mirror, title): # signature must align with other download link functions!
+def get_by_download_links(shared_state, url, mirror, title):  # signature must align with other download link functions!
     by = shared_state.values["config"]("Hostnames").get("by")
     headers = {
         'User-Agent': shared_state.values["user_agent"],
@@ -75,6 +75,13 @@ def get_by_download_links(shared_state, url, mirror, title): # signature must al
             href, hostname = href_hostname
             try:
                 r = requests.get(href, headers=headers, timeout=10, allow_redirects=True)
+                if "/404.html" in r.url:
+                    debug(f"Link leads to 404 page for {hostname}: {r.url}")
+                    # from quasarr.providers.cloudflare import flaresolverr_get
+                    # print("Attempting to resolve via FlareSolverr...")
+                    # fs_response = flaresolverr_get(shared_state, href, timeout=20)
+                    # print(fs_response)
+                    return None
                 return r.url
             except Exception as e:
                 debug(f"Error resolving link for {hostname}: {e}")
@@ -87,8 +94,10 @@ def get_by_download_links(shared_state, url, mirror, title): # signature must al
                 hostname = future_to_hostname[future]
                 if not hostname:
                     hostname = urlparse(resolved_url).hostname
-                if resolved_url:
-                    links.append([resolved_url, hostname])
+                if resolved_url and hostname and hostname.startswith(("ddownload", "rapidgator", "turbobit")):
+                    (links.insert(0, [resolved_url, hostname]) if "rapidgator" in hostname
+                     else links.append([resolved_url, hostname]))
+
 
     except Exception as e:
         info(f"Error loading BY download links: {e}")
