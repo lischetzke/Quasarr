@@ -77,10 +77,6 @@ def get_by_download_links(shared_state, url, mirror, title):  # signature must a
                 r = requests.get(href, headers=headers, timeout=10, allow_redirects=True)
                 if "/404.html" in r.url:
                     debug(f"Link leads to 404 page for {hostname}: {r.url}")
-                    # from quasarr.providers.cloudflare import flaresolverr_get
-                    # print("Attempting to resolve via FlareSolverr...")
-                    # fs_response = flaresolverr_get(shared_state, href, timeout=20)
-                    # print(fs_response)
                     return None
                 return r.url
             except Exception as e:

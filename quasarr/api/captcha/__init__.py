@@ -430,11 +430,11 @@ def setup_captcha_routes(app):
             </p>''')
 
         package_id = payload.get("package_id")
-        session = payload.get("session")
+        session_id = payload.get("session")
         title = payload.get("title", "Unknown Package")
         url = payload.get("links")[0] if payload.get("links") else None
 
-        if not url or not session or not package_id:
+        if not url or not session_id or not package_id:
             response.status = 400
             return "Missing required parameters"
 
@@ -444,8 +444,8 @@ def setup_captcha_routes(app):
           <body>
             <h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
             <p><b>Package:</b> {title}</p>
-            <form action="/captcha/decrypt-filecrypt-circle?url={url}&session={session}&&package_id={package_id}" method="post">
-              <input type="image" src="/captcha/circle.php?session={session}" name="button" alt="Captcha">
+            <form action="/captcha/decrypt-filecrypt-circle?url={url}&session_id={session_id}&&package_id={package_id}" method="post">
+              <input type="image" src="/captcha/circle.php?url={url}&session_id={session_id}" name="button" alt="Captcha">
             </form>
             <p>
                 {render_button("Delete Package", "secondary", {"onclick": f"location.href='/captcha/delete/{package_id}'"})}
@@ -460,14 +460,14 @@ def setup_captcha_routes(app):
     def proxy_circle_php():
         target_url = "https://filecrypt.cc/captcha/circle.php"
 
-        session = request.query.get('session')
-        if not session:
+        url = request.query.get('url')
+        session_id = request.query.get('session_id')
+        if not url or not session_id:
             response.status = 400
-            return "Missing session parameter"
+            return "Missing required parameters"
 
         headers = {'User-Agent': shared_state.values["user_agent"]}
-        cookies = {'PHPSESSID': session}
-
+        cookies = {'PHPSESSID': session_id}
         resp = requests.get(target_url, headers=headers, cookies=cookies, verify=False)
 
         response.content_type = resp.headers.get('Content-Type', 'application/octet-stream')
@@ -476,52 +476,52 @@ def setup_captcha_routes(app):
     @app.post('/captcha/decrypt-filecrypt-circle')
     def proxy_form_submit():
         url = request.query.get('url')
-        session = request.query.get('session')
+        session_id = request.query.get('session_id')
         package_id = request.query.get('package_id')
         success = False
 
-        if not url or not session or not package_id:
+        if not url or not session_id or not package_id:
             response.status = 400
             return "Missing required parameters"
 
-        cookies = {'PHPSESSID': session}
+        cookies = {'PHPSESSID': session_id}
 
         headers = {
             'User-Agent': shared_state.values["user_agent"],
+            "Content-Type": "application/x-www-form-urlencoded"
         }
 
-        post_data = request.forms
-        data = {k: v for k, v in post_data.items()}
+        raw_body = request.body.read()
 
-        sesh = requests.Session()
-
-        resp = sesh.post(url, cookies=cookies, headers=headers, data=data, verify=False)
-
+        resp = requests.post(url, cookies=cookies, headers=headers, data=raw_body, verify=False)
         response.content_type = resp.headers.get('Content-Type', 'text/html')
 
-        solution = "You did not solve the CAPTCHA correctly. Please try again."
-        match = re.search(r"top\.location\.href\s*=\s*['\"]([^'\"]+)['\"]", resp.text)
+        if "<h2>Security Check</h2>" in resp.text or "click inside the open circle" in resp.text:
+            status = "CAPTCHA verification failed. Please try again."
+            info(status)
+
+        match = re.search(
+            r"top\.location\.href\s*=\s*['\"]([^'\"]*?/go\b[^'\"]*)['\"]",
+            resp.text,
+            re.IGNORECASE
+        )
         if match:
             redirect = match.group(1)
-            solution = urljoin(url, redirect)
-            info(f"Redirect URL: {solution}")
+            resolved_url = urljoin(url, redirect)
+            info(f"Redirect URL: {resolved_url}")
             try:
-                redirect_resp = sesh.get(solution, headers=headers, cookies=cookies, allow_redirects=True,
-                                             timeout=10, verify=False)
+                redirect_resp = requests.post(resolved_url, cookies=cookies, headers=headers, allow_redirects=True,
+                                              timeout=10, verify=False)
 
                 if "expired" in redirect_resp.text.lower():
-                    solution = f"The CAPTCHA session has expired. Deleting package: {package_id}"
-                    info(solution)
+                    status = f"The CAPTCHA session has expired. Deleting package: {package_id}"
+                    info(status)
                     shared_state.get_db("protected").delete(package_id)
                 else:
                     download_link = redirect_resp.url
-                    if "linkonclick.com" in download_link:
-                        solution = f"Failed to resolve download link, got malicious redirect page: {download_link}"
-                        info(solution)
-                        shared_state.get_db("protected").delete(package_id)
-                    elif redirect_resp.ok:
-                        solution = f"Successfully resolved download link!"
-                        info(solution)
+                    if redirect_resp.ok:
+                        status = f"Successfully resolved download link!"
+                        info(status)
 
                         raw_data = shared_state.get_db("protected").retrieve(package_id)
                         data = json.loads(raw_data)
@@ -537,7 +537,7 @@ def setup_captcha_routes(app):
                             raise RuntimeError("Submitting Download to JDownloader failed")
                     else:
                         info(
-                            f"Failed to reach redirect target. Status: {redirect_resp.status_code}, Solution: {solution}")
+                            f"Failed to reach redirect target. Status: {redirect_resp.status_code}, Solution: {status}")
             except Exception as e:
                 info(f"Error while resolving download link: {e}")
         else:
@@ -567,7 +567,7 @@ def setup_captcha_routes(app):
         <html>
           <body>
             <h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
-            <p>{solution}</p>
+            <p>{status}</p>
             <p>
                 {solve_button}
             </p>

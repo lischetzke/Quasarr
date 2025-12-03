@@ -352,7 +352,7 @@ def get_filecrypt_links(shared_state, token, title, url, password=None, mirror=N
                         row = button.find_parent('tr')
                         mirror_tag = row.find('a', class_='external_link') if row else None
                         mirror_name = mirror_tag.get_text(strip=True) if mirror_tag else 'unknown'
-                        full_url = f"https://{base_url}/Link/{link_id}.html"
+                        full_url = f"http://{base_url}/Link/{link_id}.html"
                         results.append((full_url, mirror_name))
 
                     sorted_results = sorted(results, key=lambda x: 0 if 'rapidgator' in x[1].lower() else 1)
