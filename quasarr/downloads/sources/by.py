@@ -4,6 +4,7 @@
 
 import concurrent.futures
 import re
+import time
 from urllib.parse import urlparse
 
 import requests
@@ -39,6 +40,7 @@ def get_by_download_links(shared_state, url, mirror, title):  # signature must a
                 r = requests.get(url, headers=headers, timeout=10)
                 return r.text, url
             except Exception:
+                info(f"Error fetching iframe URL: {url}")
                 return None, url
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
@@ -76,23 +78,26 @@ def get_by_download_links(shared_state, url, mirror, title):  # signature must a
             try:
                 r = requests.get(href, headers=headers, timeout=10, allow_redirects=True)
                 if "/404.html" in r.url:
-                    debug(f"Link leads to 404 page for {hostname}: {r.url}")
+                    info(f"Link leads to 404 page for {hostname}: {r.url}")
                     return None
+                time.sleep(1)
                 return r.url
             except Exception as e:
-                debug(f"Error resolving link for {hostname}: {e}")
+                info(f"Error resolving link for {hostname}: {e}")
                 return None
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-            future_to_hostname = {executor.submit(resolve_redirect, pair): pair[1] for pair in url_hosters}
-            for future in concurrent.futures.as_completed(future_to_hostname):
-                resolved_url = future.result()
-                hostname = future_to_hostname[future]
-                if not hostname:
-                    hostname = urlparse(resolved_url).hostname
-                if resolved_url and hostname and hostname.startswith(("ddownload", "rapidgator", "turbobit")):
-                    (links.insert(0, [resolved_url, hostname]) if "rapidgator" in hostname
-                     else links.append([resolved_url, hostname]))
+        for pair in url_hosters:
+            resolved_url = resolve_redirect(pair)
+            hostname = pair[1]
+
+            if not hostname:
+                hostname = urlparse(resolved_url).hostname
+
+            if resolved_url and hostname and hostname.startswith(("ddownload", "rapidgator", "turbobit", "filecrypt")):
+                if "rapidgator" in hostname:
+                    links.insert(0, [resolved_url, hostname])
+                else:
+                    links.append([resolved_url, hostname])
 
 
     except Exception as e:
