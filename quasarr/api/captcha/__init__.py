@@ -11,7 +11,7 @@ import requests
 from bottle import request, response, redirect
 
 import quasarr.providers.html_images as images
-from quasarr.downloads.linkcrypters.filecrypt import get_filecrypt_links
+from quasarr.downloads.linkcrypters.filecrypt import get_filecrypt_links, DLC
 from quasarr.downloads.packages import delete_package
 from quasarr.providers import shared_state
 from quasarr.providers.html_templates import render_button, render_centered_html
@@ -65,13 +65,17 @@ def setup_captcha_routes(app):
             others = [ln for ln in links if "rapidgator" not in ln[1].lower()]
             prioritized_links = rapid + others
 
+            # This is required for bypass on circlecaptcha
+            original_url = data.get("original_url", "")
+
             payload = {
                 "package_id": package_id,
                 "title": title,
                 "password": password,
                 "mirror": desired_mirror,
                 "session": session,
-                "links": prioritized_links
+                "links": prioritized_links,
+                "original_url": original_url
             }
 
             encoded_payload = urlsafe_b64encode(json.dumps(payload).encode()).decode()
@@ -96,6 +100,34 @@ def setup_captcha_routes(app):
             return json.loads(decoded)
         except Exception as e:
             return {"error": f"Failed to decode payload: {str(e)}"}
+
+    def render_bypass_section(url, package_id, title, password):
+        """Render the bypass UI section for both cutcaptcha and circle captcha pages"""
+        return f'''
+            <div style="margin-top: 40px; padding-top: 20px; border-top: 2px solid #ccc;">
+                <h3>Bypass CAPTCHA</h3>
+                <a href="{url}" target="_blank">Protected Link</a>
+                <form id="bypass-form" action="/captcha/bypass-submit" method="post" enctype="multipart/form-data">
+                    <input type="hidden" name="package_id" value="{package_id}" />
+                    <input type="hidden" name="title" value="{title}" />
+                    <input type="hidden" name="password" value="{password}" />
+
+                    <div style="margin-bottom: 15px;">
+                        <label for="links-input"><b>Paste direct download links (one per line):</b></label><br>
+                        <textarea id="links-input" name="links" rows="5" style="width: 100%; padding: 8px; font-family: monospace; resize: vertical;"></textarea>
+                    </div>
+
+                    <div style="margin-bottom: 15px;">
+                        <label for="dlc-file"><b>Or upload DLC file:</b></label><br>
+                        <input type="file" id="dlc-file" name="dlc_file" accept=".dlc" />
+                    </div>
+
+                    <div>
+                        {render_button("Submit Bypass", "primary", {"type": "submit"})}
+                    </div>
+                </form>
+            </div>
+        '''
 
     @app.get('/captcha/delete/<package_id>')
     def delete_captcha_package(package_id):
@@ -188,6 +220,11 @@ def setup_captcha_routes(app):
         solve_another_html = render_button("Solve another CAPTCHA", "primary", {"onclick": "location.href='/captcha'"})
         back_button_html = render_button("Back", "secondary", {"onclick": "location.href='/'"})
 
+        url = prioritized_links[0][0]
+
+        # Add bypass section
+        bypass_section = render_bypass_section(url, package_id, title, password)
+
         content = render_centered_html(r'''
             <script type="text/javascript">
                 var api_key = "''' + captcha_values()["api_key"] + r'''";
@@ -200,6 +237,7 @@ def setup_captcha_routes(app):
                     document.getElementById("mirrors-select").remove();
                     document.getElementById("delete-package-section").style.display = "none";
                     document.getElementById("back-button-section").style.display = "none";
+                    document.getElementById("bypass-section").style.display = "none";
 
                     // Remove width limit on result screen
                     var packageTitle = document.getElementById("package-title");
@@ -247,6 +285,7 @@ def setup_captcha_routes(app):
                 <div>
                     <h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
                     <p id="package-title" style="max-width: 370px; word-wrap: break-word; overflow-wrap: break-word;"><b>Package:</b> {title}</p>
+                    <h3>Solve CAPTCHA</h3>
                     <div id="captcha-key"></div>
                     {link_select}<br><br>
                     <input type="hidden" id="link-hidden" value="{prioritized_links[0][0]}" />
@@ -267,6 +306,9 @@ def setup_captcha_routes(app):
             <p>
                 {render_button("Back", "secondary", {"onclick": "location.href='/'"})}
             </p>
+            </div>
+            <div id="bypass-section">
+                {bypass_section}
             </div>
                 </div>
                 </html>''')
@@ -346,6 +388,104 @@ def setup_captcha_routes(app):
                 response.set_header(header, resp.headers[header])
         return resp.content
 
+    @app.post('/captcha/bypass-submit')
+    def handle_bypass_submit():
+        """Handle bypass submission with either links or DLC file"""
+        try:
+            package_id = request.forms.get('package_id')
+            title = request.forms.get('title')
+            password = request.forms.get('password', '')
+            links_input = request.forms.get('links', '').strip()
+            dlc_upload = request.files.get('dlc_file')
+
+            if not package_id or not title:
+                return render_centered_html(f'''<h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+                <p><b>Error:</b> Missing package information.</p>
+                <p>
+                    {render_button("Back", "secondary", {"onclick": "location.href='/captcha'"})}
+                </p>''')
+
+            # Process links input
+            if links_input:
+                info(f"Processing direct links bypass for {title}")
+                links = [link.strip() for link in links_input.split('\n') if link.strip()]
+                info(f"Received {len(links)} direct download links")
+
+            # Process DLC file
+            elif dlc_upload:
+                info(f"Processing DLC file bypass for {title}")
+                dlc_content = dlc_upload.file.read()
+                try:
+                    decrypted_links = DLC(shared_state, dlc_content).decrypt()
+                    if decrypted_links:
+                        links = decrypted_links
+                        info(f"Decrypted {len(links)} links from DLC file")
+                    else:
+                        raise ValueError("DLC decryption returned no links")
+                except Exception as e:
+                    info(f"DLC decryption failed: {e}")
+                    return render_centered_html(f'''<h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+                    <p><b>Error:</b> Failed to decrypt DLC file: {str(e)}</p>
+                    <p>
+                        {render_button("Back", "secondary", {"onclick": "location.href='/captcha'"})}
+                    </p>''')
+            else:
+                return render_centered_html(f'''<h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+                <p><b>Error:</b> Please provide either links or a DLC file.</p>
+                <p>
+                    {render_button("Back", "secondary", {"onclick": "location.href='/captcha'"})}
+                </p>''')
+
+            # Download the package
+            if links:
+                downloaded = shared_state.download_package(links, title, password, package_id)
+                if downloaded:
+                    StatsHelper(shared_state).increment_package_with_links(links)
+                    StatsHelper(shared_state).increment_captcha_decryptions_manual()
+                    shared_state.get_db("protected").delete(package_id)
+
+                    # Check if there are more CAPTCHAs to solve
+                    remaining_protected = shared_state.get_db("protected").retrieve_all_titles()
+                    has_more_captchas = bool(remaining_protected)
+
+                    if has_more_captchas:
+                        solve_button = render_button("Solve another CAPTCHA", "primary", {
+                            "onclick": "location.href='/captcha'",
+                        })
+                    else:
+                        solve_button = "<b>No more CAPTCHAs</b>"
+
+                    return render_centered_html(f'''<h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+                    <p><b>Success!</b> Package "{title}" bypassed and submitted to JDownloader.</p>
+                    <p>{len(links)} link(s) processed.</p>
+                    <p>
+                        {solve_button}
+                    </p>
+                    <p>
+                        {render_button("Back", "secondary", {"onclick": "location.href='/'"})}
+                    </p>''')
+                else:
+                    StatsHelper(shared_state).increment_failed_decryptions_manual()
+                    return render_centered_html(f'''<h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+                    <p><b>Error:</b> Failed to submit package to JDownloader.</p>
+                    <p>
+                        {render_button("Try Again", "secondary", {"onclick": "location.href='/captcha'"})}
+                    </p>''')
+            else:
+                return render_centered_html(f'''<h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+                <p><b>Error:</b> No valid links found.</p>
+                <p>
+                    {render_button("Back", "secondary", {"onclick": "location.href='/captcha'"})}
+                </p>''')
+
+        except Exception as e:
+            info(f"Bypass submission error: {e}")
+            return render_centered_html(f'''<h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+            <p><b>Error:</b> {str(e)}</p>
+            <p>
+                {render_button("Back", "secondary", {"onclick": "location.href='/captcha'"})}
+            </p>''')
+
     @app.post('/captcha/decrypt-filecrypt')
     def submit_token():
         protected = shared_state.get_db("protected").retrieve_all_titles()
@@ -382,7 +522,8 @@ def setup_captcha_routes(app):
                                 "size_mb": 0,
                                 "password": password,
                                 "mirror": mirror,
-                                "session": session
+                                "session": session,
+                                "original_url": link
                             })
                         shared_state.get_db("protected").update_store(package_id, blob)
                         info(f"Another CAPTCHA solution is required for {mirror} link: {replace_url}")
@@ -432,11 +573,16 @@ def setup_captcha_routes(app):
         package_id = payload.get("package_id")
         session_id = payload.get("session")
         title = payload.get("title", "Unknown Package")
+        password = payload.get("password", "")
+        original_url = payload.get("original_url", "")
         url = payload.get("links")[0] if payload.get("links") else None
 
         if not url or not session_id or not package_id:
             response.status = 400
             return "Missing required parameters"
+
+        # Add bypass section
+        bypass_section = render_bypass_section(original_url, package_id, title, password)
 
         return render_centered_html(f"""
         <!DOCTYPE html>
@@ -444,8 +590,9 @@ def setup_captcha_routes(app):
           <body>
             <h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
             <p><b>Package:</b> {title}</p>
-            <form action="/captcha/decrypt-filecrypt-circle?url={url}&session_id={session_id}&&package_id={package_id}" method="post">
-              <input type="image" src="/captcha/circle.php?url={url}&session_id={session_id}" name="button" alt="Captcha">
+            <h3>Solve CAPTCHA</h3>
+            <form action="/captcha/decrypt-filecrypt-circle?url={url}&session_id={session_id}&package_id={package_id}" method="post">
+              <input type="image" src="/captcha/circle.php?url={url}&session_id={session_id}" name="button" alt="Circle CAPTCHA">
             </form>
             <p>
                 {render_button("Delete Package", "secondary", {"onclick": f"location.href='/captcha/delete/{package_id}'"})}
@@ -453,6 +600,7 @@ def setup_captcha_routes(app):
             <p>
                 {render_button("Back", "secondary", {"onclick": "location.href='/'"})}
             </p>
+            {bypass_section}
           </body>
         </html>""")
 
