@@ -103,26 +103,40 @@ def setup_captcha_routes(app):
 
     def render_bypass_section(url, package_id, title, password):
         """Render the bypass UI section for both cutcaptcha and circle captcha pages"""
+
+        # Generate userscript URL with transfer params
+        # Get base URL of current request
+        base_url = request.urlparts.scheme + '://' + request.urlparts.netloc
+        transfer_url = f"{base_url}/captcha/quick-transfer"
+
+        url_with_quick_transfer_params = (
+            f"{url}?"
+            f"transfer_url={quote(transfer_url)}&"
+            f"pkg_id={quote(package_id)}&"
+            f"pkg_title={quote(title)}&"
+            f"pkg_pass={quote(password)}"
+        )
+
         return f'''
             <div style="margin-top: 40px; padding-top: 20px; border-top: 2px solid #ccc;">
                 <details id="bypassDetails">
                 <summary id="bypassSummary">Show CAPTCHA Bypass</summary><br>
-                    <strong><a href="{url}" target="_blank">Obtain download links here!</a></strong><br><br>
+                    <strong><a href="{url_with_quick_transfer_params}" target="_blank">🔗 Obtain the download links here!</a></strong><br><br>
                     <form id="bypass-form" action="/captcha/bypass-submit" method="post" enctype="multipart/form-data">
                         <input type="hidden" name="package_id" value="{package_id}" />
                         <input type="hidden" name="title" value="{title}" />
                         <input type="hidden" name="password" value="{password}" />
-    
+
                         <div>
                             <strong>Paste the download links (one per line):</strong>
                             <textarea id="links-input" name="links" rows="5" style="width: 100%; padding: 8px; font-family: monospace; resize: vertical;"></textarea>
                         </div>
-    
+
                         <div>
                             <strong>Or upload DLC file:</strong><br>
                             <input type="file" id="dlc-file" name="dlc_file" accept=".dlc" />
                         </div>
-    
+
                         <div>
                             {render_button("Submit", "primary", {"type": "submit"})}
                         </div>
@@ -130,10 +144,9 @@ def setup_captcha_routes(app):
                 </details>
             </div>
             <script>
-              // Handle bypass toggle
               const bypassDetails = document.getElementById('bypassDetails');
               const bypassSummary = document.getElementById('bypassSummary');
-    
+
               if (bypassDetails && bypassSummary) {{
                 bypassDetails.addEventListener('toggle', () => {{
                   if (bypassDetails.open) {{
@@ -145,6 +158,124 @@ def setup_captcha_routes(app):
               }}
             </script>
         '''
+
+    @app.get('/captcha/quick-transfer')
+    def handle_quick_transfer():
+        """Handle quick transfer from userscript"""
+        import zlib
+
+        try:
+            package_id = request.query.get('pkg_id')
+            compressed_links = request.query.get('links', '')
+
+            if not package_id or not compressed_links:
+                return render_centered_html(f'''<h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+                <p><b>Error:</b> Missing parameters</p>
+                <p>
+                    {render_button("Back", "secondary", {"onclick": "location.href='/captcha'"})}
+                </p>''')
+
+            # Decode the compressed links using urlsafe_b64decode
+            # Add padding if needed
+            padding = 4 - (len(compressed_links) % 4)
+            if padding != 4:
+                compressed_links += '=' * padding
+
+            try:
+                decoded = urlsafe_b64decode(compressed_links)
+            except Exception as e:
+                info(f"Base64 decode error: {e}")
+                return render_centered_html(f'''<h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+                <p><b>Error:</b> Failed to decode data: {str(e)}</p>
+                <p>
+                    {render_button("Back", "secondary", {"onclick": "location.href='/captcha'"})}
+                </p>''')
+
+            # Decompress using zlib - use raw deflate format (no header)
+            try:
+                decompressed = zlib.decompress(decoded, -15)  # -15 = raw deflate, no zlib header
+            except Exception as e:
+                info(f"Decompression error: {e}, trying with header...")
+                try:
+                    # Fallback: try with zlib header
+                    decompressed = zlib.decompress(decoded)
+                except Exception as e2:
+                    info(f"Decompression also failed with header: {e2}")
+                    return render_centered_html(f'''<h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+                    <p><b>Error:</b> Failed to decompress data: {str(e)}</p>
+                    <p>
+                        {render_button("Back", "secondary", {"onclick": "location.href='/captcha'"})}
+                    </p>''')
+
+            links_text = decompressed.decode('utf-8')
+
+            # Parse links and restore protocols
+            raw_links = [link.strip() for link in links_text.split('\n') if link.strip()]
+            links = []
+            for link in raw_links:
+                if not link.startswith(('http://', 'https://')):
+                    link = 'https://' + link
+                links.append(link)
+
+            info(f"Quick transfer received {len(links)} links for package {package_id}")
+
+            # Get package info
+            raw_data = shared_state.get_db("protected").retrieve(package_id)
+            if not raw_data:
+                return render_centered_html(f'''<h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+                <p><b>Error:</b> Package not found</p>
+                <p>
+                    {render_button("Back", "secondary", {"onclick": "location.href='/captcha'"})}
+                </p>''')
+
+            data = json.loads(raw_data)
+            title = data.get("title", "Unknown")
+            password = data.get("password", "")
+
+            # Download the package
+            downloaded = shared_state.download_package(links, title, password, package_id)
+
+            if downloaded:
+                StatsHelper(shared_state).increment_package_with_links(links)
+                StatsHelper(shared_state).increment_captcha_decryptions_manual()
+                shared_state.get_db("protected").delete(package_id)
+
+                info(f"Quick transfer successful: {len(links)} links processed")
+
+                # Check if more CAPTCHAs remain
+                remaining_protected = shared_state.get_db("protected").retrieve_all_titles()
+                has_more_captchas = bool(remaining_protected)
+
+                if has_more_captchas:
+                    solve_button = render_button("Solve another CAPTCHA", "primary",
+                                                 {"onclick": "location.href='/captcha'"})
+                else:
+                    solve_button = "<b>No more CAPTCHAs</b>"
+
+                return render_centered_html(f'''<h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+                <p><b>✅ Quick Transfer Successful!</b></p>
+                <p>Package "{title}" with {len(links)} link(s) submitted to JDownloader.</p>
+                <p>
+                    {solve_button}
+                </p>
+                <p>
+                    {render_button("Back", "secondary", {"onclick": "location.href='/'"})}
+                </p>''')
+            else:
+                StatsHelper(shared_state).increment_failed_decryptions_manual()
+                return render_centered_html(f'''<h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+                <p><b>Error:</b> Failed to submit package to JDownloader</p>
+                <p>
+                    {render_button("Try Again", "secondary", {"onclick": "location.href='/captcha'"})}
+                </p>''')
+
+        except Exception as e:
+            info(f"Quick transfer error: {e}")
+            return render_centered_html(f'''<h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+            <p><b>Error:</b> {str(e)}</p>
+            <p>
+                {render_button("Back", "secondary", {"onclick": "location.href='/captcha'"})}
+            </p>''')
 
     @app.get('/captcha/delete/<package_id>')
     def delete_captcha_package(package_id):
