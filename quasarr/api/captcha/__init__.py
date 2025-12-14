@@ -16,7 +16,7 @@ from quasarr.downloads.packages import delete_package
 from quasarr.providers import shared_state
 from quasarr.providers.html_templates import render_button, render_centered_html
 from quasarr.providers.log import info, debug
-from quasarr.providers.obfuscated import captcha_js, captcha_values
+from quasarr.providers.obfuscated import captcha_js, captcha_values, filecrypt_quasarr_helper_user_js
 from quasarr.providers.statistics import StatsHelper
 
 
@@ -101,6 +101,12 @@ def setup_captcha_routes(app):
         except Exception as e:
             return {"error": f"Failed to decode payload: {str(e)}"}
 
+    @app.get('/captcha/quasarr.user.js')
+    def serve_quasarr_user_js():
+        content = filecrypt_quasarr_helper_user_js()
+        response.content_type = 'application/javascript'
+        return content
+
     def render_bypass_section(url, package_id, title, password):
         """Render the bypass UI section for both cutcaptcha and circle captcha pages"""
 
@@ -121,7 +127,30 @@ def setup_captcha_routes(app):
             <div style="margin-top: 40px; padding-top: 20px; border-top: 2px solid #ccc;">
                 <details id="bypassDetails">
                 <summary id="bypassSummary">Show CAPTCHA Bypass</summary><br>
+
+                    <!-- One-time setup section - visually separated -->
+                    <div id="setup-instructions" style="background: #2a2a2a; border: 2px solid #444; border-radius: 8px; padding: 16px; margin-bottom: 24px;">
+                        <h3 style="margin-top: 0; color: #58a6ff;">First Time Setup:</h3>
+                        <p style="margin-bottom: 8px;">
+                            <a href="https://www.tampermonkey.net/" target="_blank" rel="noopener noreferrer">1. Install Tampermonkey</a>
+                        </p>
+                        <p style="margin-top: 0; margin-bottom: 12px;">
+                            <a href="/captcha/quasarr.user.js" target="_blank">2. Install this userscript</a>
+                        </p>
+                        <p style="margin-top: 0;">
+                            <button id="hide-setup-btn" type="button" style="background: #444; color: #fff; border: 1px solid #666; padding: 6px 12px; border-radius: 4px; cursor: pointer;">
+                                ✅ Don't show this again
+                            </button>
+                        </p>
+                    </div>
+
+                    <!-- Hidden "show instructions" link -->
+                    <div id="show-instructions-link" style="display: none; margin-bottom: 16px;">
+                        <a href="#" id="show-setup-btn" style="color: #58a6ff; text-decoration: underline;">ℹ️ Show instructions again</a>
+                    </div>
+
                     <strong><a href="{url_with_quick_transfer_params}" target="_blank">🔗 Obtain the download links here!</a></strong><br><br>
+
                     <form id="bypass-form" action="/captcha/bypass-submit" method="post" enctype="multipart/form-data">
                         <input type="hidden" name="package_id" value="{package_id}" />
                         <input type="hidden" name="title" value="{title}" />
@@ -144,6 +173,7 @@ def setup_captcha_routes(app):
                 </details>
             </div>
             <script>
+              // Handle CAPTCHA Bypass toggle
               const bypassDetails = document.getElementById('bypassDetails');
               const bypassSummary = document.getElementById('bypassSummary');
 
@@ -156,6 +186,31 @@ def setup_captcha_routes(app):
                   }}
                 }});
               }}
+
+              // Handle setup instructions hide/show
+              const hideSetup = localStorage.getItem('hideSetupInstructions');
+              const setupBox = document.getElementById('setup-instructions');
+              const showLink = document.getElementById('show-instructions-link');
+
+              if (hideSetup === 'true') {{
+                setupBox.style.display = 'none';
+                showLink.style.display = 'block';
+              }}
+
+              // Hide setup instructions
+              document.getElementById('hide-setup-btn').addEventListener('click', function() {{
+                localStorage.setItem('hideSetupInstructions', 'true');
+                setupBox.style.display = 'none';
+                showLink.style.display = 'block';
+              }});
+
+              // Show setup instructions again
+              document.getElementById('show-setup-btn').addEventListener('click', function(e) {{
+                e.preventDefault();
+                localStorage.setItem('hideSetupInstructions', 'false');
+                setupBox.style.display = 'block';
+                showLink.style.display = 'none';
+              }});
             </script>
         '''
 
