@@ -7,10 +7,9 @@ import time
 from base64 import urlsafe_b64encode
 from datetime import datetime, timedelta
 from html import unescape
-from urllib.parse import urljoin
 
-from bs4 import BeautifulSoup
 import requests
+from bs4 import BeautifulSoup
 
 from quasarr.providers.imdb_metadata import get_localized_title
 from quasarr.providers.log import info, debug
@@ -62,7 +61,7 @@ def he_feed(*args, **kwargs):
 def he_search(shared_state, start_time, request_from, search_string="", mirror=None, season=None, episode=None):
     releases = []
     host = shared_state.values["config"]("Hostnames").get(hostname)
-    
+
     if not "arr" in request_from.lower():
         debug(f'Skipping {request_from} search on "{hostname.upper()}" (unsupported media type)!')
         return releases
@@ -92,7 +91,7 @@ def he_search(shared_state, start_time, request_from, search_string="", mirror=N
         imdb_id = None
 
     url = f'https://{host}/tag/{tag}/'
- 
+
     headers = {"User-Agent": shared_state.values["user_agent"]}
     params = {"s": source_search}
 
@@ -112,17 +111,17 @@ def he_search(shared_state, start_time, request_from, search_string="", mirror=N
             data = result.find('div', class_='data')
             if not data:
                 continue
-            
+
             headline = data.find('h5')
             if not headline:
                 continue
-            
+
             a = headline.find('a', href=True)
             if not a:
                 continue
 
             source = a['href'].strip()
-            
+
             head_title = a.get_text(strip=True)
             if not head_title:
                 continue
@@ -137,9 +136,8 @@ def he_search(shared_state, start_time, request_from, search_string="", mirror=N
             mb = shared_state.convert_to_mb(size_item)
 
             size = mb * 1024 * 1024
-            
+
             published = None
-            date_text = ''
             p_meta = data.find('p', class_='meta')
             if p_meta:
                 posted_span = None
@@ -151,9 +149,9 @@ def he_search(shared_state, start_time, request_from, search_string="", mirror=N
 
                 if posted_span:
                     published = parse_posted_ago(posted_span)
-                        
+
             if published is None:
-                continue 
+                continue
 
             release_imdb_id = None
             try:
@@ -172,9 +170,10 @@ def he_search(shared_state, start_time, request_from, search_string="", mirror=N
                 continue
 
             password = None
-            payload = urlsafe_b64encode(f"{title}|{source}|{mirror}|{mb}|{password}|{release_imdb_id}".encode("utf-8")).decode()
+            payload = urlsafe_b64encode(
+                f"{title}|{source}|{mirror}|{mb}|{password}|{release_imdb_id}".encode("utf-8")).decode()
             link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
-            
+
             releases.append({
                 "details": {
                     "title": title,

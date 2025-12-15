@@ -9,8 +9,8 @@ from datetime import datetime
 from html import unescape
 from urllib.parse import urljoin
 
-from bs4 import BeautifulSoup
 import requests
+from bs4 import BeautifulSoup
 
 from quasarr.providers.imdb_metadata import get_localized_title
 from quasarr.providers.log import info, debug
@@ -65,7 +65,6 @@ def nk_search(shared_state, start_time, request_from, search_string="", mirror=N
     if mirror and mirror not in supported_mirrors:
         debug(f'Mirror "{mirror}" not supported by {hostname}.')
         return releases
-    
 
     source_search = ""
     if search_string != "":
@@ -94,7 +93,6 @@ def nk_search(shared_state, start_time, request_from, search_string="", mirror=N
         info(f"{hostname}: search load error: {e}")
         return releases
 
-
     if not results:
         return releases
 
@@ -118,7 +116,7 @@ def nk_search(shared_state, start_time, request_from, search_string="", mirror=N
             a = result.find('a', class_='release-details', href=True)
             if not a:
                 continue
-            
+
             sub_title = result.find('span', class_='subtitle')
             if sub_title:
                 title = sub_title.get_text(strip=True)
@@ -163,9 +161,10 @@ def nk_search(shared_state, start_time, request_from, search_string="", mirror=N
 
             published = convert_to_rss_date(date_text) if date_text else ""
 
-            payload = urlsafe_b64encode(f"{title}|{source}|{mirror}|{mb}|{password}|{release_imdb_id}".encode("utf-8")).decode()
+            payload = urlsafe_b64encode(
+                f"{title}|{source}|{mirror}|{mb}|{password}|{release_imdb_id}".encode("utf-8")).decode()
             link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
-            
+
             releases.append({
                 "details": {
                     "title": title,
