@@ -29,6 +29,7 @@ class Config(object):
             ("al", "secret", ""),
             ("by", "secret", ""),
             ("dd", "secret", ""),
+            ("dj", "secret", ""),
             ("dt", "secret", ""),
             ("dw", "secret", ""),
             ("fx", "secret", ""),
@@ -37,6 +38,7 @@ class Config(object):
             ("nk", "secret", ""),
             ("nx", "secret", ""),
             ("sf", "secret", ""),
+            ("sj", "secret", ""),
             ("sl", "secret", ""),
             ("wd", "secret", "")
         ],

@@ -3,18 +3,17 @@
 # Project by https://github.com/rix1337
 
 import re
+from urllib.parse import urlparse, urljoin
 
 import requests
 from bs4 import BeautifulSoup
 
 from quasarr.providers.log import info, debug
-from urllib.parse import urlparse, urljoin
 
 hostname = "he"
 
 
 def get_he_download_links(shared_state, url, mirror, title):
-    host = shared_state.values["config"]("Hostnames").get(hostname)
     headers = {
         'User-Agent': shared_state.values["user_agent"],
     }
@@ -60,9 +59,9 @@ def get_he_download_links(shared_state, url, mirror, title):
             value = inp.get('value', '')
             payload[name] = value
 
-        append_patt = re.compile(r"append\(\s*[\'\"](?P<key>[^\'\"]+)[\'\"]\s*,\s*[\'\"](?P<val>[^\'\"]+)[\'\"]\s*\)", re.IGNORECASE)
+        append_patt = re.compile(r"append\(\s*[\'\"](?P<key>[^\'\"]+)[\'\"]\s*,\s*[\'\"](?P<val>[^\'\"]+)[\'\"]\s*\)",
+                                 re.IGNORECASE)
 
-        js_pairs = {}
         for script in soup.find_all('script'):
             txt = script.string if script.string is not None else script.get_text()
             if not txt:
@@ -83,7 +82,7 @@ def get_he_download_links(shared_state, url, mirror, title):
         if unlocked:
             for u in unlocked:
                 anchors.extend(u.find_all('a', href=True))
-        
+
         if anchors:
             break
 
