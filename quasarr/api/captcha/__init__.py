@@ -16,7 +16,7 @@ from quasarr.downloads.packages import delete_package
 from quasarr.providers import shared_state
 from quasarr.providers.html_templates import render_button, render_centered_html
 from quasarr.providers.log import info, debug
-from quasarr.providers.obfuscated import captcha_js, captcha_values, filecrypt_quasarr_helper_user_js
+from quasarr.providers.obfuscated import captcha_js, captcha_values, filecrypt_user_js, junkies_user_js
 from quasarr.providers.statistics import StatsHelper
 
 
@@ -58,7 +58,7 @@ def setup_captcha_routes(app):
                 desired_mirror = None
 
             # This is set for circle CAPTCHAs
-            session = data.get("session", None)
+            filecrypt_session = data.get("session", None)
 
             # This is required for cutcaptcha
             rapid = [ln for ln in links if "rapidgator" in ln[1].lower()]
@@ -73,15 +73,21 @@ def setup_captcha_routes(app):
                 "title": title,
                 "password": password,
                 "mirror": desired_mirror,
-                "session": session,
+                "session": filecrypt_session,
                 "links": prioritized_links,
                 "original_url": original_url
             }
 
             encoded_payload = urlsafe_b64encode(json.dumps(payload).encode()).decode()
 
-            if session:
-                debug(f'Session "{session}" found, redirecting to circle CAPTCHA')
+            sj = True
+            dj = False
+
+            if sj or dj:
+                debug("Redirecting to Junkies CAPTCHA")
+                redirect(f"/captcha/junkies?data={quote(encoded_payload)}")
+            elif filecrypt_session:
+                debug(f'Redirecting to circle CAPTCHA')
                 redirect(f"/captcha/circle?data={quote(encoded_payload)}")
             else:
                 debug(f"Redirecting to cutcaptcha")
@@ -101,13 +107,140 @@ def setup_captcha_routes(app):
         except Exception as e:
             return {"error": f"Failed to decode payload: {str(e)}"}
 
-    @app.get('/captcha/quasarr.user.js')
-    def serve_quasarr_user_js():
-        content = filecrypt_quasarr_helper_user_js()
+    @app.get("/captcha/junkies")
+    def serve_junkies_captcha():
+        payload = decode_payload()
+
+        if "error" in payload:
+            return render_centered_html(f'''<h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+            <p>{payload["error"]}</p>
+            <p>
+                {render_button("Back", "secondary", {"onclick": "location.href='/'"})}
+            </p>''')
+
+        package_id = payload.get("package_id")
+        title = payload.get("title")
+        password = payload.get("password")
+        urls = payload.get("links")
+        url = urls[0]
+
+        return render_centered_html(f"""
+        <!DOCTYPE html>
+        <html>
+          <body>
+            <h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+            <p><b>Package:</b> {title}</p>
+                {render_junkies_section(url, package_id, title, password)}
+            <p>
+                {render_button("Delete Package", "secondary", {"onclick": f"location.href='/captcha/delete/{package_id}'"})}
+            </p>
+            <p>
+                {render_button("Back", "secondary", {"onclick": "location.href='/'"})}
+            </p>
+            
+          </body>
+        </html>""")
+
+    def render_junkies_section(url, package_id, title, password):
+        """Render the UI section for SJ and DJ pages"""
+
+        # Generate userscript URL with transfer params
+        # Get base URL of current request
+        base_url = request.urlparts.scheme + '://' + request.urlparts.netloc
+        transfer_url = f"{base_url}/captcha/quick-transfer"
+
+        url_with_quick_transfer_params = (
+            f"{url}?"
+            f"transfer_url={quote(transfer_url)}&"
+            f"pkg_id={quote(package_id)}&"
+            f"pkg_title={quote(title)}&"
+            f"pkg_pass={quote(password)}"
+        )
+
+        return f'''
+            <div>
+                <!-- One-time setup section - visually separated -->
+                <div id="setup-instructions" style="background: #2a2a2a; border: 2px solid #444; border-radius: 8px; padding: 16px; margin-bottom: 24px;">
+                    <h3 style="margin-top: 0; color: #58a6ff;">First Time Setup:</h3>
+                    <p style="margin-bottom: 8px;">
+                        <a href="https://www.tampermonkey.net/" target="_blank" rel="noopener noreferrer">1. Install Tampermonkey</a>
+                    </p>
+                    <p style="margin-top: 0; margin-bottom: 12px;">
+                        <a href="/captcha/junkies.user.js" target="_blank">2. Install this userscript</a>
+                    </p>
+                    <p style="margin-top: 0;">
+                        <button id="hide-setup-btn" type="button" style="background: #444; color: #fff; border: 1px solid #666; padding: 6px 12px; border-radius: 4px; cursor: pointer;">
+                            ✅ Don't show this again
+                        </button>
+                    </p>
+                </div>
+
+                <!-- Hidden "show instructions" link -->
+                <div id="show-instructions-link" style="display: none; margin-bottom: 16px;">
+                    <a href="#" id="show-setup-btn" style="color: #58a6ff;">ℹ️ Show instructions again</a>
+                </div>
+
+                <strong><a href="{url_with_quick_transfer_params}" target="_blank">🔗 Obtain the download links here!</a></strong><br><br>
+
+                <form id="bypass-form" action="/captcha/bypass-submit" method="post" enctype="multipart/form-data">
+                    <input type="hidden" name="package_id" value="{package_id}" />
+                    <input type="hidden" name="title" value="{title}" />
+                    <input type="hidden" name="password" value="{password}" />
+
+                    <div>
+                        <strong>Paste the download links (one per line):</strong>
+                        <textarea id="links-input" name="links" rows="5" style="width: 100%; padding: 8px; font-family: monospace; resize: vertical;"></textarea>
+                    </div>
+
+                    <div>
+                        {render_button("Submit", "primary", {"type": "submit"})}
+                    </div>
+                </form>
+            </div>
+            <script>
+              // Handle setup instructions hide/show
+              const hideSetup = localStorage.getItem('hideJunkiesSetupInstructions');
+              const setupBox = document.getElementById('setup-instructions');
+              const showLink = document.getElementById('show-instructions-link');
+
+              if (hideSetup === 'true') {{
+                setupBox.style.display = 'none';
+                showLink.style.display = 'block';
+              }}
+
+              // Hide setup instructions
+              document.getElementById('hide-setup-btn').addEventListener('click', function() {{
+                localStorage.setItem('hideJunkiesSetupInstructions', 'true');
+                setupBox.style.display = 'none';
+                showLink.style.display = 'block';
+              }});
+
+              // Show setup instructions again
+              document.getElementById('show-setup-btn').addEventListener('click', function(e) {{
+                e.preventDefault();
+                localStorage.setItem('hideJunkiesSetupInstructions', 'false');
+                setupBox.style.display = 'block';
+                showLink.style.display = 'none';
+              }});
+            </script>
+        '''
+
+    @app.get('/captcha/junkies.user.js')
+    def serve_junkies_user_js():
+        sj = shared_state.values["config"]("Hostnames").get("sj")
+        dj = shared_state.values["config"]("Hostnames").get("dj")
+
+        content = junkies_user_js(sj, dj)
         response.content_type = 'application/javascript'
         return content
 
-    def render_bypass_section(url, package_id, title, password):
+    @app.get('/captcha/filecrypt.user.js')
+    def serve_filecrypt_user_js():
+        content = filecrypt_user_js()
+        response.content_type = 'application/javascript'
+        return content
+
+    def render_filecrypt_bypass_section(url, package_id, title, password):
         """Render the bypass UI section for both cutcaptcha and circle captcha pages"""
 
         # Generate userscript URL with transfer params
@@ -135,7 +268,7 @@ def setup_captcha_routes(app):
                             <a href="https://www.tampermonkey.net/" target="_blank" rel="noopener noreferrer">1. Install Tampermonkey</a>
                         </p>
                         <p style="margin-top: 0; margin-bottom: 12px;">
-                            <a href="/captcha/quasarr.user.js" target="_blank">2. Install this userscript</a>
+                            <a href="/captcha/filecrypt.user.js" target="_blank">2. Install this userscript</a>
                         </p>
                         <p style="margin-top: 0;">
                             <button id="hide-setup-btn" type="button" style="background: #444; color: #fff; border: 1px solid #666; padding: 6px 12px; border-radius: 4px; cursor: pointer;">
@@ -146,7 +279,7 @@ def setup_captcha_routes(app):
 
                     <!-- Hidden "show instructions" link -->
                     <div id="show-instructions-link" style="display: none; margin-bottom: 16px;">
-                        <a href="#" id="show-setup-btn" style="color: #58a6ff; text-decoration: underline;">ℹ️ Show instructions again</a>
+                        <a href="#" id="show-setup-btn" style="color: #58a6ff;">ℹ️ Show instructions again</a>
                     </div>
 
                     <strong><a href="{url_with_quick_transfer_params}" target="_blank">🔗 Obtain the download links here!</a></strong><br><br>
@@ -188,7 +321,7 @@ def setup_captcha_routes(app):
               }}
 
               // Handle setup instructions hide/show
-              const hideSetup = localStorage.getItem('hideSetupInstructions');
+              const hideSetup = localStorage.getItem('hideFileCryptSetupInstructions');
               const setupBox = document.getElementById('setup-instructions');
               const showLink = document.getElementById('show-instructions-link');
 
@@ -199,7 +332,7 @@ def setup_captcha_routes(app):
 
               // Hide setup instructions
               document.getElementById('hide-setup-btn').addEventListener('click', function() {{
-                localStorage.setItem('hideSetupInstructions', 'true');
+                localStorage.setItem('hideFileCryptSetupInstructions', 'true');
                 setupBox.style.display = 'none';
                 showLink.style.display = 'block';
               }});
@@ -207,7 +340,7 @@ def setup_captcha_routes(app):
               // Show setup instructions again
               document.getElementById('show-setup-btn').addEventListener('click', function(e) {{
                 e.preventDefault();
-                localStorage.setItem('hideSetupInstructions', 'false');
+                localStorage.setItem('hideFileCryptSetupInstructions', 'false');
                 setupBox.style.display = 'block';
                 showLink.style.display = 'none';
               }});
@@ -426,7 +559,7 @@ def setup_captcha_routes(app):
         url = prioritized_links[0][0]
 
         # Add bypass section
-        bypass_section = render_bypass_section(url, package_id, title, password)
+        bypass_section = render_filecrypt_bypass_section(url, package_id, title, password)
 
         content = render_centered_html(r'''
             <script type="text/javascript">
@@ -603,6 +736,14 @@ def setup_captcha_routes(app):
             if not package_id or not title:
                 return render_centered_html(f'''<h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
                 <p><b>Error:</b> Missing package information.</p>
+                <p>
+                    {render_button("Back", "secondary", {"onclick": "location.href='/captcha'"})}
+                </p>''')
+
+            package_exists = shared_state.get_db("protected").retrieve(package_id)
+            if not package_exists:
+                return render_centered_html(f'''<h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+                <p><b>Error:</b> Package not found or already solved.</p>
                 <p>
                     {render_button("Back", "secondary", {"onclick": "location.href='/captcha'"})}
                 </p>''')
@@ -787,7 +928,7 @@ def setup_captcha_routes(app):
             return "Missing required parameters"
 
         # Add bypass section
-        bypass_section = render_bypass_section(original_url, package_id, title, password)
+        bypass_section = render_filecrypt_bypass_section(original_url, package_id, title, password)
 
         return render_centered_html(f"""
         <!DOCTYPE html>
