@@ -80,10 +80,14 @@ def setup_captcha_routes(app):
 
             encoded_payload = urlsafe_b64encode(json.dumps(payload).encode()).decode()
 
-            sj = True
-            dj = False
+            sj = shared_state.values["config"]("Hostnames").get("sj")
+            dj = shared_state.values["config"]("Hostnames").get("dj")
+            has_junkies_links = any(
+                (sj and sj in link) or (dj and dj in link)
+                for link in prioritized_links
+            )
 
-            if sj or dj:
+            if has_junkies_links:
                 debug("Redirecting to Junkies CAPTCHA")
                 redirect(f"/captcha/junkies?data={quote(encoded_payload)}")
             elif filecrypt_session:
@@ -601,7 +605,7 @@ def setup_captcha_routes(app):
                     .then(data => {
                         if (data.success) {
                             document.getElementById("captcha-key").insertAdjacentHTML('afterend', 
-                                '<p>Successful!</p>');
+                                '<p>✅ Successful!</p>');
                         } else {
                             document.getElementById("captcha-key").insertAdjacentHTML('afterend', 
                                 '<p>Failed. Check console for details!</p>');
