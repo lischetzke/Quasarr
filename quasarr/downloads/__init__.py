@@ -11,6 +11,7 @@ from quasarr.downloads.linkcrypters.hide import decrypt_links_if_hide
 from quasarr.downloads.sources.al import get_al_download_links
 from quasarr.downloads.sources.by import get_by_download_links
 from quasarr.downloads.sources.dd import get_dd_download_links
+from quasarr.downloads.sources.dj import get_dj_download_links
 from quasarr.downloads.sources.dt import get_dt_download_links
 from quasarr.downloads.sources.dw import get_dw_download_links
 from quasarr.downloads.sources.he import get_he_download_links
@@ -18,6 +19,7 @@ from quasarr.downloads.sources.mb import get_mb_download_links
 from quasarr.downloads.sources.nk import get_nk_download_links
 from quasarr.downloads.sources.nx import get_nx_download_links
 from quasarr.downloads.sources.sf import get_sf_download_links, resolve_sf_redirect
+from quasarr.downloads.sources.sj import get_sj_download_links
 from quasarr.downloads.sources.sl import get_sl_download_links
 from quasarr.downloads.sources.wd import get_wd_download_links
 from quasarr.providers.log import info
@@ -201,6 +203,7 @@ def download(shared_state, request_from, title, url, mirror, size_mb, password, 
         'AL': config.get("al"),
         'BY': config.get("by"),
         'DD': config.get("dd"),
+        'DJ': config.get("dj"),
         'DT': config.get("dt"),
         'DW': config.get("dw"),
         'HE': config.get("he"),
@@ -208,6 +211,7 @@ def download(shared_state, request_from, title, url, mirror, size_mb, password, 
         'NK': config.get("nk"),
         'NX': config.get("nx"),
         'SF': config.get("sf"),
+        'SJ': config.get("sj"),
         'SL': config.get("sl"),
         'WD': config.get("wd")
     }
@@ -216,6 +220,7 @@ def download(shared_state, request_from, title, url, mirror, size_mb, password, 
         (flags['AL'], handle_al),
         (flags['BY'], handle_by),
         (flags['DD'], lambda *a: handle_unprotected(*a, func=get_dd_download_links, label='DD')),
+        (flags['DJ'], lambda *a: handle_protected(*a, func=get_dj_download_links, label='DJ')),
         (flags['DT'], lambda *a: handle_unprotected(*a, func=get_dt_download_links, label='DT')),
         (flags['DW'], lambda *a: handle_protected(*a, func=get_dw_download_links, label='DW')),
         (flags['HE'], lambda *a: handle_unprotected(*a, func=get_he_download_links, label='HE')),
@@ -223,6 +228,7 @@ def download(shared_state, request_from, title, url, mirror, size_mb, password, 
         (flags['NK'], lambda *a: handle_protected(*a, func=get_nk_download_links, label='NK')),
         (flags['NX'], lambda *a: handle_unprotected(*a, func=get_nx_download_links, label='NX')),
         (flags['SF'], handle_sf),
+        (flags['SJ'], lambda *a: handle_protected(*a, func=get_sj_download_links, label='SJ')),
         (flags['SL'], handle_sl),
         (flags['WD'], handle_wd),
     ]
