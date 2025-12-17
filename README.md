@@ -12,7 +12,7 @@ Quasarr pretends to be both `Newznab Indexer` and `SABnzbd client`. Therefore, d
 indexers or download clients. It simply does not know what NZB or torrent files are.
 
 Quasarr includes a solution to quickly and easily decrypt protected links.
-[Active Sponsors get access to SponsorsHelper to do so automatically.](https://github.com/rix1337/Quasarr?tab=readme-ov-file#sponsorshelper)
+[Active monthly Sponsors get access to SponsorsHelper to do so automatically.](https://github.com/rix1337/Quasarr?tab=readme-ov-file#sponsorshelper)
 Alternatively, follow the link from the console output (or discord notification) to solve CAPTCHAs manually.
 Quasarr will confidently handle the rest.
 
@@ -231,6 +231,11 @@ docker run -d \
   -e 'DEATHBYCAPTCHA_TOKEN'='2FMum5zuDBxMmbXDIsADnllEFl73bomydIpzo7...' \
   -e 'GITHUB_TOKEN'='ghp_123.....456789' \
   -e 'FLARESOLVERR_URL'='http://10.10.0.1:8191/v1' \
+  -e 'NX_USER'='your_nx_username' \
+  -e 'NX_PASS'='your_nx_password' \
+  -e 'JUNKIES_USER'='your_junkies_username' \
+  -e 'JUNKIES_PASS'='your_junkies_password' \
+  -e 'JUNKIES_HOSTER'='your_desired_hoster' \
   ghcr.io/rix1337-sponsors/docker/helper:latest
 ```
 
@@ -239,8 +244,10 @@ docker run -d \
 * `QUASARR_URL` → Local URL of Quasarr
 * `DEATHBYCAPTCHA_TOKEN` → [DeathByCaptcha](https://deathbycaptcha.com/register?refid=6184288242b) account token
 * `GITHUB_TOKEN` → Classic GitHub PAT with the scopes listed above
-* `FLARESOLVERR_URL` → Local URL of [FlareSolverr](https://github.com/FlareSolverr/FlareSolverr)
-
+* `FLARESOLVERR_URL` → Local URL of [FlareSolverr](https://github.com/FlareSolverr/FlareSolverr) - required!
+* `NX_USER` / `NX_PASS` → NX account credentials
+* `JUNKIES_USER` / `JUNKIES_PASS` → Junkies account credentials
+* `JUNKIES_HOSTER` → Preferred hoster for Junkies links
 ---
 
 ⚠️ **Without a valid GitHub token linked to an active sponsorship, the image will not run.**
