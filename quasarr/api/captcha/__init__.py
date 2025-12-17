@@ -16,7 +16,7 @@ from quasarr.downloads.packages import delete_package
 from quasarr.providers import shared_state
 from quasarr.providers.html_templates import render_button, render_centered_html
 from quasarr.providers.log import info, debug
-from quasarr.providers.obfuscated import captcha_js, captcha_values, filecrypt_quasarr_helper_user_js
+from quasarr.providers.obfuscated import captcha_js, captcha_values, filecrypt_user_js, junkies_user_js
 from quasarr.providers.statistics import StatsHelper
 
 
@@ -166,7 +166,7 @@ def setup_captcha_routes(app):
                         <a href="https://www.tampermonkey.net/" target="_blank" rel="noopener noreferrer">1. Install Tampermonkey</a>
                     </p>
                     <p style="margin-top: 0; margin-bottom: 12px;">
-                        <a href="/captcha/quasarr.user.js" target="_blank">2. Install this userscript</a>
+                        <a href="/captcha/junkies.user.js" target="_blank">2. Install this userscript</a>
                     </p>
                     <p style="margin-top: 0;">
                         <button id="hide-setup-btn" type="button" style="background: #444; color: #fff; border: 1px solid #666; padding: 6px 12px; border-radius: 4px; cursor: pointer;">
@@ -225,9 +225,18 @@ def setup_captcha_routes(app):
             </script>
         '''
 
-    @app.get('/captcha/quasarr.user.js')
-    def serve_quasarr_user_js():
-        content = filecrypt_quasarr_helper_user_js()
+    @app.get('/captcha/junkies.user.js')
+    def serve_junkies_user_js():
+        sj = shared_state.values["config"]("Hostnames").get("sj")
+        dj = shared_state.values["config"]("Hostnames").get("dj")
+
+        content = junkies_user_js(sj, dj)
+        response.content_type = 'application/javascript'
+        return content
+
+    @app.get('/captcha/filecrypt.user.js')
+    def serve_filecrypt_user_js():
+        content = filecrypt_user_js()
         response.content_type = 'application/javascript'
         return content
 
@@ -259,7 +268,7 @@ def setup_captcha_routes(app):
                             <a href="https://www.tampermonkey.net/" target="_blank" rel="noopener noreferrer">1. Install Tampermonkey</a>
                         </p>
                         <p style="margin-top: 0; margin-bottom: 12px;">
-                            <a href="/captcha/quasarr.user.js" target="_blank">2. Install this userscript</a>
+                            <a href="/captcha/filecrypt.user.js" target="_blank">2. Install this userscript</a>
                         </p>
                         <p style="margin-top: 0;">
                             <button id="hide-setup-btn" type="button" style="background: #444; color: #fff; border: 1px solid #666; padding: 6px 12px; border-radius: 4px; cursor: pointer;">
@@ -731,7 +740,13 @@ def setup_captcha_routes(app):
                     {render_button("Back", "secondary", {"onclick": "location.href='/captcha'"})}
                 </p>''')
 
-            # todo check if package exists in protected db and fail with "you probably used bypass already"
+            package_exists = shared_state.get_db("protected").retrieve(package_id)
+            if not package_exists:
+                return render_centered_html(f'''<h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+                <p><b>Error:</b> Package not found or already solved.</p>
+                <p>
+                    {render_button("Back", "secondary", {"onclick": "location.href='/captcha'"})}
+                </p>''')
 
             # Process links input
             if links_input:
