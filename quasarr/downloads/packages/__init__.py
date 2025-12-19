@@ -158,7 +158,7 @@ def get_packages(shared_state):
     if linkgrabber_packages:
         for package in linkgrabber_packages:
             comment = get_links_comment(package, shared_state.get_device().linkgrabber.query_links())
-            link_details = get_links_status(package, linkgrabber_links)
+            link_details = get_links_status(package, linkgrabber_links, is_archive=False)
 
             error = link_details["error"]
             offline_mirror_linkids = link_details["offline_mirror_linkids"]
@@ -191,15 +191,18 @@ def get_packages(shared_state):
         for package in downloader_packages:
             comment = get_links_comment(package, downloader_links)
 
+            # Check if package is actually archived/extracted using archive info
             try:
                 archive_info = shared_state.get_device().extraction.get_archive_info([], [package.get("uuid")])
                 is_archive = True if archive_info and archive_info[0] else False
             except:
-                is_archive = True # in case of error assume archive to avoid false finished state
+                is_archive = True  # in case of error assume archive to avoid false finished state
+
             link_details = get_links_status(package, downloader_links, is_archive)
 
             error = link_details["error"]
             finished = link_details["all_finished"]
+
             if not finished and link_details["eta"]:
                 package["eta"] = link_details["eta"]
 
@@ -257,15 +260,8 @@ def get_packages(shared_state):
                 if mb_left < 0:
                     mb_left = 0
 
-                # Check if package is actually finished (should be in history, not queue)
-                # This handles the case where finished packages haven't been moved to history yet
                 if eta is None:
-                    # No ETA could mean paused OR finished
-                    # Check if download is complete
-                    if bytes_total > 0 and bytes_loaded >= bytes_total:
-                        status = "Completed"
-                    else:
-                        status = "Paused"
+                    status = "Paused"
                 else:
                     time_left = format_eta(int(eta))
                     if mb_left == 0:

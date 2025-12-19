@@ -8,7 +8,7 @@ import requests
 
 
 def get_version():
-    return "1.20.4"
+    return "1.20.5"
 
 
 def get_latest_version():
