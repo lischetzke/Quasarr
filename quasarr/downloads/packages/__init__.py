@@ -65,8 +65,12 @@ def get_links_status(package, all_links, is_archive=False):
                 if eta and link_eta > eta or not eta:
                     eta = link_eta
             all_finished = False
-        elif is_archive and link.get('status', '').lower() != 'extraction ok':
-            all_finished = False
+        elif is_archive:
+            # For archives, check if extraction is actually complete
+            link_status = link.get('status', '').lower()
+            # Check for various "extraction complete" indicators
+            if 'extraction ok' not in link_status and 'entpacken ok' not in link_status:
+                all_finished = False
 
     return {"all_finished": all_finished, "eta": eta, "error": error, "offline_mirror_linkids": offline_mirror_linkids}
 
@@ -192,26 +196,31 @@ def get_packages(shared_state):
             comment = get_links_comment(package, downloader_links)
 
             # Check if package is actually archived/extracted using archive info
+            is_archive = False
             try:
                 archive_info = shared_state.get_device().extraction.get_archive_info([], [package.get("uuid")])
                 is_archive = True if archive_info and archive_info[0] else False
             except:
-                is_archive = True  # in case of error assume archive to avoid false finished state
+                # On error, don't assume it's an archive - check bytes instead
+                pass
 
             link_details = get_links_status(package, downloader_links, is_archive)
 
             error = link_details["error"]
             finished = link_details["all_finished"]
 
-            # Additional check for non-archive packages or when link status check fails
-            # If download is 100% complete and no ETA, it's finished
-            if not finished and not error and not is_archive:
+            # Additional check: if download is 100% complete and no ETA, it's finished
+            # This catches non-archive packages or when archive detection fails
+            if not finished and not error:
                 bytes_total = int(package.get("bytesTotal", 0))
                 bytes_loaded = int(package.get("bytesLoaded", 0))
                 eta = package.get("eta")
 
+                # If download is complete and no ETA (paused/finished state)
                 if bytes_total > 0 and bytes_loaded >= bytes_total and eta is None:
-                    finished = True
+                    # Only mark as finished if it's not an archive, or if we can't detect archives
+                    if not is_archive:
+                        finished = True
 
             if not finished and link_details["eta"]:
                 package["eta"] = link_details["eta"]
