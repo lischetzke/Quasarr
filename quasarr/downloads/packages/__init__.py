@@ -203,6 +203,16 @@ def get_packages(shared_state):
             error = link_details["error"]
             finished = link_details["all_finished"]
 
+            # Additional check for non-archive packages or when link status check fails
+            # If download is 100% complete and no ETA, it's finished
+            if not finished and not error and not is_archive:
+                bytes_total = int(package.get("bytesTotal", 0))
+                bytes_loaded = int(package.get("bytesLoaded", 0))
+                eta = package.get("eta")
+
+                if bytes_total > 0 and bytes_loaded >= bytes_total and eta is None:
+                    finished = True
+
             if not finished and link_details["eta"]:
                 package["eta"] = link_details["eta"]
 
