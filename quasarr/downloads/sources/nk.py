@@ -8,6 +8,7 @@ from bs4 import BeautifulSoup
 from quasarr.providers.log import info
 
 hostname = "nk"
+supported_mirrors = ["rapidgator", "ddownload"]
 
 
 def get_nk_download_links(shared_state, url, mirror, title):
@@ -28,9 +29,14 @@ def get_nk_download_links(shared_state, url, mirror, title):
     anchors = soup.select('a.btn-orange')
     candidates = []
     for a in anchors:
+        mirror = a.text.strip().lower()
+        if mirror == 'ddl.to':
+            mirror = 'ddownload'
+
+        if mirror not in supported_mirrors:
+            continue
 
         href = a.get('href', '').strip()
-        hoster = href.split('/')[3].lower()
         if not href.lower().startswith(('http://', 'https://')):
             href = 'https://' + host + href
 
@@ -40,10 +46,7 @@ def get_nk_download_links(shared_state, url, mirror, title):
             info(f"{hostname}: could not resolve download link for {title}: {e}")
             continue
 
-        if hoster == 'ddl.to':
-            hoster = 'ddownload'
-
-        candidates.append([href, hoster])
+        candidates.append([href, mirror])
 
     if not candidates:
         info(f"No external download links found on {hostname} page for {title}")
