@@ -12,6 +12,7 @@ import quasarr
 import quasarr.providers.html_images as images
 import quasarr.providers.sessions.al
 import quasarr.providers.sessions.dd
+import quasarr.providers.sessions.dl
 import quasarr.providers.sessions.nx
 from quasarr.providers.html_templates import render_button, render_form, render_success, render_fail
 from quasarr.providers.log import info
@@ -263,14 +264,21 @@ def hostname_credentials_config(shared_state, shorthand, domain):
                 if quasarr.providers.sessions.al.create_and_persist_session(shared_state):
                     quasarr.providers.web_server.temp_server_success = True
                     return render_success(f"{sh} credentials set successfully", 5)
-            if sh.lower() == "dd":
+            elif sh.lower() == "dd":
                 if quasarr.providers.sessions.dd.create_and_persist_session(shared_state):
                     quasarr.providers.web_server.temp_server_success = True
                     return render_success(f"{sh} credentials set successfully", 5)
-            if sh.lower() == "nx":
+            elif sh.lower() == "dl":
+                if quasarr.providers.sessions.dl.create_and_persist_session(shared_state):
+                    quasarr.providers.web_server.temp_server_success = True
+                    return render_success(f"{sh} credentials set successfully", 5)
+            elif sh.lower() == "nx":
                 if quasarr.providers.sessions.nx.create_and_persist_session(shared_state):
                     quasarr.providers.web_server.temp_server_success = True
                     return render_success(f"{sh} credentials set successfully", 5)
+            else:
+                quasarr.providers.web_server.temp_server_success = False
+                return render_fail(f"Unknown site shorthand! ({sh})")
 
         config.save("user", "")
         config.save("password", "")

@@ -30,6 +30,7 @@ class Config(object):
             ("by", "secret", ""),
             ("dd", "secret", ""),
             ("dj", "secret", ""),
+            ("dl", "secret", ""),
             ("dt", "secret", ""),
             ("dw", "secret", ""),
             ("fx", "secret", ""),
@@ -40,7 +41,8 @@ class Config(object):
             ("sf", "secret", ""),
             ("sj", "secret", ""),
             ("sl", "secret", ""),
-            ("wd", "secret", "")
+            ("wd", "secret", ""),
+            ("wx", "secret", "")
         ],
         'FlareSolverr': [
             ("url", "str", ""),
@@ -50,6 +52,10 @@ class Config(object):
             ("password", "secret", "")
         ],
         'DD': [
+            ("user", "secret", ""),
+            ("password", "secret", "")
+        ],
+        'DL': [
             ("user", "secret", ""),
             ("password", "secret", "")
         ],
