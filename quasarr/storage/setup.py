@@ -197,7 +197,7 @@ def save_hostnames(shared_state, timeout=5, first_run=True):
     if not first_run:
         # Append restart notice for specific sites that actually changed
         for site in changed_sites:
-            if site.lower() in {'al', 'dd', 'nx'}:
+            if site.lower() in {'al', 'dd', 'dl', 'nx'}:
                 optional_text += f"{site.upper()}: You must restart Quasarr and follow additional steps to start using this site.<br>"
 
     return render_success(success_msg, timeout, optional_text=optional_text)

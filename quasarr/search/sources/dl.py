@@ -4,20 +4,16 @@
 
 import re
 import time
-import warnings
 from base64 import urlsafe_b64encode
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from html import unescape
 
 from bs4 import BeautifulSoup
-from bs4 import XMLParsedAsHTMLWarning
 
 from quasarr.providers.imdb_metadata import get_localized_title
 from quasarr.providers.log import info, debug
 from quasarr.providers.sessions.dl import retrieve_and_validate_session, invalidate_session, fetch_via_requests_session
-
-warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)  # we dont want to use lxml
 
 hostname = "dl"
 supported_mirrors = []
@@ -37,10 +33,17 @@ def normalize_title_for_sonarr(title):
 
 def dl_feed(shared_state, start_time, request_from, mirror=None):
     """
-    Parse the RSS feed and return releases.
+    Parse the correct forum and return releases.
     """
     releases = []
     host = shared_state.values["config"]("Hostnames").get(hostname)
+
+    if "lazylibrarian" in request_from.lower():
+        forum = "magazine-zeitschriften.72"
+    elif "radarr" in request_from.lower():
+        forum = "hd.8"
+    else:
+        forum = "hd.14"
 
     if not host:
         debug(f"{hostname}: hostname not configured")
@@ -52,49 +55,61 @@ def dl_feed(shared_state, start_time, request_from, mirror=None):
             info(f"Could not retrieve valid session for {host}")
             return releases
 
-        # Instead we should parse the HTML for the correct *arr client
-        rss_url = f'https://www.{host}/forums/-/index.rss'
-        response = sess.get(rss_url, timeout=30)
+        forum_url = f'https://www.{host}/forums/{forum}/?order=post_date&direction=desc'
+        response = sess.get(forum_url, timeout=30)
 
         if response.status_code != 200:
-            info(f"{hostname}: RSS feed returned status {response.status_code}")
+            info(f"{hostname}: Forum request failed with {response.status_code}")
             return releases
 
         soup = BeautifulSoup(response.content, 'html.parser')
-        items = soup.find_all('item')
+
+        # Find all thread items in the forum
+        items = soup.select('div.structItem.structItem--thread')
 
         if not items:
-            debug(f"{hostname}: No entries found in RSS feed")
+            debug(f"{hostname}: No entries found in Forum")
             return releases
 
         for item in items:
             try:
-                title_tag = item.find('title')
-                if not title_tag:
+                # Extract title from the thread
+                title_elem = item.select_one('div.structItem-title a')
+                if not title_elem:
                     continue
 
-                title = title_tag.get_text(strip=True)
+                title = title_elem.get_text(strip=True)
                 if not title:
                     continue
 
                 title = unescape(title)
-                title = title.replace(']]>', '').replace('<![CDATA[', '')
                 title = normalize_title_for_sonarr(title)
 
-                item_text = item.get_text()
-                thread_url = None
-                match = re.search(r'https://[^\s]+/threads/[^\s]+', item_text)
-                if match:
-                    thread_url = match.group(0)
+                # Extract thread URL
+                thread_url = title_elem.get('href')
                 if not thread_url:
                     continue
 
-                pub_date = item.find('pubdate')
-                if pub_date:
-                    date_str = pub_date.get_text(strip=True)
-                else:
-                    # Fallback: use current time if no pubDate found
-                    date_str = datetime.now().strftime("%a, %d %b %Y %H:%M:%S +0000")
+                # Make sure URL is absolute
+                if thread_url.startswith('/'):
+                    thread_url = f"https://www.{host}{thread_url}"
+
+                # Extract date and convert to RFC 2822 format
+                date_str = None
+                date_elem = item.select_one('time.u-dt')
+                if date_elem:
+                    iso_date = date_elem.get('datetime', '')
+                    if iso_date:
+                        try:
+                            # Parse ISO format and convert to RFC 2822
+                            dt = datetime.fromisoformat(iso_date.replace('Z', '+00:00'))
+                            date_str = dt.strftime("%a, %d %b %Y %H:%M:%S %z")
+                        except Exception:
+                            date_str = None
+
+                # Fallback: use current time if no date found
+                if not date_str:
+                    date_str = datetime.now().strftime("%a, %d %b %Y %H:%M:%S %z")
 
                 mb = 0
                 imdb_id = None
@@ -120,16 +135,33 @@ def dl_feed(shared_state, start_time, request_from, mirror=None):
                 })
 
             except Exception as e:
-                debug(f"{hostname}: error parsing RSS entry: {e}")
+                debug(f"{hostname}: error parsing Forum item: {e}")
                 continue
 
     except Exception as e:
-        info(f"{hostname}: RSS feed error: {e}")
+        info(f"{hostname}: Forum feed error: {e}")
         invalidate_session(shared_state)
 
     elapsed = time.time() - start_time
     debug(f"Time taken: {elapsed:.2f}s ({hostname})")
     return releases
+
+
+def _replace_umlauts(text):
+    replacements = {
+        'ä': 'ae',
+        'ö': 'oe',
+        'ü': 'ue',
+        'Ä': 'Ae',
+        'Ö': 'Oe',
+        'Ü': 'Ue',
+        'ß': 'ss'
+    }
+
+    for umlaut, replacement in replacements.items():
+        text = text.replace(umlaut, replacement)
+
+    return text
 
 
 def _search_single_page(shared_state, host, search_string, search_id, page_num, imdb_id, mirror, request_from, season,
@@ -138,6 +170,8 @@ def _search_single_page(shared_state, host, search_string, search_id, page_num, 
     Search a single page. This function is called in parallel for each page.
     """
     page_releases = []
+
+    search_string = _replace_umlauts(search_string)
 
     try:
         if page_num == 1:
@@ -247,8 +281,8 @@ def _search_single_page(shared_state, host, search_string, search_id, page_num, 
 def dl_search(shared_state, start_time, request_from, search_string,
               mirror=None, season=None, episode=None):
     """
-    Search with parallel pagination (max 5 pages) to find best quality releases.
-    Requests are fired in parallel to minimize search time.
+    Search with sequential pagination (max 5 pages) to find best quality releases.
+    Stops searching if a page returns 0 results.
     """
     releases = []
     host = shared_state.values["config"]("Hostnames").get(hostname)
@@ -264,8 +298,8 @@ def dl_search(shared_state, start_time, request_from, search_string,
     search_string = unescape(search_string)
     max_pages = 5
 
-    info(
-        f"{hostname}: Starting parallel paginated search for '{search_string}' (Season: {season}, Episode: {episode}) - up to {max_pages} pages")
+    debug(
+        f"{hostname}: Starting sequential paginated search for '{search_string}' (Season: {season}, Episode: {episode}) - up to {max_pages} pages")
 
     try:
         sess = retrieve_and_validate_session(shared_state)
@@ -273,42 +307,36 @@ def dl_search(shared_state, start_time, request_from, search_string,
             info(f"Could not retrieve valid session for {host}")
             return releases
 
-        # First, do page 1 to get the search ID
-        page_1_releases, search_id = _search_single_page(
-            shared_state, host, search_string, None, 1,
-            imdb_id, mirror, request_from, season, episode
-        )
-        releases.extend(page_1_releases)
+        search_id = None
 
-        if not search_id:
-            info(f"{hostname}: Could not extract search ID, stopping pagination")
-            return releases
+        # Sequential search through pages
+        for page_num in range(1, max_pages + 1):
+            page_releases, extracted_search_id = _search_single_page(
+                shared_state, host, search_string, search_id, page_num,
+                imdb_id, mirror, request_from, season, episode
+            )
 
-        # Now fire remaining pages in parallel
-        with ThreadPoolExecutor(max_workers=4) as executor:
-            futures = {}
-            for page_num in range(2, max_pages + 1):
-                future = executor.submit(
-                    _search_single_page,
-                    shared_state, host, search_string, search_id, page_num,
-                    imdb_id, mirror, request_from, season, episode
-                )
-                futures[future] = page_num
+            # Update search_id from first page
+            if page_num == 1:
+                search_id = extracted_search_id
+                if not search_id:
+                    info(f"{hostname}: Could not extract search ID, stopping pagination")
+                    break
 
-            for future in as_completed(futures):
-                page_num = futures[future]
-                try:
-                    page_releases, _ = future.result()
-                    releases.extend(page_releases)
-                    debug(f"{hostname}: [Page {page_num}] completed with {len(page_releases)} valid releases")
-                except Exception as e:
-                    info(f"{hostname}: [Page {page_num}] failed: {e}")
+            # Add releases from this page
+            releases.extend(page_releases)
+            debug(f"{hostname}: [Page {page_num}] completed with {len(page_releases)} valid releases")
+
+            # Stop if this page returned 0 results
+            if len(page_releases) == 0:
+                debug(f"{hostname}: [Page {page_num}] returned 0 results, stopping pagination")
+                break
 
     except Exception as e:
         info(f"{hostname}: search error: {e}")
         invalidate_session(shared_state)
 
-    info(f"{hostname}: FINAL - Found {len(releases)} valid releases - providing to {request_from}")
+    debug(f"{hostname}: FINAL - Found {len(releases)} valid releases - providing to {request_from}")
 
     elapsed = time.time() - start_time
     debug(f"Time taken: {elapsed:.2f}s ({hostname})")
