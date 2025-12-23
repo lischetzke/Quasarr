@@ -13,11 +13,10 @@ from bottle import request, response, redirect
 import quasarr.providers.html_images as images
 from quasarr.downloads.linkcrypters.filecrypt import get_filecrypt_links, DLC
 from quasarr.downloads.packages import delete_package
+from quasarr.providers import obfuscated
 from quasarr.providers import shared_state
 from quasarr.providers.html_templates import render_button, render_centered_html
 from quasarr.providers.log import info, debug
-from quasarr.providers.obfuscated import captcha_js, captcha_values, filecrypt_user_js, junkies_user_js, \
-    keeplinks_user_js
 from quasarr.providers.statistics import StatsHelper
 
 
@@ -94,12 +93,21 @@ def setup_captcha_routes(app):
                 for link in prioritized_links
             )
 
+            # ToLink uses nested arrays like FileCrypt: [["url", "mirror"]]
+            has_tolink_links = any(
+                ("tolink." in link[0] if isinstance(link, (list, tuple)) else "tolink." in link)
+                for link in prioritized_links
+            )
+
             if has_junkies_links:
                 debug("Redirecting to Junkies CAPTCHA")
                 redirect(f"/captcha/junkies?data={quote(encoded_payload)}")
             elif has_keeplinks_links:
                 debug("Redirecting to KeepLinks CAPTCHA")
                 redirect(f"/captcha/keeplinks?data={quote(encoded_payload)}")
+            elif has_tolink_links:
+                debug("Redirecting to ToLink CAPTCHA")
+                redirect(f"/captcha/tolink?data={quote(encoded_payload)}")
             elif filecrypt_session:
                 debug(f'Redirecting to circle CAPTCHA')
                 redirect(f"/captcha/circle?data={quote(encoded_payload)}")
@@ -122,7 +130,7 @@ def setup_captcha_routes(app):
             return {"error": f"Failed to decode payload: {str(e)}"}
 
     def render_userscript_section(url, package_id, title, password, provider_type="junkies"):
-        """Render the userscript UI section for Junkies or KeepLinks pages
+        """Render the userscript UI section for Junkies, KeepLinks, or ToLink pages
 
         This is the MAIN solution for these providers (not a bypass/fallback).
 
@@ -131,10 +139,11 @@ def setup_captcha_routes(app):
             package_id: Package identifier
             title: Package title
             password: Package password
-            provider_type: Either "junkies" or "keeplinks"
+            provider_type: Either "junkies", "keeplinks", or "tolink"
         """
 
-        provider_name = "Junkies" if provider_type == "junkies" else "KeepLinks"
+        provider_names = {"junkies": "Junkies", "keeplinks": "KeepLinks", "tolink": "ToLink"}
+        provider_name = provider_names.get(provider_type, "Provider")
         userscript_url = f"/captcha/{provider_type}.user.js"
         storage_key = f"hide{provider_name}SetupInstructions"
 
@@ -287,24 +296,65 @@ def setup_captcha_routes(app):
           </body>
         </html>""")
 
+    @app.get("/captcha/tolink")
+    def serve_tolink_captcha():
+        payload = decode_payload()
+
+        if "error" in payload:
+            return render_centered_html(f'''<h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+            <p>{payload["error"]}</p>
+            <p>
+                {render_button("Back", "secondary", {"onclick": "location.href='/'"})}
+            </p>''')
+
+        package_id = payload.get("package_id")
+        title = payload.get("title")
+        password = payload.get("password")
+        urls = payload.get("links")
+        # ToLink uses nested arrays like FileCrypt: [["url", "mirror"]]
+        url = urls[0][0] if isinstance(urls[0], (list, tuple)) else urls[0]
+
+        return render_centered_html(f"""
+        <!DOCTYPE html>
+        <html>
+          <body>
+            <h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+            <p><b>Package:</b> {title}</p>
+                {render_userscript_section(url, package_id, title, password, "tolink")}
+            <p>
+                {render_button("Delete Package", "secondary", {"onclick": f"location.href='/captcha/delete/{package_id}'"})}
+            </p>
+            <p>
+                {render_button("Back", "secondary", {"onclick": "location.href='/'"})}
+            </p>
+
+          </body>
+        </html>""")
+
     @app.get('/captcha/junkies.user.js')
     def serve_junkies_user_js():
         sj = shared_state.values["config"]("Hostnames").get("sj")
         dj = shared_state.values["config"]("Hostnames").get("dj")
 
-        content = junkies_user_js(sj, dj)
+        content = obfuscated.junkies_user_js(sj, dj)
         response.content_type = 'application/javascript'
         return content
 
     @app.get('/captcha/keeplinks.user.js')
     def serve_keeplinks_user_js():
-        content = keeplinks_user_js()
+        content = obfuscated.keeplinks_user_js()
+        response.content_type = 'application/javascript'
+        return content
+
+    @app.get('/captcha/tolink.user.js')
+    def serve_tolink_user_js():
+        content = obfuscated.tolink_user_js()
         response.content_type = 'application/javascript'
         return content
 
     @app.get('/captcha/filecrypt.user.js')
     def serve_filecrypt_user_js():
-        content = filecrypt_user_js()
+        content = obfuscated.filecrypt_user_js()
         response.content_type = 'application/javascript'
         return content
 
@@ -631,7 +681,7 @@ def setup_captcha_routes(app):
 
         content = render_centered_html(r'''
             <script type="text/javascript">
-                var api_key = "''' + captcha_values()["api_key"] + r'''";
+                var api_key = "''' + obfuscated.captcha_values()["api_key"] + r'''";
                 var endpoint = '/' + window.location.pathname.split('/')[1] + '/' + api_key + '.html';
                 var solveAnotherHtml = `<p>''' + solve_another_html + r'''</p><p>''' + back_button_html + r'''</p>`;
                 var noMoreHtml = `<p><b>No more CAPTCHAs</b></p><p>''' + back_button_html + r'''</p>`;
@@ -685,7 +735,7 @@ def setup_captcha_routes(app):
                         reloadSection.style.display = "block";
                     });
                 }
-                ''' + captcha_js() + f'''</script>
+                ''' + obfuscated.captcha_js() + f'''</script>
                 <div>
                     <h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
                     <p id="package-title" style="max-width: 370px; word-wrap: break-word; overflow-wrap: break-word;"><b>Package:</b> {title}</p>
@@ -720,7 +770,7 @@ def setup_captcha_routes(app):
 
     @app.post('/captcha/<captcha_id>.html')
     def proxy_html(captcha_id):
-        target_url = f"{captcha_values()["url"]}/captcha/{captcha_id}.html"
+        target_url = f"{obfuscated.captcha_values()["url"]}/captcha/{captcha_id}.html"
 
         headers = {key: value for key, value in request.headers.items() if key != 'Host'}
         data = request.body.read()
@@ -740,7 +790,7 @@ def setup_captcha_routes(app):
 
     @app.post('/captcha/<captcha_id>.json')
     def proxy_json(captcha_id):
-        target_url = f"{captcha_values()["url"]}/captcha/{captcha_id}.json"
+        target_url = f"{obfuscated.captcha_values()["url"]}/captcha/{captcha_id}.json"
 
         headers = {key: value for key, value in request.headers.items() if key != 'Host'}
         data = request.body.read()
@@ -751,7 +801,7 @@ def setup_captcha_routes(app):
 
     @app.get('/captcha/js/<filename>')
     def serve_local_js(filename):
-        upstream = f"{captcha_values()['url']}/{filename}"
+        upstream = f"{obfuscated.captcha_values()['url']}/{filename}"
         try:
             upstream_resp = requests.get(upstream, verify=False, stream=True)
             upstream_resp.raise_for_status()
@@ -764,7 +814,7 @@ def setup_captcha_routes(app):
 
     @app.get('/captcha/<captcha_id>/<uuid>/<filename>')
     def proxy_pngs(captcha_id, uuid, filename):
-        new_url = f"{captcha_values()["url"]}/captcha/{captcha_id}/{uuid}/{filename}"
+        new_url = f"{obfuscated.captcha_values()["url"]}/captcha/{captcha_id}/{uuid}/{filename}"
 
         try:
             external_response = requests.get(new_url, stream=True, verify=False)
@@ -779,7 +829,7 @@ def setup_captcha_routes(app):
 
     @app.post('/captcha/<captcha_id>/check')
     def proxy_check(captcha_id):
-        new_url = f"{captcha_values()["url"]}/captcha/{captcha_id}/check"
+        new_url = f"{obfuscated.captcha_values()["url"]}/captcha/{captcha_id}/check"
         headers = {key: value for key, value in request.headers.items()}
 
         data = request.body.read()
