@@ -10,7 +10,13 @@ from bs4 import BeautifulSoup
 from quasarr.providers.log import info, debug
 
 
-def get_mb_download_links(shared_state, url, mirror, title): # signature must align with other download link functions!
+def get_mb_download_links(shared_state, url, mirror, title, password):
+    """
+    KEEP THE SIGNATURE EVEN IF SOME PARAMETERS ARE UNUSED!
+
+    MB source handler - fetches protected download links from MB pages.
+    """
+
     headers = {
         'User-Agent': shared_state.values["user_agent"],
     }
@@ -20,7 +26,7 @@ def get_mb_download_links(shared_state, url, mirror, title): # signature must al
         response.raise_for_status()
     except Exception as e:
         info(f"Failed to fetch page for {title or url}: {e}")
-        return False
+        return {"links": []}
 
     soup = BeautifulSoup(response.text, "html.parser")
 
@@ -42,6 +48,6 @@ def get_mb_download_links(shared_state, url, mirror, title): # signature must al
 
     if not download_links:
         info(f"No download links found for {title}. Site structure may have changed. - {url}")
-        return False
+        return {"links": []}
 
-    return download_links
+    return {"links": download_links}

@@ -17,24 +17,19 @@ def extract_password_from_post(soup, host):
     Extract password from forum post using multiple strategies.
     Returns empty string if no password found or if explicitly marked as 'no password'.
     """
-    # Get flattened text from the post - collapse whitespace to single spaces
     post_text = soup.get_text()
     post_text = re.sub(r'\s+', ' ', post_text).strip()
 
-    # Strategy 1: Look for password label followed by the password value
-    # Pattern: "Passwort:" followed by optional separators, then the password
     password_pattern = r'(?:passwort|password|pass|pw)[\s:]+([a-zA-Z0-9._-]{2,50})'
     match = re.search(password_pattern, post_text, re.IGNORECASE)
 
     if match:
         password = match.group(1).strip()
-        # Skip if it looks like a section header or common word
         if not re.match(r'^(?:download|mirror|link|episode|info|mediainfo|spoiler|hier|click|klick|kein|none|no)',
                         password, re.IGNORECASE):
             debug(f"Found password: {password}")
             return password
 
-    # Strategy 2: Look for explicit "no password" indicators (only if no valid password found)
     no_password_patterns = [
         r'(?:passwort|password|pass|pw)[\s:]*(?:kein(?:es)?|none|no|nicht|not|nein|-|–|—)',
         r'(?:kein(?:es)?|none|no|nicht|not|nein)\s*(?:passwort|password|pass|pw)',
@@ -45,7 +40,6 @@ def extract_password_from_post(soup, host):
             debug("No password required (explicitly stated)")
             return ""
 
-    # Strategy 3: Default to hostname-based password
     default_password = f"www.{host}"
     debug(f"No password found, using default: {default_password}")
     return default_password
@@ -54,40 +48,53 @@ def extract_password_from_post(soup, host):
 def extract_mirror_name_from_link(link_element):
     """
     Extract the mirror/hoster name from the link text or nearby text.
-    Returns the extracted name or None.
     """
-    # Get the link text
     link_text = link_element.get_text(strip=True)
-
-    # Try to extract a meaningful name from the link text
-    # Look for text that looks like a hoster name (alphanumeric, may contain numbers/dashes)
-    # Filter out common non-hoster words
     common_non_hosters = {'download', 'mirror', 'link', 'hier', 'click', 'klick', 'code', 'spoiler'}
 
-    # Clean and extract potential mirror name
-    if link_text and len(link_text) > 2:
-        # Remove common symbols and whitespace
-        cleaned = re.sub(r'[^\w\s-]', '', link_text).strip().lower()
+    # Known hoster patterns for image detection
+    known_hosters = {
+        'rapidgator': ['rapidgator', 'rg'],
+        'ddownload': ['ddownload', 'ddl'],
+        'turbobit': ['turbobit'],
+        '1fichier': ['1fichier'],
+    }
 
-        # If it's a single word or hyphenated word and not in common non-hosters
+    if link_text and len(link_text) > 2:
+        cleaned = re.sub(r'[^\w\s-]', '', link_text).strip().lower()
         if cleaned and cleaned not in common_non_hosters:
-            # Extract the main part (first word if multiple)
             main_part = cleaned.split()[0] if ' ' in cleaned else cleaned
-            if len(main_part) > 2:  # Must be at least 3 characters
+            if 2 < len(main_part) < 30:
                 return main_part
 
-    # Check if there's a bold tag or nearby text in parent
     parent = link_element.parent
     if parent:
-        parent_text = parent.get_text(strip=True)
-        # Look for text before the link that might be the mirror name
         for sibling in link_element.previous_siblings:
-            if hasattr(sibling, 'get_text'):
-                sibling_text = sibling.get_text(strip=True).lower()
-                if sibling_text and len(sibling_text) > 2 and sibling_text not in common_non_hosters:
-                    cleaned = re.sub(r'[^\w\s-]', '', sibling_text).strip()
-                    if cleaned:
-                        return cleaned.split()[0] if ' ' in cleaned else cleaned
+            # Only process Tag elements, skip NavigableString (text nodes)
+            if not hasattr(sibling, 'name') or sibling.name is None:
+                continue
+
+            # Skip spoiler elements entirely
+            classes = sibling.get('class', [])
+            if classes and any('spoiler' in str(c).lower() for c in classes):
+                continue
+
+            # Check for images with hoster names in src/alt/data-url
+            img = sibling.find('img') if sibling.name != 'img' else sibling
+            if img:
+                img_identifiers = (img.get('src', '') + img.get('alt', '') + img.get('data-url', '')).lower()
+                for hoster, patterns in known_hosters.items():
+                    if any(pattern in img_identifiers for pattern in patterns):
+                        return hoster
+
+            sibling_text = sibling.get_text(strip=True).lower()
+            # Skip if text is too long - likely NFO content or other non-mirror text
+            if len(sibling_text) > 30:
+                continue
+            if sibling_text and len(sibling_text) > 2 and sibling_text not in common_non_hosters:
+                cleaned = re.sub(r'[^\w\s-]', '', sibling_text).strip()
+                if cleaned and 2 < len(cleaned) < 30:
+                    return cleaned.split()[0] if ' ' in cleaned else cleaned
 
     return None
 
@@ -95,12 +102,6 @@ def extract_mirror_name_from_link(link_element):
 def extract_links_and_password_from_post(post_content, host):
     """
     Extract download links and password from a forum post.
-    Only filecrypt and hide are supported - other link crypters will cause an error.
-
-    Returns:
-        tuple of (links, password) where:
-        - links: list of [url, mirror_name] pairs where mirror_name is the actual hoster
-        - password: extracted password string
     """
     links = []
     soup = BeautifulSoup(post_content, 'html.parser')
@@ -108,11 +109,9 @@ def extract_links_and_password_from_post(post_content, host):
     for link in soup.find_all('a', href=True):
         href = link.get('href')
 
-        # Skip internal forum links
         if href.startswith('/') or host in href:
             continue
 
-        # Check supported link crypters
         if re.search(r'filecrypt\.', href, re.IGNORECASE):
             crypter_type = "filecrypt"
         elif re.search(r'hide\.', href, re.IGNORECASE):
@@ -123,16 +122,11 @@ def extract_links_and_password_from_post(post_content, host):
             crypter_type = "tolink"
         else:
             debug(f"Unsupported link crypter/hoster found: {href}")
-            debug(f"Currently only filecrypt and hide are supported. Other crypters may be added later.")
             continue
 
-        # Extract mirror name from link text or nearby context
         mirror_name = extract_mirror_name_from_link(link)
-
-        # Use mirror name if found, otherwise fall back to crypter type
         identifier = mirror_name if mirror_name else crypter_type
 
-        # Avoid duplicates
         if [href, identifier] not in links:
             links.append([href, identifier])
             if mirror_name:
@@ -140,7 +134,6 @@ def extract_links_and_password_from_post(post_content, host):
             else:
                 debug(f"Found {crypter_type} link (no mirror name detected)")
 
-    # Only extract password if we found links
     password = ""
     if links:
         password = extract_password_from_post(soup, host)
@@ -148,52 +141,51 @@ def extract_links_and_password_from_post(post_content, host):
     return links, password
 
 
-def get_dl_download_links(shared_state, url, mirror, title):
+def get_dl_download_links(shared_state, url, mirror, title, password):
     """
-    Get download links from a thread.
+    KEEP THE SIGNATURE EVEN IF SOME PARAMETERS ARE UNUSED!
 
-    Returns:
-        tuple of (links, password) where:
-        - links: list of [url, mirror_name] pairs
-        - password: extracted password string
+    DL source handler - extracts links and password from forum thread.
+
+    Note: The password parameter is unused intentionally - password must be extracted from the post.
     """
+
     host = shared_state.values["config"]("Hostnames").get(hostname)
 
     sess = retrieve_and_validate_session(shared_state)
     if not sess:
         info(f"Could not retrieve valid session for {host}")
-        return [], ""
+        return {"links": [], "password": ""}
 
     try:
         response = fetch_via_requests_session(shared_state, method="GET", target_url=url, timeout=30)
 
         if response.status_code != 200:
             info(f"Failed to load thread page: {url} (Status: {response.status_code})")
-            return [], ""
+            return {"links": [], "password": ""}
 
         soup = BeautifulSoup(response.text, 'html.parser')
 
         first_post = soup.select_one('article.message--post')
         if not first_post:
             info(f"Could not find first post in thread: {url}")
-            return [], ""
+            return {"links": [], "password": ""}
 
         post_content = first_post.select_one('div.bbWrapper')
         if not post_content:
             info(f"Could not find post content in thread: {url}")
-            return [], ""
+            return {"links": [], "password": ""}
 
-        # Extract both links and password from the same post content
-        links, password = extract_links_and_password_from_post(str(post_content), host)
+        links, extracted_password = extract_links_and_password_from_post(str(post_content), host)
 
         if not links:
             info(f"No supported download links found in thread: {url}")
-            return [], ""
+            return {"links": [], "password": ""}
 
-        debug(f"Found {len(links)} download link(s) for: {title} (password: {password})")
-        return links, password
+        debug(f"Found {len(links)} download link(s) for: {title} (password: {extracted_password})")
+        return {"links": links, "password": extracted_password}
 
     except Exception as e:
         info(f"Error extracting download links from {url}: {e}")
         invalidate_session(shared_state)
-        return [], ""
+        return {"links": [], "password": ""}

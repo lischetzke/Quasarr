@@ -17,7 +17,7 @@ Alternatively, follow the link from the console output (or discord notification)
 Quasarr will confidently handle the rest.
 
 # Instructions
-1. Set up and run [FlareSolverr](https://github.com/FlareSolverr/FlareSolverr) 3.4.4 or later.
+1. Set up and run [FlareSolverr 3](https://github.com/FlareSolverr/FlareSolverr).
 2. Set up and run [JDownloader 2](https://jdownloader.org/download/index).
 3. Follow the next steps.
 

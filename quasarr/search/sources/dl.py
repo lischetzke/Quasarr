@@ -291,8 +291,8 @@ def _search_single_page(shared_state, host, search_string, search_id, page_num, 
 def dl_search(shared_state, start_time, request_from, search_string,
               mirror=None, season=None, episode=None):
     """
-    Search with sequential pagination (max 5 pages) to find best quality releases.
-    Stops searching if a page returns 0 results.
+    Search with sequential pagination to find best quality releases.
+    Stops searching if a page returns 0 results or 10 seconds have elapsed.
     """
     releases = []
     host = shared_state.values["config"]("Hostnames").get(hostname)
@@ -306,10 +306,10 @@ def dl_search(shared_state, start_time, request_from, search_string,
         search_string = title
 
     search_string = unescape(search_string)
-    max_pages = 5
+    max_search_duration = 10
 
     debug(
-        f"{hostname}: Starting sequential paginated search for '{search_string}' (Season: {season}, Episode: {episode}) - up to {max_pages} pages")
+        f"{hostname}: Starting sequential paginated search for '{search_string}' (Season: {season}, Episode: {episode}) - max {max_search_duration}s")
 
     try:
         sess = retrieve_and_validate_session(shared_state)
@@ -318,9 +318,13 @@ def dl_search(shared_state, start_time, request_from, search_string,
             return releases
 
         search_id = None
+        page_num = 0
+        search_start_time = time.time()
 
-        # Sequential search through pages
-        for page_num in range(1, max_pages + 1):
+        # Sequential search through pages until timeout or no results
+        while (time.time() - search_start_time) < max_search_duration:
+            page_num += 1
+
             page_releases, extracted_search_id = _search_single_page(
                 shared_state, host, search_string, search_id, page_num,
                 imdb_id, mirror, request_from, season, episode

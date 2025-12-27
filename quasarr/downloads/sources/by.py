@@ -13,7 +13,13 @@ from bs4 import BeautifulSoup
 from quasarr.providers.log import info, debug
 
 
-def get_by_download_links(shared_state, url, mirror, title):  # signature must align with other download link functions!
+def get_by_download_links(shared_state, url, mirror, title, password):
+    """
+    KEEP THE SIGNATURE EVEN IF SOME PARAMETERS ARE UNUSED!
+
+    BY source handler - fetches protected download links from BY iframes.
+    """
+
     by = shared_state.values["config"]("Hostnames").get("by")
     headers = {
         'User-Agent': shared_state.values["user_agent"],
@@ -103,4 +109,4 @@ def get_by_download_links(shared_state, url, mirror, title):  # signature must a
     except Exception as e:
         info(f"Error loading BY download links: {e}")
 
-    return links
+    return {"links": links}

@@ -6,13 +6,19 @@ from quasarr.providers.log import info, debug
 from quasarr.providers.sessions.dd import create_and_persist_session, retrieve_and_validate_session
 
 
-def get_dd_download_links(shared_state, url, mirror, title): # signature must align with other download link functions!
+def get_dd_download_links(shared_state, url, mirror, title, password):
+    """
+    KEEP THE SIGNATURE EVEN IF SOME PARAMETERS ARE UNUSED!
+
+    Returns plain download links from DD API.
+    """
+
     dd = shared_state.values["config"]("Hostnames").get("dd")
 
     dd_session = retrieve_and_validate_session(shared_state)
     if not dd_session:
         info(f"Could not retrieve valid session for {dd}")
-        return []
+        return {"links": []}
 
     links = []
 
@@ -35,9 +41,9 @@ def get_dd_download_links(shared_state, url, mirror, title): # signature must al
     try:
         release_list = []
         for page in range(0, 100, 20):
-            url = f'https://{dd}/index/search/keyword/{title}/qualities/{','.join(qualities)}/from/{page}/search'
+            api_url = f'https://{dd}/index/search/keyword/{title}/qualities/{",".join(qualities)}/from/{page}/search'
 
-            releases_on_page = dd_session.get(url, headers=headers, timeout=10).json()
+            releases_on_page = dd_session.get(api_url, headers=headers, timeout=10).json()
             if releases_on_page:
                 release_list.extend(releases_on_page)
 
@@ -46,7 +52,7 @@ def get_dd_download_links(shared_state, url, mirror, title): # signature must al
                 if release.get("fake"):
                     debug(f"Release {release.get('release')} marked as fake. Invalidating DD session...")
                     create_and_persist_session(shared_state)
-                    return []
+                    return {"links": []}
                 elif release.get("release") == title:
                     filtered_links = []
                     for link in release["links"]:
@@ -61,10 +67,11 @@ def get_dd_download_links(shared_state, url, mirror, title): # signature must al
                                 for existing_link in filtered_links
                         ):
                             debug(f"Skipping duplicate `.mkv` link from {link['hostname']}")
-                            continue  # Skip adding duplicate `.mkv` links from the same hostname
+                            continue
                         filtered_links.append(link)
 
-                    links = [link["url"] for link in filtered_links]
+                    # Build [[url, mirror], ...] format
+                    links = [[link["url"], link["hostname"]] for link in filtered_links]
                     break
             except Exception as e:
                 info(f"Error parsing DD download: {e}")
@@ -73,4 +80,4 @@ def get_dd_download_links(shared_state, url, mirror, title): # signature must al
     except Exception as e:
         info(f"Error loading DD download: {e}")
 
-    return links
+    return {"links": links}

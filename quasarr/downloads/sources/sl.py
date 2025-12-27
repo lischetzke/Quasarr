@@ -10,10 +10,23 @@ from bs4 import BeautifulSoup
 
 from quasarr.providers.log import info, debug
 
-supported_mirrors = ["nitroflare", "ddownload"]  # ignoring captcha-protected multiup/mirrorace for now
+supported_mirrors = ["nitroflare", "ddownload"]
 
 
-def get_sl_download_links(shared_state, url, mirror, title): # signature must align with other download link functions!
+def derive_mirror_from_host(host):
+    """Get mirror name from hostname."""
+    for m in supported_mirrors:
+        if host.startswith(m + "."):
+            return m
+    return host.split('.')[0] if host else "unknown"
+
+
+def get_sl_download_links(shared_state, url, mirror, title, password):
+    """
+    KEEP THE SIGNATURE EVEN IF SOME PARAMETERS ARE UNUSED!
+
+    SL source handler - returns plain download links.
+    """
     headers = {"User-Agent": shared_state.values["user_agent"]}
     session = requests.Session()
 
@@ -24,9 +37,8 @@ def get_sl_download_links(shared_state, url, mirror, title): # signature must al
         entry = soup.find("div", class_="entry")
         if not entry:
             info(f"Could not find main content section for {title}")
-            return False
+            return {"links": [], "imdb_id": None}
 
-        # extract IMDb id if present
         imdb_id = None
         a_imdb = soup.find("a", href=re.compile(r"imdb\.com/title/tt\d+"))
         if a_imdb:
@@ -50,7 +62,7 @@ def get_sl_download_links(shared_state, url, mirror, title): # signature must al
 
     except Exception as e:
         info(f"SL site has been updated. Grabbing download links for {title} not possible! ({e})")
-        return False
+        return {"links": [], "imdb_id": None}
 
     filtered = []
     for a in anchors:
@@ -59,14 +71,14 @@ def get_sl_download_links(shared_state, url, mirror, title): # signature must al
             continue
 
         host = (urlparse(href).hostname or "").lower()
-        # require host to start with one of supported_mirrors + "."
         if not any(host.startswith(m + ".") for m in supported_mirrors):
             continue
 
         if not mirror or mirror in href:
-            filtered.append(href)
+            mirror_name = derive_mirror_from_host(host)
+            filtered.append([href, mirror_name])
 
-    # regex‐fallback if still empty
+    # regex fallback if still empty
     if not filtered:
         text = "".join(str(x) for x in anchors)
         urls = re.findall(r"https?://[^\s<>'\"]+", text)
@@ -82,7 +94,8 @@ def get_sl_download_links(shared_state, url, mirror, title): # signature must al
                 continue
 
             if not mirror or mirror in u:
-                filtered.append(u)
+                mirror_name = derive_mirror_from_host(host)
+                filtered.append([u, mirror_name])
 
     return {
         "links": filtered,

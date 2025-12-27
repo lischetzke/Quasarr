@@ -11,7 +11,13 @@ hostname = "nk"
 supported_mirrors = ["rapidgator", "ddownload"]
 
 
-def get_nk_download_links(shared_state, url, mirror, title):
+def get_nk_download_links(shared_state, url, mirror, title, password):
+    """
+    KEEP THE SIGNATURE EVEN IF SOME PARAMETERS ARE UNUSED!
+
+    NK source handler - fetches protected download links from NK pages.
+    """
+
     host = shared_state.values["config"]("Hostnames").get(hostname)
     headers = {
         'User-Agent': shared_state.values["user_agent"],
@@ -24,7 +30,7 @@ def get_nk_download_links(shared_state, url, mirror, title):
         soup = BeautifulSoup(resp.text, 'html.parser')
     except Exception as e:
         info(f"{hostname}: could not fetch release page for {title}: {e}")
-        return False
+        return {"links": []}
 
     anchors = soup.select('a.btn-orange')
     candidates = []
@@ -51,4 +57,4 @@ def get_nk_download_links(shared_state, url, mirror, title):
     if not candidates:
         info(f"No external download links found on {hostname} page for {title}")
 
-    return candidates
+    return {"links": candidates}

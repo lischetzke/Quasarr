@@ -34,7 +34,13 @@ def resolve_wd_redirect(url, user_agent):
     return None
 
 
-def get_wd_download_links(shared_state, url, mirror, title):  # signature must align with other download link functions!
+def get_wd_download_links(shared_state, url, mirror, title, password):
+    """
+    KEEP THE SIGNATURE EVEN IF SOME PARAMETERS ARE UNUSED!
+
+    WD source handler - resolves redirects and returns protected download links.
+    """
+
     wd = shared_state.values["config"]("Hostnames").get("wd")
     user_agent = shared_state.values["user_agent"]
 
@@ -63,7 +69,7 @@ def get_wd_download_links(shared_state, url, mirror, title):  # signature must a
         )
         if not header:
             info(f"WD Downloads section not found. Grabbing download links for {title} not possible!")
-            return False
+            return {"links": [], "imdb_id": None}
 
         card = header.find_parent("div", class_="card")
         body = card.find("div", class_="card-body")
@@ -72,7 +78,7 @@ def get_wd_download_links(shared_state, url, mirror, title):  # signature must a
         )
     except Exception:
         info(f"WD site has been updated. Grabbing download links for {title} not possible!")
-        return False
+        return {"links": [], "imdb_id": None}
 
     results = []
     try:

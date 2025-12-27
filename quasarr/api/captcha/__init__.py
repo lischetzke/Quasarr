@@ -8,7 +8,7 @@ from base64 import urlsafe_b64encode, urlsafe_b64decode
 from urllib.parse import quote, unquote, urljoin
 
 import requests
-from bottle import request, response, redirect
+from bottle import request, response, redirect, HTTPResponse
 
 import quasarr.providers.html_images as images
 from quasarr.downloads.linkcrypters.filecrypt import get_filecrypt_links, DLC
@@ -22,6 +22,21 @@ from quasarr.providers.statistics import StatsHelper
 
 def js_single_quoted_string_safe(text):
     return text.replace('\\', '\\\\').replace("'", "\\'")
+
+
+def check_package_exists(package_id):
+    if not shared_state.get_db("protected").retrieve(package_id):
+        raise HTTPResponse(
+            status=404,
+            body=render_centered_html(f'''
+                <h1><img src="{images.logo}" class="logo"/>Quasarr</h1>
+                <p><b>Error:</b> Package not found or already solved.</p>
+                <p>
+                    {render_button("Back", "secondary", {"onclick": "location.href='/captcha'"})}
+                </p>
+            '''),
+            content_type="text/html"
+        )
 
 
 def setup_captcha_routes(app):
@@ -82,10 +97,16 @@ def setup_captcha_routes(app):
 
             sj = shared_state.values["config"]("Hostnames").get("sj")
             dj = shared_state.values["config"]("Hostnames").get("dj")
-            has_junkies_links = any(
-                (sj and sj in link) or (dj and dj in link)
-                for link in prioritized_links
-            )
+
+            def is_junkies_link(link):
+                """Check if link is a junkies link (handles [[url, mirror]] format)."""
+                url = link[0] if isinstance(link, (list, tuple)) else link
+                mirror = link[1] if isinstance(link, (list, tuple)) and len(link) > 1 else ""
+                if mirror == "junkies":
+                    return True
+                return (sj and sj in url) or (dj and dj in url)
+
+            has_junkies_links = any(is_junkies_link(link) for link in prioritized_links)
 
             # KeepLinks uses nested arrays like FileCrypt: [["url", "mirror"]]
             has_keeplinks_links = any(
@@ -182,7 +203,7 @@ def setup_captcha_routes(app):
                     <a href="#" id="show-setup-btn" style="color: #58a6ff;">ℹ️ Show instructions again</a>
                 </div>
 
-                <strong><a href="{url_with_quick_transfer_params}" target="_blank">🔗 Obtain the download links here!</a></strong><br><br>
+                <strong><a href="{url_with_quick_transfer_params}" target="_self">🔗 Obtain the download links here!</a></strong><br><br>
 
                 <form id="bypass-form" action="/captcha/bypass-submit" method="post" enctype="multipart/form-data">
                     <input type="hidden" name="package_id" value="{package_id}" />
@@ -242,7 +263,9 @@ def setup_captcha_routes(app):
         title = payload.get("title")
         password = payload.get("password")
         urls = payload.get("links")
-        url = urls[0]
+        url = urls[0][0] if isinstance(urls[0], (list, tuple)) else urls[0]
+
+        check_package_exists(package_id)
 
         return render_centered_html(f"""
         <!DOCTYPE html>
@@ -276,7 +299,9 @@ def setup_captcha_routes(app):
         title = payload.get("title")
         password = payload.get("password")
         urls = payload.get("links")
-        # KeepLinks uses nested arrays like FileCrypt: [["url", "mirror"]]
+
+        check_package_exists(package_id)
+
         url = urls[0][0] if isinstance(urls[0], (list, tuple)) else urls[0]
 
         return render_centered_html(f"""
@@ -311,7 +336,9 @@ def setup_captcha_routes(app):
         title = payload.get("title")
         password = payload.get("password")
         urls = payload.get("links")
-        # ToLink uses nested arrays like FileCrypt: [["url", "mirror"]]
+
+        check_package_exists(package_id)
+
         url = urls[0][0] if isinstance(urls[0], (list, tuple)) else urls[0]
 
         return render_centered_html(f"""
@@ -400,7 +427,7 @@ def setup_captcha_routes(app):
                         <a href="#" id="show-setup-btn" style="color: #58a6ff;">ℹ️ Show instructions again</a>
                     </div>
 
-                    <strong><a href="{url_with_quick_transfer_params}" target="_blank">🔗 Obtain the download links here!</a></strong><br><br>
+                    <strong><a href="{url_with_quick_transfer_params}" target="_self">🔗 Obtain the download links here!</a></strong><br><br>
 
                     <form id="bypass-form" action="/captcha/bypass-submit" method="post" enctype="multipart/form-data">
                         <input type="hidden" name="package_id" value="{package_id}" />
@@ -501,12 +528,12 @@ def setup_captcha_routes(app):
             try:
                 decompressed = zlib.decompress(decoded, -15)  # -15 = raw deflate, no zlib header
             except Exception as e:
-                info(f"Decompression error: {e}, trying with header...")
+                debug(f"Decompression error: {e}, trying with header...")
                 try:
                     # Fallback: try with zlib header
                     decompressed = zlib.decompress(decoded)
                 except Exception as e2:
-                    info(f"Decompression also failed with header: {e2}")
+                    info(f"Decompression failed without and with header: {e2}")
                     return render_centered_html(f'''<h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
                     <p><b>Error:</b> Failed to decompress data: {str(e)}</p>
                     <p>
@@ -634,6 +661,8 @@ def setup_captcha_routes(app):
         password = payload.get("password")
         desired_mirror = payload.get("mirror")
         prioritized_links = payload.get("links")
+
+        check_package_exists(package_id)
 
         if not prioritized_links:
             # No links found, show an error message
@@ -858,13 +887,7 @@ def setup_captcha_routes(app):
                     {render_button("Back", "secondary", {"onclick": "location.href='/captcha'"})}
                 </p>''')
 
-            package_exists = shared_state.get_db("protected").retrieve(package_id)
-            if not package_exists:
-                return render_centered_html(f'''<h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
-                <p><b>Error:</b> Package not found or already solved.</p>
-                <p>
-                    {render_button("Back", "secondary", {"onclick": "location.href='/captcha'"})}
-                </p>''')
+            check_package_exists(package_id)
 
             # Process links input
             if links_input:
@@ -1040,6 +1063,8 @@ def setup_captcha_routes(app):
         password = payload.get("password", "")
         original_url = payload.get("original_url", "")
         url = payload.get("links")[0] if payload.get("links") else None
+
+        check_package_exists(package_id)
 
         if not url or not session_id or not package_id:
             response.status = 400

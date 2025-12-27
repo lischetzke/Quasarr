@@ -5,6 +5,7 @@
 import base64
 import json
 import pickle
+import time
 import urllib.parse
 
 import requests
@@ -14,6 +15,8 @@ from requests.exceptions import Timeout, RequestException
 from quasarr.providers.log import info, debug
 
 hostname = "al"
+
+SESSION_MAX_AGE_SECONDS = 24 * 60 * 60  # 24 hours
 
 
 def create_and_persist_session(shared_state):
@@ -55,7 +58,7 @@ def create_and_persist_session(shared_state):
             return None
 
         solution = fs_json["solution"]
-        # store FlareSolverr’s UA into our requests.Session
+        # store FlareSolverr's UA into our requests.Session
         fl_ua = solution.get("userAgent")
         if fl_ua:
             sess.headers.update({'User-Agent': fl_ua})
@@ -98,16 +101,36 @@ def create_and_persist_session(shared_state):
         info(f'Missing credentials for: "{hostname}" - skipping login')
         return None
 
-    blob = pickle.dumps(sess)
-    token = base64.b64encode(blob).decode("utf-8")
-    shared_state.values["database"]("sessions").update_store(hostname, token)
+    _persist_session_to_db(shared_state, sess)
     return sess
 
 
 def retrieve_and_validate_session(shared_state):
     db = shared_state.values["database"]("sessions")
-    token = db.retrieve(hostname)
-    if not token:
+    stored = db.retrieve(hostname)
+    if not stored:
+        return create_and_persist_session(shared_state)
+
+    try:
+        # Try to parse as JSON (new format with timestamp)
+        session_data = json.loads(stored)
+        token = session_data.get("token")
+        created_at = session_data.get("created_at", 0)
+
+        # Check if session is older than 24 hours
+        age = time.time() - created_at
+        if age > SESSION_MAX_AGE_SECONDS:
+            debug(f"{hostname}: session expired (age: {age / 3600:.1f} hours)")
+            invalidate_session(shared_state)
+            return create_and_persist_session(shared_state)
+        else:
+            debug(f"{hostname}: session valid (age: {age / 3600:.1f} hours)")
+
+    except (json.JSONDecodeError, TypeError):
+        # Legacy format: plain base64 token without timestamp
+        # Treat as expired and recreate
+        debug(f"{hostname}: legacy session format detected, recreating")
+        invalidate_session(shared_state)
         return create_and_persist_session(shared_state)
 
     try:
@@ -131,10 +154,15 @@ def invalidate_session(shared_state):
 def _persist_session_to_db(shared_state, sess):
     """
     Serialize & store the given requests.Session into the database under `hostname`.
+    Includes creation timestamp for expiration checking.
     """
     blob = pickle.dumps(sess)
     token = base64.b64encode(blob).decode("utf-8")
-    shared_state.values["database"]("sessions").update_store(hostname, token)
+    session_data = json.dumps({
+        "token": token,
+        "created_at": time.time()
+    })
+    shared_state.values["database"]("sessions").update_store(hostname, session_data)
 
 
 def _load_session_cookies_for_flaresolverr(sess):
@@ -177,13 +205,13 @@ def fetch_via_flaresolverr(shared_state,
     Load (or recreate) the requests.Session from DB.
     Package its cookies into FlareSolverr payload.
     Ask FlareSolverr to do a request.get or request.post on target_url.
-    Replace the Session’s cookies with FlareSolverr’s new cookies.
+    Replace the Session's cookies with FlareSolverr's new cookies.
     Re-persist the updated session to the DB.
-    Return a dict with “status_code”, “headers”, “json” (parsed - if available), “text” and “cookies”.
+    Return a dict with "status_code", "headers", "json" (parsed - if available), "text" and "cookies".
 
     – method: "GET" or "POST"
     – post_data: dict of form‐fields if method=="POST"
-    – timeout: seconds (FlareSolverr’s internal maxTimeout = timeout*1000 ms)
+    – timeout: seconds (FlareSolverr's internal maxTimeout = timeout*1000 ms)
     """
     flaresolverr_url = shared_state.values["config"]('FlareSolverr').get('url')
 

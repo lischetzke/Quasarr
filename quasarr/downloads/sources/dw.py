@@ -10,7 +10,13 @@ from bs4 import BeautifulSoup
 from quasarr.providers.log import info, debug
 
 
-def get_dw_download_links(shared_state, url, mirror, title): # signature must align with other download link functions!
+def get_dw_download_links(shared_state, url, mirror, title, password):
+    """
+    KEEP THE SIGNATURE EVEN IF SOME PARAMETERS ARE UNUSED!
+
+    DW source handler - fetches protected download links from DW site.
+    """
+
     dw = shared_state.values["config"]("Hostnames").get("dw")
     ajax_url = "https://" + dw + "/wp-admin/admin-ajax.php"
 
@@ -26,7 +32,7 @@ def get_dw_download_links(shared_state, url, mirror, title): # signature must al
         download_buttons = content.find_all("button", {"class": "show_link"})
     except:
         info(f"DW site has been updated. Grabbing download links for {title} not possible!")
-        return False
+        return {"links": []}
 
     download_links = []
     try:
@@ -62,4 +68,4 @@ def get_dw_download_links(shared_state, url, mirror, title): # signature must al
         info(f"DW site has been updated. Parsing download links for {title} not possible!")
         pass
 
-    return download_links
+    return {"links": download_links}

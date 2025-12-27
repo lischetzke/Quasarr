@@ -13,7 +13,13 @@ from quasarr.providers.log import info, debug
 hostname = "he"
 
 
-def get_he_download_links(shared_state, url, mirror, title):
+def get_he_download_links(shared_state, url, mirror, title, password):
+    """
+    KEEP THE SIGNATURE EVEN IF SOME PARAMETERS ARE UNUSED!
+
+    HE source handler - fetches plain download links from HE pages.
+    """
+
     headers = {
         'User-Agent': shared_state.values["user_agent"],
     }
@@ -25,7 +31,7 @@ def get_he_download_links(shared_state, url, mirror, title):
         soup = BeautifulSoup(resp.text, 'html.parser')
     except Exception as e:
         info(f"{hostname}: could not fetch release for {title}: {e}")
-        return False
+        return {"links": [], "imdb_id": None}
 
     imdb_id = None
     try:
@@ -46,7 +52,7 @@ def get_he_download_links(shared_state, url, mirror, title):
     for retries in range(10):
         form = soup.find('form', id=re.compile(r'content-protector-access-form'))
         if not form:
-            return False
+            return {"links": [], "imdb_id": None}
 
         action = form.get('action') or url
         action_url = urljoin(resp.url, action)
@@ -104,7 +110,7 @@ def get_he_download_links(shared_state, url, mirror, title):
 
     if not links:
         info(f"No external download links found on {hostname} page for {title}")
-        return False
+        return {"links": [], "imdb_id": None}
 
     return {
         "links": links,

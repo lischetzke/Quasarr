@@ -8,6 +8,7 @@ import re
 import time
 from dataclasses import dataclass
 from typing import Optional, List
+from urllib.parse import urlparse
 
 from bs4 import BeautifulSoup
 
@@ -48,6 +49,17 @@ def roman_to_int(r: str) -> int:
             total += val
         prev = val
     return total
+
+
+def derive_mirror(url):
+    try:
+        hostname = urlparse(url).netloc.lower()
+        if hostname.startswith('www.'):
+            hostname = hostname[4:]
+        parts = hostname.split('.')
+        return parts[-2] if len(parts) >= 2 else hostname
+    except:
+        return "unknown"
 
 
 def extract_season_from_synonyms(soup):
@@ -529,8 +541,19 @@ def extract_episode(title: str) -> int | None:
     return None
 
 
-def get_al_download_links(shared_state, url, mirror, title,
-                          release_id):  # signature cant align with other download link functions!
+def get_al_download_links(shared_state, url, mirror, title, password):
+    """
+    KEEP THE SIGNATURE EVEN IF SOME PARAMETERS ARE UNUSED!
+
+    AL source handler. Returns plain download links automatically by solving CAPTCHA.
+
+    Note: The 'password' parameter is intentionally repurposed as release_id
+    to ensure we download the correct release from the search results.
+    This is set by the search module, not a user password.
+    """
+
+    release_id = password  # password field carries release_id for AL
+
     al = shared_state.values["config"]("Hostnames").get(hostname)
 
     sess = retrieve_and_validate_session(shared_state)
@@ -690,8 +713,10 @@ def get_al_download_links(shared_state, url, mirror, title,
     else:
         StatsHelper(shared_state).increment_failed_decryptions_automatic()
 
+    links_with_mirrors = [[url, derive_mirror(url)] for url in links]
+
     return {
-        "links": links,
+        "links": links_with_mirrors,
         "password": f"www.{al}",
         "title": title
     }

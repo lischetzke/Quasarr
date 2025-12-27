@@ -11,12 +11,11 @@ from quasarr.providers.log import info, debug
 hostname = "wx"
 
 
-def get_wx_download_links(shared_state, url, mirror, title):
+def get_wx_download_links(shared_state, url, mirror, title, password):
     """
-    Get download links from API based on title and mirror.
+    KEEP THE SIGNATURE EVEN IF SOME PARAMETERS ARE UNUSED!
 
-    Returns:
-        list of [url, hoster] pairs where hoster is the actual mirror (e.g., 'ddownload.com', 'rapidgator.net')
+    WX source handler - Grabs download links from API based on title and mirror.
     """
     host = shared_state.values["config"]("Hostnames").get(hostname)
 
@@ -33,13 +32,13 @@ def get_wx_download_links(shared_state, url, mirror, title):
 
         if response.status_code != 200:
             info(f"{hostname.upper()}: Failed to load page: {url} (Status: {response.status_code})")
-            return []
+            return {"links": []}
 
         # Extract slug from URL
         slug_match = re.search(r'/detail/([^/]+)', url)
         if not slug_match:
             info(f"{hostname.upper()}: Could not extract slug from URL: {url}")
-            return []
+            return {"links": []}
 
         api_url = f'https://api.{host}/start/d/{slug_match.group(1)}'
 
@@ -54,14 +53,14 @@ def get_wx_download_links(shared_state, url, mirror, title):
 
         if api_response.status_code != 200:
             info(f"{hostname.upper()}: Failed to load API: {api_url} (Status: {api_response.status_code})")
-            return []
+            return {"links": []}
 
         data = api_response.json()
 
         # Navigate to releases in the API response
         if 'item' not in data or 'releases' not in data['item']:
             info(f"{hostname.upper()}: No releases found in API response")
-            return []
+            return {"links": []}
 
         releases = data['item']['releases']
 
@@ -74,14 +73,14 @@ def get_wx_download_links(shared_state, url, mirror, title):
 
         if not matching_release:
             info(f"{hostname.upper()}: No release found matching title: {title}")
-            return []
+            return {"links": []}
 
         # Extract crypted_links based on mirror
         crypted_links = matching_release.get('crypted_links', {})
 
         if not crypted_links:
             info(f"{hostname.upper()}: No crypted_links found for: {title}")
-            return []
+            return {"links": []}
 
         links = []
 
@@ -117,11 +116,11 @@ def get_wx_download_links(shared_state, url, mirror, title):
 
         if not links:
             info(f"{hostname.upper()}: No supported crypted links found for: {title}")
-            return []
+            return {"links": []}
 
         debug(f"{hostname.upper()}: Found {len(links)} crypted link(s) for: {title}")
-        return links
+        return {"links": links}
 
     except Exception as e:
         info(f"{hostname.upper()}: Error extracting download links from {url}: {e}")
-        return []
+        return {"links": []}
