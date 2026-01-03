@@ -90,6 +90,12 @@ def he_search(shared_state, start_time, request_from, search_string="", mirror=N
     else:
         imdb_id = None
 
+    if season:
+        source_search += f" S{int(season):02d}"
+
+    if episode:
+        source_search += f"E{int(episode):02d}"
+
     url = f'https://{host}/tag/{tag}/'
 
     headers = {"User-Agent": shared_state.values["user_agent"]}
