@@ -52,7 +52,7 @@ def wx_feed(shared_state, start_time, request_from, mirror=None):
             items = soup.find_all('item')
 
         if not items:
-            debug(f"{hostname.upper()}: No entries found in RSS feed")
+            info(f"{hostname.upper()}: No entries found in RSS feed")
             return releases
 
         debug(f"{hostname.upper()}: Found {len(items)} entries in RSS feed")
@@ -141,15 +141,15 @@ def wx_search(shared_state, start_time, request_from, search_string, mirror=None
 
     imdb_id = shared_state.is_imdb_id(search_string)
     if imdb_id:
-        info(f"{hostname.upper()}: Received IMDb ID: {imdb_id}")
+        debug(f"{hostname.upper()}: Received IMDb ID: {imdb_id}")
         title = get_localized_title(shared_state, imdb_id, 'de')
         if not title:
-            info(f"{hostname.upper()}: no title for IMDb {imdb_id}")
+            debug(f"{hostname.upper()}: no title for IMDb {imdb_id}")
             return releases
-        info(f"{hostname.upper()}: Translated IMDb {imdb_id} to German title: '{title}'")
+        debug(f"{hostname.upper()}: Translated IMDb {imdb_id} to German title: '{title}'")
         search_string = html.unescape(title)
     else:
-        info(f"{hostname.upper()}: Using search string directly: '{search_string}'")
+        debug(f"{hostname.upper()}: Using search string directly: '{search_string}'")
 
     api_url = f'https://api.{host}/start/search'
 
@@ -179,13 +179,13 @@ def wx_search(shared_state, start_time, request_from, search_string, mirror=None
     elif "radarr" in request_from.lower():
         params['types'] = 'movie'
 
-    info(f"{hostname.upper()}: Searching: '{search_string}'")
+    debug(f"{hostname.upper()}: Searching: '{search_string}'")
 
     try:
         response = requests.get(api_url, headers=headers, params=params, timeout=10)
 
         if response.status_code != 200:
-            info(f"{hostname.upper()}: Search API returned status {response.status_code}")
+            debug(f"{hostname.upper()}: Search API returned status {response.status_code}")
             return releases
 
         data = response.json()
@@ -199,7 +199,7 @@ def wx_search(shared_state, start_time, request_from, search_string, mirror=None
         else:
             items = data if isinstance(data, list) else []
 
-        info(f"{hostname.upper()}: Found {len(items)} items in search results")
+        debug(f"{hostname.upper()}: Found {len(items)} items in search results")
 
         for item in items:
             try:
@@ -208,7 +208,7 @@ def wx_search(shared_state, start_time, request_from, search_string, mirror=None
                     debug(f"{hostname.upper()}: Item has no UID, skipping")
                     continue
 
-                info(f"{hostname.upper()}: Fetching details for UID: {uid}")
+                debug(f"{hostname.upper()}: Fetching details for UID: {uid}")
 
                 detail_url = f'https://api.{host}/start/d/{uid}'
                 detail_response = requests.get(detail_url, headers=headers, timeout=10)
@@ -263,7 +263,7 @@ def wx_search(shared_state, start_time, request_from, search_string, mirror=None
                         })
 
                 if 'releases' in detail_item and isinstance(detail_item['releases'], list):
-                    info(f"{hostname.upper()}: Found {len(detail_item['releases'])} releases for {uid}")
+                    debug(f"{hostname.upper()}: Found {len(detail_item['releases'])} releases for {uid}")
 
                     for release in detail_item['releases']:
                         try:
@@ -323,7 +323,7 @@ def wx_search(shared_state, start_time, request_from, search_string, mirror=None
                 debug(f"{hostname.upper()}: {traceback.format_exc()}")
                 continue
 
-        info(f"{hostname.upper()}: Returning {len(releases)} total releases")
+        debug(f"{hostname.upper()}: Returning {len(releases)} total releases")
 
     except Exception as e:
         info(f"Error in {hostname.upper()} search: {e}")
