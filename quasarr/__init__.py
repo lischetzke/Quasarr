@@ -10,8 +10,9 @@ import socket
 import sys
 import tempfile
 import time
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urljoin, parse_qs
 
+import dukpy
 import requests
 
 from quasarr.api import get_api
@@ -117,16 +118,21 @@ def run():
         print("\n===== Hostnames =====")
         try:
             if arguments.hostnames:
-                hostnames_link = make_raw_pastebin_link(arguments.hostnames)
-
+                hostnames_link = arguments.hostnames
                 if is_valid_url(hostnames_link):
+                    if "pastebin.com" in hostnames_link:
+                        hostnames_link = make_raw_pastebin_link(hostnames_link)
+
                     print(f"Extracting hostnames from {hostnames_link}...")
                     allowed_keys = supported_hostnames
                     max_keys = len(allowed_keys)
                     shorthand_list = ', '.join(
                         [f'"{key}"' for key in allowed_keys[:-1]]) + ' and ' + f'"{allowed_keys[-1]}"'
                     print(f'There are up to {max_keys} hostnames currently supported: {shorthand_list}')
-                    data = requests.get(hostnames_link).text
+                    if "/ini.html" in hostnames_link:
+                        data = build_ini_from_ini_html(hostnames_link)
+                    else:
+                        data = requests.get(hostnames_link).text
                     results = extract_kv_pairs(data, allowed_keys)
 
                     extracted_hostnames = 0
@@ -411,6 +417,35 @@ def make_raw_pastebin_link(url):
         return f"https://pastebin.com/raw/{paste_id}"
 
     return url  # Not a Pastebin link, return unchanged
+
+
+def build_ini_from_ini_html(url: str) -> str:
+    def get(u: str) -> str:
+        r = requests.get(u, timeout=10)
+        r.raise_for_status()
+        return r.text
+
+    parsed = urlparse(url)
+    params = parse_qs(parsed.query)
+
+    data_js = get(urljoin(f"{parsed.scheme}://{parsed.netloc}", "data.js"))
+
+    hostnames = dukpy.evaljs("""
+        var window = {};
+        %s
+        window.HOSTNAMES;
+    """ % data_js)
+
+    excluded = set()
+    if "exclude" in params:
+        excluded = set(params["exclude"][0].split(","))
+
+    lines = []
+    for h in hostnames:
+        if h["key"] not in excluded:
+            lines.append(f"{h['key']} = {h['name']}")
+
+    return "\n".join(lines) + "\n"
 
 
 def is_valid_url(url):
