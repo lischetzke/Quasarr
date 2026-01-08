@@ -120,19 +120,13 @@ def run():
             if arguments.hostnames:
                 hostnames_link = arguments.hostnames
                 if is_valid_url(hostnames_link):
-                    if "pastebin.com" in hostnames_link:
-                        hostnames_link = make_raw_pastebin_link(hostnames_link)
-
                     print(f"Extracting hostnames from {hostnames_link}...")
                     allowed_keys = supported_hostnames
                     max_keys = len(allowed_keys)
                     shorthand_list = ', '.join(
                         [f'"{key}"' for key in allowed_keys[:-1]]) + ' and ' + f'"{allowed_keys[-1]}"'
                     print(f'There are up to {max_keys} hostnames currently supported: {shorthand_list}')
-                    if "/ini.html" in hostnames_link:
-                        data = build_ini_from_ini_html(hostnames_link)
-                    else:
-                        data = requests.get(hostnames_link).text
+                    data = requests.get(hostnames_link).text
                     results = extract_kv_pairs(data, allowed_keys)
 
                     extracted_hostnames = 0
@@ -397,60 +391,9 @@ def check_flaresolverr(shared_state, flaresolverr_url):
         print(f"Failed to connect to FlareSolverr: {e}")
         return False
 
-
-def make_raw_pastebin_link(url):
-    """
-    Takes a Pastebin URL and ensures it is a raw link.
-    If it's not a Pastebin URL, it returns the URL unchanged.
-    """
-    # Check if the URL is already a raw Pastebin link
-    if re.match(r"https?://(?:www\.)?pastebin\.com/raw/\w+", url):
-        return url  # Already raw, return as is
-
-    # Check if the URL is a standard Pastebin link
-    pastebin_pattern = r"https?://(?:www\.)?pastebin\.com/(\w+)"
-    match = re.match(pastebin_pattern, url)
-
-    if match:
-        paste_id = match.group(1)
-        print(f"The link you provided is not a raw Pastebin link. Attempting to convert it to a raw link from {url}...")
-        return f"https://pastebin.com/raw/{paste_id}"
-
-    return url  # Not a Pastebin link, return unchanged
-
-
-def build_ini_from_ini_html(url: str) -> str:
-    def get(u: str) -> str:
-        r = requests.get(u, timeout=10)
-        r.raise_for_status()
-        return r.text
-
-    parsed = urlparse(url)
-    params = parse_qs(parsed.query)
-
-    data_js = get(urljoin(f"{parsed.scheme}://{parsed.netloc}", "data.js"))
-
-    hostnames = dukpy.evaljs("""
-        var window = {};
-        %s
-        window.HOSTNAMES;
-    """ % data_js)
-
-    excluded = set()
-    if "exclude" in params:
-        excluded = set(params["exclude"][0].split(","))
-
-    lines = []
-    for h in hostnames:
-        if h["key"] not in excluded:
-            lines.append(f"{h['key']} = {h['name']}")
-
-    return "\n".join(lines) + "\n"
-
-
 def is_valid_url(url):
-    if "https://pastebin.com/raw/eX4Mpl3" in url:
-        print("Example URL detected. Please provide a valid URL found on pastebin or another public site!")
+    if "/raw/eX4Mpl3" in url:
+        print("Example URL detected. Please provide a valid URL found on pastebin or any other public site!")
         return False
 
     parsed = urlparse(url)
@@ -496,6 +439,8 @@ def extract_kv_pairs(input_text, allowed_keys):
         if match:
             key, value = match.groups()
             kv_pairs[key] = value
+        elif "[Hostnames]" in line:
+            pass
         else:
             print(f"Skipping line because it does not contain any supported hostname: {line}")
 
