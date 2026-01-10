@@ -18,21 +18,27 @@ Quasarr will confidently handle the rest. Some CAPTCHA types require [Tampermonk
 
 # Instructions
 
-1. Set up and run [FlareSolverr 3](https://github.com/FlareSolverr/FlareSolverr)
-2. Set up and run [JDownloader 2](https://jdownloader.org/download/index)
-3. Configure the integrations below
+# Instructions
+
+1. Set up and run [JDownloader 2](https://jdownloader.org/download/index)
+2. Configure the integrations below
+3. (Optional) Set up [FlareSolverr 3](https://github.com/FlareSolverr/FlareSolverr) for sites that require it
 
 > **Finding your Quasarr URL and API Key**  
 > Both values are shown in the console output under **API Information**, or in the Quasarr web UI.
 
 ---
 
-## FlareSolverr
+## FlareSolverr (Optional)
 
-Provide your FlareSolverr URL during setup. Include the version path:
+FlareSolverr is **optional** but **required for some sites** (e.g., AL) that use Cloudflare protection. You can skip FlareSolverr during setup and configure it later via the web UI.
+
+If using FlareSolverr, provide your URL including the version path:
 ```
 http://192.168.1.1:8191/v1
 ```
+
+> **Note:** Sites requiring FlareSolverr will show a warning in the console when it's not configured.
 
 ---
 

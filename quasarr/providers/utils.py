@@ -9,6 +9,9 @@ from urllib.parse import urlparse
 
 import requests
 
+# Fallback user agent when FlareSolverr is not available
+FALLBACK_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+
 
 class Unbuffered(object):
     def __init__(self, stream):
@@ -128,6 +131,25 @@ def validate_address(address, name):
     if colon_count < 1 or colon_count > 2:
         sys.exit(
             f"Error: {name} '{address}' is invalid. It must contain 1 or 2 colons, but it has {colon_count}.")
+
+
+def is_flaresolverr_available(shared_state):
+    """
+    Check if FlareSolverr is configured and available.
+
+    Returns:
+        bool: True if FlareSolverr URL is set and not skipped, False otherwise
+    """
+    # Check if FlareSolverr was skipped
+    if shared_state.values["database"]("skip_flaresolverr").retrieve("skipped"):
+        return False
+
+    # Check if FlareSolverr URL is configured
+    flaresolverr_url = shared_state.values["config"]('FlareSolverr').get('url')
+    if not flaresolverr_url:
+        return False
+
+    return True
 
 
 def is_site_usable(shared_state, shorthand):

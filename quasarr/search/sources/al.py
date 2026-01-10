@@ -2,10 +2,8 @@
 # Quasarr
 # Project by https://github.com/rix1337
 
-import re
 import time
 from base64 import urlsafe_b64encode
-from datetime import datetime, timedelta
 from html import unescape
 from urllib.parse import urljoin, quote_plus
 

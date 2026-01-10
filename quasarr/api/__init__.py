@@ -31,7 +31,6 @@ def get_api(shared_state_dict, shared_state_lock):
     def index():
         protected = shared_state.get_db("protected").retrieve_all_titles()
         api_key = Config('API').get('key')
-
         captcha_hint = ""
         if protected:
             plural = 's' if len(protected) > 1 else ''
@@ -103,6 +102,7 @@ def get_api(shared_state_dict, shared_state_lock):
         <div class="section">
             <h2>🔧 Quick Actions</h2>
             <p><button class="btn-primary" onclick="location.href='/hostnames'">Update Hostnames</button></p>
+            <p><button class="btn-primary" onclick="location.href='/flaresolverr'">Configure FlareSolverr</button></p>
             <p><button class="btn-primary" onclick="location.href='/statistics'">View Statistics</button></p>
         </div>
 

@@ -10,6 +10,7 @@ from bs4 import BeautifulSoup
 
 from quasarr.providers.cloudflare import flaresolverr_get, is_cloudflare_challenge
 from quasarr.providers.log import info, debug
+from quasarr.providers.utils import is_flaresolverr_available
 
 
 def resolve_wd_redirect(url, user_agent):
@@ -47,8 +48,13 @@ def get_wd_download_links(shared_state, url, mirror, title, password):
     try:
         output = requests.get(url)
         if output.status_code == 403 or is_cloudflare_challenge(output.text):
-            info("WD is protected by Cloudflare. Using FlareSolverr to bypass protection.")
-            output = flaresolverr_get(shared_state, url)
+            if is_flaresolverr_available(shared_state):
+                info("WD is protected by Cloudflare. Using FlareSolverr to bypass protection.")
+                output = flaresolverr_get(shared_state, url)
+            else:
+                info("WD is protected by Cloudflare but FlareSolverr is not configured. "
+                     "Please configure FlareSolverr in the web UI to access this site.")
+                return {"links": [], "imdb_id": None}
 
         soup = BeautifulSoup(output.text, "html.parser")
 
@@ -76,6 +82,10 @@ def get_wd_download_links(shared_state, url, mirror, title, password):
         link_tags = body.find_all(
             "a", href=True, class_=lambda c: c and "background-" in c
         )
+    except RuntimeError as e:
+        # Catch FlareSolverr not configured error
+        info(f"WD access failed: {e}")
+        return {"links": [], "imdb_id": None}
     except Exception:
         info(f"WD site has been updated. Grabbing download links for {title} not possible!")
         return {"links": [], "imdb_id": None}

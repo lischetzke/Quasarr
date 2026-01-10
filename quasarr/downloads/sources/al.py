@@ -17,6 +17,7 @@ from quasarr.providers.log import info, debug
 from quasarr.providers.sessions.al import retrieve_and_validate_session, invalidate_session, unwrap_flaresolverr_body, \
     fetch_via_flaresolverr, fetch_via_requests_session
 from quasarr.providers.statistics import StatsHelper
+from quasarr.providers.utils import is_flaresolverr_available
 
 hostname = "al"
 
@@ -551,6 +552,12 @@ def get_al_download_links(shared_state, url, mirror, title, password):
     to ensure we download the correct release from the search results.
     This is set by the search module, not a user password.
     """
+
+    # Check if FlareSolverr is available - AL requires it
+    if not is_flaresolverr_available(shared_state):
+        info(f'"{hostname.upper()}" requires FlareSolverr which is not configured. '
+             f'Please configure FlareSolverr in the web UI to use this site.')
+        return {}
 
     release_id = password  # password field carries release_id for AL
 

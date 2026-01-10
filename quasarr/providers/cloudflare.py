@@ -5,6 +5,8 @@
 import requests
 from bs4 import BeautifulSoup
 
+from quasarr.providers.utils import is_flaresolverr_available
+
 
 def is_cloudflare_challenge(html: str) -> bool:
     soup = BeautifulSoup(html, "html.parser")
@@ -39,9 +41,14 @@ def update_session_via_flaresolverr(info,
                                     sess,
                                     target_url: str,
                                     timeout: int = 60):
+    # Check if FlareSolverr is available
+    if not is_flaresolverr_available(shared_state):
+        info("FlareSolverr is not configured. Cannot bypass Cloudflare protection.")
+        return False
+
     flaresolverr_url = shared_state.values["config"]('FlareSolverr').get('url')
     if not flaresolverr_url:
-        info("Cannot proceed without FlareSolverr. Please set it up to try again!")
+        info("Cannot proceed without FlareSolverr. Please configure it in the web UI!")
         return False
 
     fs_payload = {
@@ -104,6 +111,12 @@ def ensure_session_cf_bypassed(info, shared_state, session, url, headers):
 
     # If page is protected, try FlareSolverr
     if resp.status_code == 403 or is_cloudflare_challenge(resp.text):
+        # Check if FlareSolverr is available before attempting bypass
+        if not is_flaresolverr_available(shared_state):
+            info("Cloudflare protection detected but FlareSolverr is not configured. "
+                 "Please configure FlareSolverr in the web UI to access this site.")
+            return None, None, None
+
         info("Encountered Cloudflare protection. Solving challenge with FlareSolverr...")
         flaresolverr_result = update_session_via_flaresolverr(info, shared_state, session, url)
         if not flaresolverr_result:
@@ -156,7 +169,13 @@ def flaresolverr_get(shared_state, url, timeout=60):
     """
     Core function for performing a GET request via FlareSolverr only.
     Used internally by FlareSolverrSession.get()
+
+    Returns None if FlareSolverr is not available.
     """
+    # Check if FlareSolverr is available
+    if not is_flaresolverr_available(shared_state):
+        raise RuntimeError("FlareSolverr is not configured. Please configure it in the web UI.")
+
     flaresolverr_url = shared_state.values["config"]('FlareSolverr').get('url')
     if not flaresolverr_url:
         raise RuntimeError("FlareSolverr URL not configured in shared_state.")

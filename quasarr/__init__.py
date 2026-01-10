@@ -17,7 +17,7 @@ from quasarr.providers import shared_state, version
 from quasarr.providers.log import info, debug
 from quasarr.providers.notifications import send_discord_message
 from quasarr.providers.utils import extract_allowed_keys, extract_kv_pairs, is_valid_url, check_ip, check_flaresolverr, \
-    validate_address, Unbuffered
+    validate_address, Unbuffered, FALLBACK_USER_AGENT
 from quasarr.storage.config import Config, get_clean_hostnames
 from quasarr.storage.setup import path_config, hostnames_config, hostname_credentials_config, flaresolverr_config, \
     jdownloader_config
@@ -100,19 +100,37 @@ def run():
         shared_state.update("database", DataBase)
         supported_hostnames = extract_allowed_keys(Config._DEFAULT_CONFIG, 'Hostnames')
         shared_state.update("sites", [key.upper() for key in supported_hostnames])
-        shared_state.update("user_agent", "")  # will be set by FlareSolverr
+        shared_state.update("user_agent", "")  # will be set by FlareSolverr or fallback
         shared_state.update("helper_active", False)
 
         print(f'Config path: "{config_path}"')
 
+        # Check if FlareSolverr was previously skipped
+        skip_flaresolverr_db = DataBase("skip_flaresolverr")
+        flaresolverr_skipped = skip_flaresolverr_db.retrieve("skipped")
+
         flaresolverr_url = Config('FlareSolverr').get('url')
-        if not flaresolverr_url:
+        if not flaresolverr_url and not flaresolverr_skipped:
             flaresolverr_config(shared_state)
-        else:
+            # Re-check after config - user may have skipped
+            flaresolverr_skipped = skip_flaresolverr_db.retrieve("skipped")
+            flaresolverr_url = Config('FlareSolverr').get('url')
+
+        if flaresolverr_skipped:
+            info('FlareSolverr setup skipped by user preference')
+            info('Some sites (AL) will not work without FlareSolverr. Configure it later in the web UI.')
+            # Set fallback user agent
+            shared_state.update("user_agent", FALLBACK_USER_AGENT)
+            print(f'User Agent (fallback): "{FALLBACK_USER_AGENT}"')
+        elif flaresolverr_url:
             print(f'Flaresolverr URL: "{flaresolverr_url}"')
             flaresolverr_check = check_flaresolverr(shared_state, flaresolverr_url)
             if flaresolverr_check:
                 print(f'User Agent: "{shared_state.values["user_agent"]}"')
+            else:
+                info('FlareSolverr check failed - using fallback user agent')
+                shared_state.update("user_agent", FALLBACK_USER_AGENT)
+                print(f'User Agent (fallback): "{FALLBACK_USER_AGENT}"')
 
         print("\n===== Hostnames =====")
         try:

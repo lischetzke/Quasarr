@@ -19,7 +19,7 @@ from quasarr.providers.html_templates import render_button, render_form, render_
     render_centered_html
 from quasarr.providers.log import info
 from quasarr.providers.shared_state import extract_valid_hostname
-from quasarr.providers.utils import extract_kv_pairs, extract_allowed_keys
+from quasarr.providers.utils import extract_kv_pairs, extract_allowed_keys, FALLBACK_USER_AGENT
 from quasarr.providers.web_server import Server
 from quasarr.storage.config import Config
 from quasarr.storage.sqlite_database import DataBase
@@ -789,10 +789,39 @@ def flaresolverr_config(shared_state):
         <input type="text" id="url" name="url" placeholder="http://192.168.0.1:8191/v1"><br>
         '''
         form_html = f'''
+        <style>
+            .button-row {{
+                display: flex;
+                gap: 0.75rem;
+                justify-content: center;
+                flex-wrap: wrap;
+                margin-top: 1rem;
+            }}
+            .btn-warning {{
+                background-color: #ffc107;
+                color: #212529;
+                border: 1.5px solid #d39e00;
+                padding: 0.5rem 1rem;
+                font-size: 1rem;
+                border-radius: 0.5rem;
+                font-weight: 500;
+                cursor: pointer;
+            }}
+            .btn-warning:hover {{
+                background-color: #e0a800;
+                border-color: #c69500;
+            }}
+        </style>
         <form action="/api/flaresolverr" method="post" onsubmit="return handleSubmit(this)">
             {form_content}
-            {render_button("Save", "primary", {"type": "submit", "id": "submitBtn"})}
+            <div class="button-row">
+                {render_button("Save", "primary", {"type": "submit", "id": "submitBtn"})}
+                <button type="button" class="btn-warning" id="skipBtn" onclick="skipFlaresolverr()">Skip for now</button>
+            </div>
         </form>
+        <p style="font-size:0.875rem; color:var(--secondary, #6c757d); margin-top:1rem;">
+            Skipping will allow Quasarr to start, but some sites (like AL) won't work without FlareSolverr.
+        </p>
         <script>
         var formSubmitted = false;
         function handleSubmit(form) {{
@@ -800,11 +829,53 @@ def flaresolverr_config(shared_state):
             formSubmitted = true;
             var btn = document.getElementById('submitBtn');
             if (btn) {{ btn.disabled = true; btn.textContent = 'Saving...'; }}
+            document.getElementById('skipBtn').disabled = true;
             return true;
+        }}
+        function skipFlaresolverr() {{
+            if (formSubmitted) return;
+            formSubmitted = true;
+            var skipBtn = document.getElementById('skipBtn');
+            var submitBtn = document.getElementById('submitBtn');
+            if (skipBtn) {{ skipBtn.disabled = true; skipBtn.textContent = 'Skipping...'; }}
+            if (submitBtn) {{ submitBtn.disabled = true; }}
+
+            fetch('/api/flaresolverr/skip', {{ method: 'POST' }})
+            .then(response => {{
+                if (response.ok) {{
+                    window.location.href = '/skip-success';
+                }} else {{
+                    alert('Failed to skip FlareSolverr setup');
+                    formSubmitted = false;
+                    if (skipBtn) {{ skipBtn.disabled = false; skipBtn.textContent = 'Skip for now'; }}
+                    if (submitBtn) {{ submitBtn.disabled = false; }}
+                }}
+            }})
+            .catch(error => {{
+                alert('Error: ' + error.message);
+                formSubmitted = false;
+                if (skipBtn) {{ skipBtn.disabled = false; skipBtn.textContent = 'Skip for now'; }}
+                if (submitBtn) {{ submitBtn.disabled = false; }}
+            }});
         }}
         </script>
         '''
         return render_form("Set FlareSolverr URL", form_html)
+
+    @app.get('/skip-success')
+    def skip_success():
+        return render_reconnect_success(
+            "FlareSolverr setup skipped. Some sites (like AL) won't work. You can configure it later in the web UI.")
+
+    @app.post('/api/flaresolverr/skip')
+    def skip_flaresolverr():
+        """Skip FlareSolverr setup and continue startup."""
+        DataBase("skip_flaresolverr").update_store("skipped", "true")
+        # Set fallback user agent
+        shared_state.update("user_agent", FALLBACK_USER_AGENT)
+        info('FlareSolverr setup skipped by user choice')
+        quasarr.providers.web_server.temp_server_success = True
+        return {"success": True}
 
     @app.post('/api/flaresolverr')
     def set_flaresolverr_url():
@@ -825,6 +896,8 @@ def flaresolverr_config(shared_state):
                 resp = requests.post(url, headers=headers, json=data, timeout=30)
                 if resp.status_code == 200:
                     config.save("url", url)
+                    # Clear skip preference since we now have a working URL
+                    DataBase("skip_flaresolverr").delete("skipped")
                     print(f'Using Flaresolverr URL: "{url}"')
                     quasarr.providers.web_server.temp_server_success = True
                     return render_reconnect_success("FlareSolverr URL saved successfully!")
@@ -836,10 +909,10 @@ def flaresolverr_config(shared_state):
         return render_fail("Could not reach FlareSolverr at that URL (expected HTTP 200).")
 
     info(
-        '"flaresolverr" URL is required for proper operation. '
+        '"flaresolverr" URL is required for some sites (like AL). '
         f'Starting web server for config at: "{shared_state.values["internal_address"]}".'
     )
-    info("Please enter your FlareSolverr URL now.")
+    info("Please enter your FlareSolverr URL now, or skip to allow Quasarr to launch!")
     return Server(app, listen='0.0.0.0', port=shared_state.values['port']).serve_temporarily()
 
 

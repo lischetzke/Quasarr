@@ -9,6 +9,7 @@ from Cryptodome.Cipher import AES
 from PIL import Image, ImageChops
 
 from quasarr.providers.log import info, debug
+from quasarr.providers.utils import is_flaresolverr_available
 
 
 class CNL:
@@ -137,7 +138,7 @@ def decrypt_content(content_items: list[dict], mirror: str | None) -> list[str]:
             decrypted_links.extend(urls)
             debug(f"[Item {idx} | hoster={hoster_name}] Decrypted {len(urls)} URLs")
         except Exception as e:
-            # Log and keep going; one bad item won’t stop the rest.
+            # Log and keep going; one bad item won't stop the rest.
             info(f"[Item {idx} | hoster={hoster_name}] Error during decryption: {e}")
 
     return decrypted_links
@@ -160,6 +161,11 @@ def calculate_pixel_based_difference(img1, img2):
 
 
 def solve_captcha(hostname, shared_state, fetch_via_flaresolverr, fetch_via_requests_session):
+    # Check if FlareSolverr is available
+    if not is_flaresolverr_available(shared_state):
+        raise RuntimeError("FlareSolverr is required for CAPTCHA solving but is not configured. "
+                           "Please configure FlareSolverr in the web UI.")
+
     al = shared_state.values["config"]("Hostnames").get(hostname)
     captcha_base = f"https://www.{al}/files/captcha"
 
@@ -195,7 +201,7 @@ def solve_captcha(hostname, shared_state, fetch_via_flaresolverr, fetch_via_requ
     for image_id, raw_bytes in images:
         img = Image.open(BytesIO(raw_bytes))
 
-        # if it’s a palette (P) image with an indexed transparency, go through RGBA
+        # if it's a palette (P) image with an indexed transparency, go through RGBA
         if img.mode == "P" and "transparency" in img.info:
             img = img.convert("RGBA")
 

@@ -13,12 +13,18 @@ from bs4 import BeautifulSoup
 from requests.exceptions import Timeout, RequestException
 
 from quasarr.providers.log import info, debug
-from quasarr.providers.utils import is_site_usable
+from quasarr.providers.utils import is_site_usable, is_flaresolverr_available
 
 
 class SkippedSiteError(Exception):
     """Raised when a site is skipped due to missing credentials or login being skipped."""
     pass
+
+
+class FlareSolverrNotAvailableError(Exception):
+    """Raised when FlareSolverr is required but not available."""
+    pass
+
 
 hostname = "al"
 
@@ -26,6 +32,12 @@ SESSION_MAX_AGE_SECONDS = 24 * 60 * 60  # 24 hours
 
 
 def create_and_persist_session(shared_state):
+    # AL requires FlareSolverr - check availability first
+    if not is_flaresolverr_available(shared_state):
+        info(f'"{hostname.upper()}" requires FlareSolverr which is not configured. '
+             f'Please configure FlareSolverr in the web UI to use this site.')
+        return None
+
     cfg = shared_state.values["config"]("Hostnames")
     host = cfg.get(hostname)
     credentials_cfg = shared_state.values["config"](hostname.upper())
@@ -113,6 +125,11 @@ def create_and_persist_session(shared_state):
 
 def retrieve_and_validate_session(shared_state):
     if not is_site_usable(shared_state, hostname):
+        return None
+
+    # AL requires FlareSolverr - check availability
+    if not is_flaresolverr_available(shared_state):
+        info(f'"{hostname.upper()}" requires FlareSolverr which is not configured')
         return None
 
     db = shared_state.values["database"]("sessions")
@@ -222,6 +239,19 @@ def fetch_via_flaresolverr(shared_state,
     – post_data: dict of form‐fields if method=="POST"
     – timeout: seconds (FlareSolverr's internal maxTimeout = timeout*1000 ms)
     """
+    # Check if FlareSolverr is available
+    if not is_flaresolverr_available(shared_state):
+        info(f'"{hostname.upper()}" requires FlareSolverr which is not configured. '
+             f'Please configure FlareSolverr in the web UI.')
+        return {
+            "status_code": None,
+            "headers": {},
+            "json": None,
+            "text": "",
+            "cookies": [],
+            "error": "FlareSolverr is not configured"
+        }
+
     flaresolverr_url = shared_state.values["config"]('FlareSolverr').get('url')
 
     sess = retrieve_and_validate_session(shared_state)
