@@ -13,6 +13,12 @@ from bs4 import BeautifulSoup
 from requests.exceptions import Timeout, RequestException
 
 from quasarr.providers.log import info, debug
+from quasarr.providers.utils import is_site_usable
+
+
+class SkippedSiteError(Exception):
+    """Raised when a site is skipped due to missing credentials or login being skipped."""
+    pass
 
 hostname = "al"
 
@@ -106,6 +112,9 @@ def create_and_persist_session(shared_state):
 
 
 def retrieve_and_validate_session(shared_state):
+    if not is_site_usable(shared_state, hostname):
+        return None
+
     db = shared_state.values["database"]("sessions")
     stored = db.retrieve(hostname)
     if not stored:
@@ -216,6 +225,16 @@ def fetch_via_flaresolverr(shared_state,
     flaresolverr_url = shared_state.values["config"]('FlareSolverr').get('url')
 
     sess = retrieve_and_validate_session(shared_state)
+    if not sess:
+        debug(f"Skipping {hostname}: site not usable (login skipped or no credentials)")
+        return {
+            "status_code": None,
+            "headers": {},
+            "json": None,
+            "text": "",
+            "cookies": [],
+            "error": f"Site '{hostname}' is not usable (login skipped or no credentials)"
+        }
 
     cmd = "request.get" if method.upper() == "GET" else "request.post"
     fs_payload = {
@@ -301,6 +320,8 @@ def fetch_via_requests_session(shared_state, method: str, target_url: str, post_
     – timeout: seconds
     """
     sess = retrieve_and_validate_session(shared_state)
+    if not sess:
+        raise SkippedSiteError(f"{hostname}: site not usable (login skipped or no credentials)")
 
     # Execute request
     if method.upper() == "GET":

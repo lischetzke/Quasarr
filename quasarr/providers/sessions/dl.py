@@ -9,6 +9,13 @@ import requests
 from bs4 import BeautifulSoup
 
 from quasarr.providers.log import info, debug
+from quasarr.providers.utils import is_site_usable
+
+
+class SkippedSiteError(Exception):
+    """Raised when a site is skipped due to missing credentials or login being skipped."""
+    pass
+
 
 hostname = "dl"
 
@@ -16,17 +23,17 @@ hostname = "dl"
 def create_and_persist_session(shared_state):
     """
     Create and persist a session using user and password.
-    
+
     Args:
         shared_state: Shared state object
-    
+
     Returns:
         requests.Session or None
     """
     cfg = shared_state.values["config"]("Hostnames")
     host = cfg.get(hostname)
     credentials_cfg = shared_state.values["config"](hostname.upper())
-    
+
     user = credentials_cfg.get("user")
     password = credentials_cfg.get("password")
 
@@ -35,30 +42,30 @@ def create_and_persist_session(shared_state):
         return None
 
     sess = requests.Session()
-    
+
     # Set user agent
     ua = shared_state.values["user_agent"]
     sess.headers.update({'User-Agent': ua})
-    
+
     try:
         # Step 1: Get login page to retrieve CSRF token
         login_page_url = f'https://www.{host}/login/'
         login_page = sess.get(login_page_url, timeout=30)
-        
+
         if login_page.status_code != 200:
             info(f'Failed to load login page for: "{hostname}" - Status {login_page.status_code}')
             return None
-        
+
         # Extract CSRF token from login form
         soup = BeautifulSoup(login_page.text, 'html.parser')
         csrf_input = soup.find('input', {'name': '_xfToken'})
-        
+
         if not csrf_input or not csrf_input.get('value'):
             info(f'Could not find CSRF token on login page for: "{hostname}"')
             return None
-        
+
         csrf_token = csrf_input['value']
-        
+
         # Step 2: Submit login form
         login_data = {
             'login': user,
@@ -67,18 +74,18 @@ def create_and_persist_session(shared_state):
             'remember': '1',
             '_xfRedirect': f'https://www.{host}/'
         }
-        
+
         login_url = f'https://www.{host}/login/login'
         login_response = sess.post(login_url, data=login_data, timeout=30)
-        
+
         # Step 3: Verify login success
         # Check if we're logged in by accessing the main page
         verify_response = sess.get(f'https://www.{host}/', timeout=30)
-        
+
         if 'data-logged-in="true"' not in verify_response.text:
             info(f'Login verification failed for: "{hostname}" - invalid credentials or login failed')
             return None
-        
+
         info(f'Session successfully created for: "{hostname}" using user/password')
     except Exception as e:
         info(f'Failed to create session for: "{hostname}" - {e}')
@@ -88,20 +95,23 @@ def create_and_persist_session(shared_state):
     blob = pickle.dumps(sess)
     token = base64.b64encode(blob).decode("utf-8")
     shared_state.values["database"]("sessions").update_store(hostname, token)
-    
+
     return sess
 
 
 def retrieve_and_validate_session(shared_state):
     """
     Retrieve session from database or create a new one.
-    
+
     Args:
         shared_state: Shared state object
-    
+
     Returns:
         requests.Session or None
     """
+    if not is_site_usable(shared_state, hostname):
+        return None
+
     db = shared_state.values["database"]("sessions")
     token = db.retrieve(hostname)
     if not token:
@@ -122,7 +132,7 @@ def retrieve_and_validate_session(shared_state):
 def invalidate_session(shared_state):
     """
     Invalidate the current session.
-    
+
     Args:
         shared_state: Shared state object
     """
@@ -134,7 +144,7 @@ def invalidate_session(shared_state):
 def _persist_session_to_db(shared_state, sess):
     """
     Serialize & store the given requests.Session into the database under `hostname`.
-    
+
     Args:
         shared_state: Shared state object
         sess: requests.Session to persist
@@ -144,10 +154,11 @@ def _persist_session_to_db(shared_state, sess):
     shared_state.values["database"]("sessions").update_store(hostname, token)
 
 
-def fetch_via_requests_session(shared_state, method: str, target_url: str, post_data: dict = None, get_params: dict = None, timeout: int = 30):
+def fetch_via_requests_session(shared_state, method: str, target_url: str, post_data: dict = None,
+                               get_params: dict = None, timeout: int = 30):
     """
     Execute request using the session.
-    
+
     Args:
         shared_state: Shared state object
         method: "GET" or "POST"
@@ -155,13 +166,13 @@ def fetch_via_requests_session(shared_state, method: str, target_url: str, post_
         post_data: POST data (for POST requests)
         get_params: URL parameters (for GET requests)
         timeout: Request timeout in seconds
-    
+
     Returns:
         Response object
     """
     sess = retrieve_and_validate_session(shared_state)
     if not sess:
-        raise Exception(f"Could not retrieve valid session for {hostname}")
+        raise SkippedSiteError(f"{hostname}: site not usable (login skipped or no credentials)")
 
     # Execute request
     if method.upper() == "GET":

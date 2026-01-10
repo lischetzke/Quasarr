@@ -6,19 +6,18 @@ import argparse
 import multiprocessing
 import os
 import re
-import socket
 import sys
 import tempfile
 import time
-from urllib.parse import urlparse, urljoin, parse_qs
 
-import dukpy
 import requests
 
 from quasarr.api import get_api
 from quasarr.providers import shared_state, version
 from quasarr.providers.log import info, debug
 from quasarr.providers.notifications import send_discord_message
+from quasarr.providers.utils import extract_allowed_keys, extract_kv_pairs, is_valid_url, check_ip, check_flaresolverr, \
+    validate_address, Unbuffered
 from quasarr.storage.config import Config, get_clean_hostnames
 from quasarr.storage.setup import path_config, hostnames_config, hostname_credentials_config, flaresolverr_config, \
     jdownloader_config
@@ -120,6 +119,8 @@ def run():
             if arguments.hostnames:
                 hostnames_link = arguments.hostnames
                 if is_valid_url(hostnames_link):
+                    # Store the hostnames URL for later use in web UI
+                    Config("Settings").save("hostnames_url", hostnames_link)
                     print(f"Extracting hostnames from {hostnames_link}...")
                     allowed_keys = supported_hostnames
                     max_keys = len(allowed_keys)
@@ -160,33 +161,21 @@ def run():
         print(f"You have [{len(hostnames)} of {len(Config._DEFAULT_CONFIG['Hostnames'])}] supported hostnames set up")
         print(f"For efficiency it is recommended to set up as few hostnames as needed.")
 
-        al = Config('Hostnames').get('al')
-        if al:
-            user = Config('AL').get('user')
-            password = Config('AL').get('password')
-            if not user or not password:
-                hostname_credentials_config(shared_state, "AL", al)
+        # Check credentials for login-required hostnames
+        skip_login_db = DataBase("skip_login")
+        login_required_sites = ['al', 'dd', 'nx', 'dl']
 
-        dd = Config('Hostnames').get('dd')
-        if dd:
-            user = Config('DD').get('user')
-            password = Config('DD').get('password')
-            if not user or not password:
-                hostname_credentials_config(shared_state, "DD", dd)
-
-        nx = Config('Hostnames').get('nx')
-        if nx:
-            user = Config('NX').get('user')
-            password = Config('NX').get('password')
-            if not user or not password:
-                hostname_credentials_config(shared_state, "NX", nx)
-
-        dl = Config('Hostnames').get('dl')
-        if dl:
-            user = Config('DL').get('user')
-            password = Config('DL').get('password')
-            if not user or not password:
-                hostname_credentials_config(shared_state, "DL", dl)
+        for site in login_required_sites:
+            hostname = Config('Hostnames').get(site)
+            if hostname:
+                site_config = Config(site.upper())
+                user = site_config.get('user')
+                password = site_config.get('password')
+                if not user or not password:
+                    if skip_login_db.retrieve(site):
+                        info(f'"{site.upper()}" login skipped by user preference')
+                    else:
+                        hostname_credentials_config(shared_state, site.upper(), hostname)
 
         config = Config('JDownloader')
         user = config.get('user')
@@ -234,21 +223,21 @@ def run():
 
         jdownloader = multiprocessing.Process(
             target=jdownloader_connection,
-            args=(shared_state_dict, shared_state_lock)
+            args=(shared_state_dict, shared_state_lock),
+            daemon=True
         )
         jdownloader.start()
 
         updater = multiprocessing.Process(
             target=update_checker,
-            args=(shared_state_dict, shared_state_lock)
+            args=(shared_state_dict, shared_state_lock),
+            daemon=True
         )
         updater.start()
 
         try:
             get_api(shared_state_dict, shared_state_lock)
         except KeyboardInterrupt:
-            jdownloader.kill()
-            updater.kill()
             sys.exit(0)
 
 
@@ -327,121 +316,3 @@ def jdownloader_connection(shared_state_dict, shared_state_lock):
 
     except KeyboardInterrupt:
         pass
-
-
-class Unbuffered(object):
-    def __init__(self, stream):
-        self.stream = stream
-
-    def write(self, data):
-        self.stream.write(data)
-        self.stream.flush()
-
-    def writelines(self, datas):
-        self.stream.writelines(datas)
-        self.stream.flush()
-
-    def __getattr__(self, attr):
-        return getattr(self.stream, attr)
-
-
-def check_ip():
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    try:
-        s.connect(('10.255.255.255', 0))
-        ip = s.getsockname()[0]
-    except:
-        ip = '127.0.0.1'
-    finally:
-        s.close()
-    return ip
-
-
-def check_flaresolverr(shared_state, flaresolverr_url):
-    # Ensure it ends with /v<digit+>
-    if not re.search(r"/v\d+$", flaresolverr_url):
-        print(f"FlareSolverr URL does not end with /v#: {flaresolverr_url}")
-        return False
-
-    # Try sending a simple test request
-    headers = {"Content-Type": "application/json"}
-    data = {
-        "cmd": "request.get",
-        "url": "http://www.google.com/",
-        "maxTimeout": 10000
-    }
-
-    try:
-        response = requests.post(flaresolverr_url, headers=headers, json=data, timeout=10)
-        response.raise_for_status()
-        json_data = response.json()
-
-        # Check if the structure looks like a valid FlareSolverr response
-        if "status" in json_data and json_data["status"] == "ok":
-            solution = json_data["solution"]
-            solution_ua = solution.get("userAgent", None)
-            if solution_ua:
-                shared_state.update("user_agent", solution_ua)
-            return True
-        else:
-            print(f"Unexpected FlareSolverr response: {json_data}")
-            return False
-
-    except Exception as e:
-        print(f"Failed to connect to FlareSolverr: {e}")
-        return False
-
-def is_valid_url(url):
-    if "/raw/eX4Mpl3" in url:
-        print("Example URL detected. Please provide a valid URL found on pastebin or any other public site!")
-        return False
-
-    parsed = urlparse(url)
-    return parsed.scheme in ("http", "https") and bool(parsed.netloc)
-
-
-def validate_address(address, name):
-    if not address.startswith("http"):
-        sys.exit(f"Error: {name} '{address}' is invalid. It must start with 'http'.")
-
-    colon_count = address.count(":")
-    if colon_count < 1 or colon_count > 2:
-        sys.exit(
-            f"Error: {name} '{address}' is invalid. It must contain 1 or 2 colons, but it has {colon_count}.")
-
-
-def extract_allowed_keys(config, section):
-    """
-    Extracts allowed keys from the specified section in the configuration.
-
-    :param config: The configuration dictionary.
-    :param section: The section from which to extract keys.
-    :return: A list of allowed keys.
-    """
-    if section not in config:
-        raise ValueError(f"Section '{section}' not found in configuration.")
-    return [key for key, *_ in config[section]]
-
-
-def extract_kv_pairs(input_text, allowed_keys):
-    """
-    Extracts key-value pairs from the given text where keys match allowed_keys.
-
-    :param input_text: The input text containing key-value pairs.
-    :param allowed_keys: A list of allowed two-letter shorthand keys.
-    :return: A dictionary of extracted key-value pairs.
-    """
-    kv_pattern = re.compile(rf"^({'|'.join(map(re.escape, allowed_keys))})\s*=\s*(.*)$")
-    kv_pairs = {}
-
-    for line in input_text.splitlines():
-        match = kv_pattern.match(line.strip())
-        if match:
-            key, value = match.groups()
-            kv_pairs[key] = value
-        elif "[Hostnames]" in line:
-            pass
-        else:
-            print(f"Skipping line because it does not contain any supported hostname: {line}")
-
-    return kv_pairs

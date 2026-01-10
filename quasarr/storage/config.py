@@ -25,6 +25,9 @@ class Config(object):
             ("password", "secret", ""),
             ("device", "str", ""),
         ],
+        'Settings': [
+            ("hostnames_url", "secret", ""),
+        ],
         'Hostnames': [
             ("al", "secret", ""),
             ("by", "secret", ""),

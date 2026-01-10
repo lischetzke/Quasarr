@@ -7,7 +7,10 @@ import pickle
 
 import requests
 
-from quasarr.providers.log import info
+from quasarr.providers.log import info, debug
+from quasarr.providers.utils import is_site_usable
+
+hostname = "nx"
 
 
 def create_and_persist_session(shared_state):
@@ -60,6 +63,10 @@ def create_and_persist_session(shared_state):
 
 
 def retrieve_and_validate_session(shared_state):
+    if not is_site_usable(shared_state, hostname):
+        debug(f"Skipping {hostname}: site not usable (login skipped or no credentials)")
+        return None
+
     session_string = shared_state.values["database"]("sessions").retrieve("nx")
     if not session_string:
         nx_session = create_and_persist_session(shared_state)
