@@ -264,12 +264,12 @@ def hostname_form_html(shared_state, message, show_restart_button=False, show_sk
 <div class="url-import-section">
     <h3>📥 Import from URL</h3>
     <div class="url-import-row">
-        <input type="text" id="hostnamesUrl" placeholder="https://pastebin.com/raw/..." value="{stored_url}" autocorrect="off" autocomplete="off">
+        <input type="text" id="hostnamesUrl" placeholder="https://quasarr-host.name/ini?token=123..." value="{stored_url}" autocorrect="off" autocomplete="off" onfocus="onHostnameFieldFocus()">
         <button type="button" class="btn-secondary" id="importBtn" onclick="importHostnames()">Import</button>
     </div>
     <div id="importStatus" class="import-status"></div>
     <p style="font-size:0.75rem; color:var(--secondary, #6c757d); margin:0.5rem 0 0 0;">
-        Paste a URL containing hostname definitions (same format as --hostnames parameter)
+        Paste a URL containing hostname definitions (one valid Hostname per line "ab = xyz")
     </p>
 </div>
 
@@ -305,6 +305,20 @@ def hostname_form_html(shared_state, message, show_restart_button=False, show_sk
     errorDiv.textContent = 'Please fill in at least one hostname!';
     inputs[0].focus();
     return false;
+  }}
+
+  function onHostnameFieldFocus() {{
+    var urlInput = document.getElementById('hostnamesUrl');
+    if (urlInput.value.trim() === '') {{
+      var hasOpenedHelper = localStorage.getItem('hideHostnameHelperRedirect');
+      if (!hasOpenedHelper) {{
+        localStorage.setItem('hideHostnameHelperRedirect', 'true');
+        window.open('https://quasarr-host.name', '_blank');
+        var statusDiv = document.getElementById('importStatus');
+        statusDiv.className = 'import-status';
+        statusDiv.textContent = 'Opened hostname helper in new tab. Paste the URL here after setup.';
+      }}
+    }}
   }}
 
   function importHostnames() {{
@@ -575,16 +589,14 @@ def hostnames_config(shared_state):
             if parsed.scheme not in ("http", "https") or not parsed.netloc:
                 return {"success": False, "error": "Invalid URL format"}
 
-            if "/raw/eX4Mpl3" in url:
-                return {"success": False, "error": "Example URL detected. Please provide a real URL."}
-
             # Fetch content
             try:
                 resp = requests.get(url, timeout=15)
                 resp.raise_for_status()
                 content = resp.text
             except requests.RequestException as e:
-                return {"success": False, "error": f"Failed to fetch URL: {str(e)}"}
+                info(f"Failed to fetch hostnames URL: {e}")
+                return {"success": False, "error": "Failed to fetch URL. Check the console log for details."}
 
             # Parse hostnames
             allowed_keys = extract_allowed_keys(Config._DEFAULT_CONFIG, 'Hostnames')
