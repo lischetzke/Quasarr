@@ -353,8 +353,8 @@ def setup_arr_routes(app):
                             <enclosure url="{release.get("link", "")}" length="{release.get("size", 0)}" type="application/x-nzb" />
                         </item>'''
 
-                    is_feed_request = not getattr(request.query, 'imdbid', '') and not getattr(request.query, 'q', '')
-                    if is_feed_request and not items:
+                    requires_placeholder_item = not getattr(request.query, 'imdbid', '') and not getattr(request.query, 'q', '')
+                    if requires_placeholder_item and not items:
                         items = f'''
                         <item>
                             <title>No results found</title>

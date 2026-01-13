@@ -46,7 +46,7 @@ http://192.168.1.1:8191/v1
 
 > ⚠️ Quasarr requires at least one valid hostname to start. It does not provide or endorse any specific sources, but community-maintained lists are available:
 
-🔗 **[quasarr-hostnames.pages.dev](https://quasarr-hostnames.pages.dev)** — third-party guide for finding hostnames
+🔗 **[https://quasarr-host.name](https://quasarr-host.name)** — community guide for finding hostnames
 
 📋 Alternatively, browse community suggestions via [pastebin search](https://pastebin.com/search?q=hostnames+quasarr) (login required).
 
@@ -145,7 +145,7 @@ docker run -d \
   -e 'INTERNAL_ADDRESS'='http://192.168.0.1:8080' \
   -e 'EXTERNAL_ADDRESS'='https://foo.bar/' \
   -e 'DISCORD'='https://discord.com/api/webhooks/1234567890/ABCDEFGHIJKLMN' \
-  -e 'HOSTNAMES'='https://pastebin.com/raw/eX4Mpl3'
+  -e 'HOSTNAMES'='https://quasarr-host.name/ini?token=123...'
   -e 'SILENT'='True' \
   -e 'DEBUG'='' \
   -e 'TZ'='Europe/Berlin' \
@@ -175,7 +175,7 @@ Use this only in case you can't run the docker image.
   --port=8080
   --discord=https://discord.com/api/webhooks/1234567890/ABCDEFGHIJKLMN
   --external_address=https://foo.bar/
-  --hostnames=https://pastebin.com/raw/eX4Mpl3
+  --hostnames=https://quasarr-host.name/ini?token=123...
   ```
 
 * `--discord` see `DISCORD`docker variable

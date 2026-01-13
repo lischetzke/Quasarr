@@ -2,6 +2,7 @@
 # Quasarr
 # Project by https://github.com/rix1337
 
+import os
 import re
 import socket
 import sys
@@ -31,10 +32,6 @@ class Unbuffered(object):
 
 def is_valid_url(url):
     """Validate if a URL is properly formatted."""
-    if "/raw/eX4Mpl3" in url:
-        print("Example URL detected. Please provide a valid URL found on pastebin or any other public site!")
-        return False
-
     parsed = urlparse(url)
     return parsed.scheme in ("http", "https") and bool(parsed.netloc)
 
@@ -62,6 +59,7 @@ def extract_kv_pairs(input_text, allowed_keys):
     """
     kv_pattern = re.compile(rf"^({'|'.join(map(re.escape, allowed_keys))})\s*=\s*(.*)$")
     kv_pairs = {}
+    debug = os.getenv('DEBUG')
 
     for line in input_text.splitlines():
         match = kv_pattern.match(line.strip())
@@ -71,7 +69,8 @@ def extract_kv_pairs(input_text, allowed_keys):
         elif "[Hostnames]" in line:
             pass
         else:
-            print(f"Skipping line because it does not contain any supported hostname: {line}")
+            if debug:
+                print(f"Skipping line because it does not contain any supported hostname: {line}")
 
     return kv_pairs
 

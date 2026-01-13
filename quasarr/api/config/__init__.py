@@ -54,16 +54,14 @@ def setup_config(app, shared_state):
             if parsed.scheme not in ("http", "https") or not parsed.netloc:
                 return {"success": False, "error": "Invalid URL format"}
 
-            if "/raw/eX4Mpl3" in url:
-                return {"success": False, "error": "Example URL detected. Please provide a real URL."}
-
             # Fetch content
             try:
                 resp = requests.get(url, timeout=15)
                 resp.raise_for_status()
                 content = resp.text
             except requests.RequestException as e:
-                return {"success": False, "error": f"Failed to fetch URL: {str(e)}"}
+                info(f"Failed to fetch hostnames URL: {e}")
+                return {"success": False, "error": "Failed to fetch URL. Check the console log for details."}
 
             # Parse hostnames
             allowed_keys = extract_allowed_keys(Config._DEFAULT_CONFIG, 'Hostnames')
