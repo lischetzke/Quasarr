@@ -327,7 +327,7 @@ def setup_arr_routes(app):
                             else:
                                 info(
                                     f'Ignoring search request from {request_from} - only imdbid searches are supported')
-                                releases = [{}]  # sonarr expects this but we will not support non-imdbid searches
+                                releases = []  # sonarr expects this but we will not support non-imdbid searches
 
                     items = ""
                     for release in releases:
@@ -353,7 +353,7 @@ def setup_arr_routes(app):
                             <enclosure url="{release.get("link", "")}" length="{release.get("size", 0)}" type="application/x-nzb" />
                         </item>'''
 
-                    is_feed_request = not getattr(request.query, 'imdbid', '')
+                    is_feed_request = not getattr(request.query, 'imdbid', '') and not getattr(request.query, 'q', '')
                     if is_feed_request and not items:
                         items = f'''
                         <item>
