@@ -7,6 +7,7 @@ import re
 import requests
 
 from quasarr.providers.log import info, debug
+from quasarr.providers.utils import check_links_online_status
 
 hostname = "wx"
 
@@ -15,7 +16,10 @@ def get_wx_download_links(shared_state, url, mirror, title, password):
     """
     KEEP THE SIGNATURE EVEN IF SOME PARAMETERS ARE UNUSED!
 
-    WX source handler - Grabs download links from API based on title and mirror.
+    WX source handler - Grabs download links from API based on title.
+    Finds the best mirror (M1, M2, M3...) by checking online status.
+    Returns all online links from the first complete mirror, or the best partial mirror.
+    Prefers hide.cx links over other crypters (filecrypt, etc.) when online counts are equal.
     """
     host = shared_state.values["config"]("Hostnames").get(hostname)
 
@@ -35,7 +39,7 @@ def get_wx_download_links(shared_state, url, mirror, title, password):
             return {"links": []}
 
         # Extract slug from URL
-        slug_match = re.search(r'/detail/([^/]+)', url)
+        slug_match = re.search(r'/detail/([^/?]+)', url)
         if not slug_match:
             info(f"{hostname.upper()}: Could not extract slug from URL: {url}")
             return {"links": []}
@@ -64,62 +68,100 @@ def get_wx_download_links(shared_state, url, mirror, title, password):
 
         releases = data['item']['releases']
 
-        # Find the release matching the title
-        matching_release = None
-        for release in releases:
-            if release.get('fulltitle') == title:
-                matching_release = release
-                break
+        # Find ALL releases matching the title (these are different mirrors: M1, M2, M3...)
+        matching_releases = [r for r in releases if r.get('fulltitle') == title]
 
-        if not matching_release:
+        if not matching_releases:
             info(f"{hostname.upper()}: No release found matching title: {title}")
             return {"links": []}
 
-        # Extract crypted_links based on mirror
-        crypted_links = matching_release.get('crypted_links', {})
+        debug(f"{hostname.upper()}: Found {len(matching_releases)} mirror(s) for: {title}")
 
-        if not crypted_links:
-            info(f"{hostname.upper()}: No crypted_links found for: {title}")
-            return {"links": []}
+        # Evaluate each mirror and find the best one
+        # Track: (online_count, is_hide, online_links)
+        best_mirror = None  # (online_count, is_hide, online_links)
 
-        links = []
+        for idx, release in enumerate(matching_releases):
+            crypted_links = release.get('crypted_links', {})
+            check_urls = release.get('options', {}).get('check', {})
 
-        # If mirror is specified, find matching hoster (handle partial matches like 'ddownload' -> 'ddownload.com')
-        if mirror:
-            matched_hoster = None
-            for hoster in crypted_links.keys():
-                if mirror.lower() in hoster.lower() or hoster.lower() in mirror.lower():
-                    matched_hoster = hoster
-                    break
+            if not crypted_links:
+                continue
 
-            if matched_hoster:
-                link = crypted_links[matched_hoster]
-                # Prefer hide over filecrypt
-                if re.search(r'hide\.', link, re.IGNORECASE):
-                    links.append([link, matched_hoster])
-                    debug(f"{hostname.upper()}: Found hide link for mirror {matched_hoster}")
-                elif re.search(r'filecrypt\.', link, re.IGNORECASE):
-                    links.append([link, matched_hoster])
-                    debug(f"{hostname.upper()}: Found filecrypt link for mirror {matched_hoster}")
-            else:
-                info(
-                    f"{hostname.upper()}: Mirror '{mirror}' not found in available hosters: {list(crypted_links.keys())}")
-        else:
-            # If no mirror specified, get all available crypted links (prefer hide over filecrypt)
-            for hoster, link in crypted_links.items():
-                if re.search(r'hide\.', link, re.IGNORECASE):
-                    links.append([link, hoster])
-                    debug(f"{hostname.upper()}: Found hide link for hoster {hoster}")
-                elif re.search(r'filecrypt\.', link, re.IGNORECASE):
-                    links.append([link, hoster])
-                    debug(f"{hostname.upper()}: Found filecrypt link for hoster {hoster}")
+            # Separate hide.cx links from other crypters
+            hide_links = []
+            other_links = []
 
-        if not links:
-            info(f"{hostname.upper()}: No supported crypted links found for: {title}")
-            return {"links": []}
+            for hoster, container_url in crypted_links.items():
+                state_url = check_urls.get(hoster)
+                if re.search(r'hide\.', container_url, re.IGNORECASE):
+                    hide_links.append([container_url, hoster, state_url])
+                elif re.search(r'filecrypt\.', container_url, re.IGNORECASE):
+                    other_links.append([container_url, hoster, state_url])
+                # Skip other crypters we don't support
 
-        debug(f"{hostname.upper()}: Found {len(links)} crypted link(s) for: {title}")
-        return {"links": links}
+            # Check hide.cx links first (preferred)
+            hide_online = 0
+            online_hide = []
+            if hide_links:
+                online_hide = check_links_online_status(hide_links, shared_state)
+                hide_total = len(hide_links)
+                hide_online = len(online_hide)
+
+                debug(f"{hostname.upper()}: M{idx + 1} hide.cx: {hide_online}/{hide_total} online")
+
+                # If all hide.cx links are online, use this mirror immediately
+                if hide_online == hide_total and hide_online > 0:
+                    debug(
+                        f"{hostname.upper()}: M{idx + 1} is complete (all {hide_online} hide.cx links online), using this mirror")
+                    return {"links": online_hide}
+
+            # Check other crypters (filecrypt, etc.) - no early return, always check all mirrors for hide.cx first
+            other_online = 0
+            online_other = []
+            if other_links:
+                online_other = check_links_online_status(other_links, shared_state)
+                other_total = len(other_links)
+                other_online = len(online_other)
+
+                debug(f"{hostname.upper()}: M{idx + 1} other crypters: {other_online}/{other_total} online")
+
+            # Determine best option for this mirror (prefer hide.cx on ties)
+            mirror_links = None
+            mirror_count = 0
+            mirror_is_hide = False
+
+            if hide_online > 0 and hide_online >= other_online:
+                # hide.cx wins (more links or tie)
+                mirror_links = online_hide
+                mirror_count = hide_online
+                mirror_is_hide = True
+            elif other_online > hide_online:
+                # other crypter has more online links
+                mirror_links = online_other
+                mirror_count = other_online
+                mirror_is_hide = False
+
+            # Update best_mirror if this mirror is better
+            # Priority: 1) more online links, 2) hide.cx preference on ties
+            if mirror_links:
+                if best_mirror is None:
+                    best_mirror = (mirror_count, mirror_is_hide, mirror_links)
+                elif mirror_count > best_mirror[0]:
+                    best_mirror = (mirror_count, mirror_is_hide, mirror_links)
+                elif mirror_count == best_mirror[0] and mirror_is_hide and not best_mirror[1]:
+                    # Same count but this is hide.cx and current best is not
+                    best_mirror = (mirror_count, mirror_is_hide, mirror_links)
+
+        # No complete mirror found, return best partial mirror
+        if best_mirror and best_mirror[2]:
+            crypter_type = "hide.cx" if best_mirror[1] else "other crypter"
+            debug(
+                f"{hostname.upper()}: No complete mirror, using best partial with {best_mirror[0]} online {crypter_type} link(s)")
+            return {"links": best_mirror[2]}
+
+        info(f"{hostname.upper()}: No online links found for: {title}")
+        return {"links": []}
 
     except Exception as e:
         info(f"{hostname.upper()}: Error extracting download links from {url}: {e}")

@@ -3,14 +3,12 @@
 # Project by https://github.com/rix1337
 
 import re
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from io import BytesIO
 
-from PIL import Image
 from bs4 import BeautifulSoup, NavigableString
 
 from quasarr.providers.log import info, debug
 from quasarr.providers.sessions.dl import retrieve_and_validate_session, fetch_via_requests_session, invalidate_session
+from quasarr.providers.utils import generate_status_url, check_links_online_status
 
 hostname = "dl"
 
@@ -136,28 +134,6 @@ def extract_mirror_name_from_link(link_element):
     return None
 
 
-def generate_status_url(href, crypter_type):
-    """
-    Generate a status URL for crypters that support it.
-    Returns None if status URL cannot be generated.
-    """
-    if crypter_type == "hide":
-        # hide.cx links: https://hide.cx/folder/{UUID} → https://hide.cx/state/{UUID}
-        match = re.search(r'hide\.cx/(?:folder/)?([a-f0-9-]{36})', href, re.IGNORECASE)
-        if match:
-            uuid = match.group(1)
-            return f"https://hide.cx/state/{uuid}"
-
-    elif crypter_type == "tolink":
-        # tolink links: https://tolink.to/f/{ID} → https://tolink.to/f/{ID}/s/status.png
-        match = re.search(r'tolink\.to/f/([a-zA-Z0-9]+)', href, re.IGNORECASE)
-        if match:
-            link_id = match.group(1)
-            return f"https://tolink.to/f/{link_id}/s/status.png"
-
-    return None
-
-
 def extract_status_url_from_html(link_element, crypter_type):
     """
     Extract status image URL from HTML near the link element.
@@ -259,100 +235,6 @@ def build_filecrypt_status_map(soup):
     return status_map
 
 
-def image_has_green(image_data):
-    """
-    Analyze image data to check if it contains green pixels.
-    Returns True if any significant green is detected (indicating online status).
-    """
-    try:
-        img = Image.open(BytesIO(image_data))
-        img = img.convert('RGB')
-
-        pixels = list(img.getdata())
-
-        for r, g, b in pixels:
-            # Check if pixel is greenish: green channel is dominant
-            # and has a reasonable absolute value
-            if g > 100 and g > r * 1.3 and g > b * 1.3:
-                return True
-
-        return False
-    except Exception as e:
-        debug(f"Error analyzing status image: {e}")
-        # If we can't analyze, assume online to not skip valid links
-        return True
-
-
-def fetch_status_image(status_url):
-    """
-    Fetch a status image and return (status_url, image_data).
-    Returns (status_url, None) on failure.
-    """
-    try:
-        import requests
-        response = requests.get(status_url, timeout=10)
-        if response.status_code == 200:
-            return (status_url, response.content)
-    except Exception as e:
-        debug(f"Error fetching status image {status_url}: {e}")
-    return (status_url, None)
-
-
-def check_links_online_status(links_with_status):
-    """
-    Check online status for links that have status URLs.
-    Returns list of links that are online (or have no status URL to check).
-
-    links_with_status: list of [href, identifier, status_url] where status_url can be None
-    """
-
-    links_to_check = [(i, link) for i, link in enumerate(links_with_status) if link[2]]
-
-    if not links_to_check:
-        # No status URLs to check, return all links as potentially online
-        return [[link[0], link[1]] for link in links_with_status]
-
-    # Batch fetch status images
-    status_results = {}  # status_url -> has_green
-    status_urls = list(set(link[2] for _, link in links_to_check))
-
-    batch_size = 10
-    for i in range(0, len(status_urls), batch_size):
-        batch = status_urls[i:i + batch_size]
-        with ThreadPoolExecutor(max_workers=batch_size) as executor:
-            futures = [executor.submit(fetch_status_image, url) for url in batch]
-            for future in as_completed(futures):
-                try:
-                    status_url, image_data = future.result()
-                    if image_data:
-                        status_results[status_url] = image_has_green(image_data)
-                    else:
-                        # Could not fetch, assume online
-                        status_results[status_url] = True
-                except Exception as e:
-                    debug(f"Error checking status: {e}")
-
-    # Filter to online links
-    online_links = []
-
-    for link in links_with_status:
-        href, identifier, status_url = link
-        if not status_url:
-            # No status URL, include link (keeplinks case)
-            online_links.append([href, identifier])
-        elif status_url in status_results:
-            if status_results[status_url]:
-                online_links.append([href, identifier])
-                debug(f"Link online: {identifier} ({href})")
-            else:
-                debug(f"Link offline: {identifier} ({href})")
-        else:
-            # Status check failed, include link
-            online_links.append([href, identifier])
-
-    return online_links
-
-
 def extract_links_and_password_from_post(post_content, host):
     """
     Extract download links and password from a forum post.
@@ -448,7 +330,11 @@ def get_dl_download_links(shared_state, url, mirror, title, password):
             info(f"Could not find any posts in thread: {url}")
             return {"links": [], "password": ""}
 
-        # Iterate through posts to find one with online links
+        # Track first post with unverifiable links as fallback
+        fallback_links = None
+        fallback_password = ""
+
+        # Iterate through posts to find one with verified online links
         for post_index, post in enumerate(posts):
             post_content = post.select_one('div.bbWrapper')
             if not post_content:
@@ -459,15 +345,31 @@ def get_dl_download_links(shared_state, url, mirror, title, password):
             if not links_with_status:
                 continue
 
+            # Check if any links have status URLs we can verify
+            has_verifiable_links = any(link[2] for link in links_with_status)
+
+            if not has_verifiable_links:
+                # No way to check online status - save as fallback and continue looking
+                if fallback_links is None:
+                    fallback_links = [[link[0], link[1]] for link in links_with_status]
+                    fallback_password = extracted_password
+                    debug(f"Post #{post_index + 1} has links but no status URLs, saving as fallback...")
+                continue
+
             # Check which links are online
-            online_links = check_links_online_status(links_with_status)
+            online_links = check_links_online_status(links_with_status, shared_state)
 
             if online_links:
                 post_info = "first post" if post_index == 0 else f"post #{post_index + 1}"
-                debug(f"Found {len(online_links)} online link(s) in {post_info} for: {title}")
+                debug(f"Found {len(online_links)} verified online link(s) in {post_info} for: {title}")
                 return {"links": online_links, "password": extracted_password}
             else:
                 debug(f"All links in post #{post_index + 1} are offline, checking next post...")
+
+        # No verified online links found - return fallback if available
+        if fallback_links:
+            debug(f"No verified online links found, returning unverified fallback links for: {title}")
+            return {"links": fallback_links, "password": fallback_password}
 
         info(f"No online download links found in any post: {url}")
         return {"links": [], "password": ""}

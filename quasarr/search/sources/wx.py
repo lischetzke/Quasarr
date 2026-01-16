@@ -131,6 +131,7 @@ def wx_feed(shared_state, start_time, request_from, mirror=None):
 def wx_search(shared_state, start_time, request_from, search_string, mirror=None, season=None, episode=None):
     """
     Search using internal API.
+    Deduplicates results by fulltitle - each unique release appears only once.
     """
     releases = []
     host = shared_state.values["config"]("Hostnames").get(hostname)
@@ -201,6 +202,9 @@ def wx_search(shared_state, start_time, request_from, search_string, mirror=None
 
         debug(f"{hostname.upper()}: Found {len(items)} items in search results")
 
+        # Track seen titles to deduplicate (mirrors have same fulltitle)
+        seen_titles = set()
+
         for item in items:
             try:
                 uid = item.get('uid')
@@ -238,29 +242,34 @@ def wx_search(shared_state, start_time, request_from, search_string, mirror=None
                     title = title.replace(' ', '.')
 
                     if shared_state.is_valid_release(title, request_from, search_string, season, episode):
-                        published = detail_item.get('updated_at') or detail_item.get('created_at')
-                        if not published:
-                            published = datetime.now().strftime("%a, %d %b %Y %H:%M:%S +0000")
-                        password = f"www.{host}"
+                        # Skip if we've already seen this exact title
+                        if title in seen_titles:
+                            debug(f"{hostname.upper()}: Skipping duplicate main title: {title}")
+                        else:
+                            seen_titles.add(title)
+                            published = detail_item.get('updated_at') or detail_item.get('created_at')
+                            if not published:
+                                published = datetime.now().strftime("%a, %d %b %Y %H:%M:%S +0000")
+                            password = f"www.{host}"
 
-                        payload = urlsafe_b64encode(
-                            f"{title}|{source}|{mirror}|0|{password}|{item_imdb_id or ''}".encode("utf-8")
-                        ).decode("utf-8")
-                        link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
+                            payload = urlsafe_b64encode(
+                                f"{title}|{source}|{mirror}|0|{password}|{item_imdb_id or ''}".encode("utf-8")
+                            ).decode("utf-8")
+                            link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
 
-                        releases.append({
-                            "details": {
-                                "title": title,
-                                "hostname": hostname,
-                                "imdb_id": item_imdb_id,
-                                "link": link,
-                                "mirror": mirror,
-                                "size": 0,
-                                "date": published,
-                                "source": source
-                            },
-                            "type": "protected"
-                        })
+                            releases.append({
+                                "details": {
+                                    "title": title,
+                                    "hostname": hostname,
+                                    "imdb_id": item_imdb_id,
+                                    "link": link,
+                                    "mirror": mirror,
+                                    "size": 0,
+                                    "date": published,
+                                    "source": source
+                                },
+                                "type": "protected"
+                            })
 
                 if 'releases' in detail_item and isinstance(detail_item['releases'], list):
                     debug(f"{hostname.upper()}: Found {len(detail_item['releases'])} releases for {uid}")
@@ -278,6 +287,13 @@ def wx_search(shared_state, start_time, request_from, search_string, mirror=None
                                                                  episode):
                                 debug(f"{hostname.upper()}: ✗ Release filtered out: {release_title}")
                                 continue
+
+                            # Skip if we've already seen this exact title (deduplication)
+                            if release_title in seen_titles:
+                                debug(f"{hostname.upper()}: Skipping duplicate release: {release_title}")
+                                continue
+
+                            seen_titles.add(release_title)
 
                             release_uid = release.get('uid')
                             if release_uid:
@@ -323,7 +339,7 @@ def wx_search(shared_state, start_time, request_from, search_string, mirror=None
                 debug(f"{hostname.upper()}: {traceback.format_exc()}")
                 continue
 
-        debug(f"{hostname.upper()}: Returning {len(releases)} total releases")
+        debug(f"{hostname.upper()}: Returning {len(releases)} total releases (deduplicated)")
 
     except Exception as e:
         info(f"Error in {hostname.upper()} search: {e}")

@@ -25,6 +25,7 @@ from quasarr.downloads.sources.wx import get_wx_download_links
 from quasarr.providers.log import info
 from quasarr.providers.notifications import send_discord_message
 from quasarr.providers.statistics import StatsHelper
+from quasarr.providers.utils import filter_offline_links
 
 # =============================================================================
 # CRYPTER CONFIGURATION
@@ -183,6 +184,12 @@ def process_links(shared_state, source_result, title, password, package_id, imdb
         return fail(title, package_id, shared_state,
                     reason=f'All links are offline or IP is banned for "{title}" on {label} - "{source_url}"')
     links = valid_links
+
+    # Filter out verifiably offline links
+    links = filter_offline_links(links, shared_state=shared_state, log_func=info)
+    if not links:
+        return fail(title, package_id, shared_state,
+                    reason=f'All verifiable links are offline for "{title}" on {label} - "{source_url}"')
 
     classified = classify_links(links, shared_state)
 
