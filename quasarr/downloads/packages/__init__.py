@@ -6,6 +6,7 @@ import json
 from collections import defaultdict
 from urllib.parse import urlparse
 
+from quasarr.providers.jd_cache import JDPackageCache
 from quasarr.providers.log import info, debug
 from quasarr.providers.myjd_api import TokenExpiredException, RequestTimeoutException, MYJDException
 
@@ -102,8 +103,22 @@ def format_eta(seconds):
         return f"{hours:02}:{minutes:02}:{seconds:02}"
 
 
-def get_packages(shared_state):
+def get_packages(shared_state, _cache=None):
+    """
+    Get all packages from protected DB, failed DB, linkgrabber, and downloader.
+
+    Args:
+        shared_state: The shared state object
+        _cache: INTERNAL USE ONLY. Used by delete_package() to share cached data
+                within a single request. External callers should never pass this.
+    """
     packages = []
+
+    # Create cache for this request - only valid for duration of this call
+    if _cache is None:
+        _cache = JDPackageCache(shared_state.get_device())
+
+    cache = _cache  # Use shorter name internally
 
     protected_packages = shared_state.get_db("protected").retrieve_all_titles()
     if protected_packages:
@@ -152,16 +167,15 @@ def get_packages(shared_state):
                 "comment": package_id,
                 "uuid": package_id
             })
-    try:
-        linkgrabber_packages = shared_state.get_device().linkgrabber.query_packages()
-        linkgrabber_links = shared_state.get_device().linkgrabber.query_links()
-    except (TokenExpiredException, RequestTimeoutException, MYJDException):
-        linkgrabber_packages = []
-        linkgrabber_links = []
+
+    # Use cached queries instead of direct API calls
+    linkgrabber_packages = cache.linkgrabber_packages
+    linkgrabber_links = cache.linkgrabber_links
 
     if linkgrabber_packages:
         for package in linkgrabber_packages:
-            comment = get_links_comment(package, shared_state.get_device().linkgrabber.query_links())
+            # Use cached linkgrabber_links instead of re-querying
+            comment = get_links_comment(package, linkgrabber_links)
             link_details = get_links_status(package, linkgrabber_links, is_archive=False)
 
             error = link_details["error"]
@@ -184,25 +198,21 @@ def get_packages(shared_state):
                 "uuid": package.get("uuid"),
                 "error": error
             })
-    try:
-        downloader_packages = shared_state.get_device().downloads.query_packages()
-        downloader_links = shared_state.get_device().downloads.query_links()
-    except (TokenExpiredException, RequestTimeoutException, MYJDException):
-        downloader_packages = []
-        downloader_links = []
+
+    # Use cached queries instead of direct API calls
+    downloader_packages = cache.downloader_packages
+    downloader_links = cache.downloader_links
 
     if downloader_packages and downloader_links:
+        # Get all package UUIDs that contain archives (uses link data, fallback to single API call)
+        archive_package_uuids = cache.get_archive_package_uuids(downloader_packages, downloader_links)
+
         for package in downloader_packages:
             comment = get_links_comment(package, downloader_links)
 
-            # Check if package is actually archived/extracted using archive info
-            is_archive = False
-            try:
-                archive_info = shared_state.get_device().extraction.get_archive_info([], [package.get("uuid")])
-                is_archive = True if archive_info and archive_info[0] else False
-            except:
-                # On error, don't assume it's an archive - check bytes instead
-                pass
+            # Check if this package contains any archive files
+            package_uuid = package.get("uuid")
+            is_archive = package_uuid in archive_package_uuids if package_uuid else False
 
             link_details = get_links_status(package, downloader_links, is_archive)
 
@@ -250,7 +260,7 @@ def get_packages(shared_state):
             time_left = "23:59:59"
             if package["type"] == "linkgrabber":
                 details = package["details"]
-                name = f"[Linkgrabber] {details["name"]}"
+                name = f"[Linkgrabber] {details['name']}"
                 try:
                     mb = mb_left = int(details["bytesTotal"]) / (1024 * 1024)
                 except KeyError:
@@ -302,7 +312,7 @@ def get_packages(shared_state):
                 package_uuid = package["uuid"]
             else:
                 details = package["details"]
-                name = f"[CAPTCHA not solved!] {details["title"]}"
+                name = f"[CAPTCHA not solved!] {details['title']}"
                 mb = mb_left = details["size_mb"]
                 try:
                     package_id = package["package_id"]
@@ -386,23 +396,23 @@ def get_packages(shared_state):
         else:
             info(f"Invalid package location {package['location']}")
 
-    if not shared_state.get_device().linkgrabber.is_collecting():
-        linkgrabber_packages = shared_state.get_device().linkgrabber.query_packages()
-        linkgrabber_links = shared_state.get_device().linkgrabber.query_links()
-
+    # Use cached is_collecting check
+    if not cache.is_collecting:
+        # Reuse cached data instead of re-querying
         packages_to_start = []
         links_to_start = []
 
         for package in linkgrabber_packages:
-            comment = get_links_comment(package, shared_state.get_device().linkgrabber.query_links())
+            # Use cached linkgrabber_links instead of re-querying
+            comment = get_links_comment(package, linkgrabber_links)
             if comment and comment.startswith("Quasarr_"):
                 package_uuid = package.get("uuid")
                 if package_uuid:
-                    linkgrabber_links = [link.get("uuid") for link in linkgrabber_links if
-                                         link.get("packageUUID") == package_uuid]
-                    if linkgrabber_links:
+                    package_link_ids = [link.get("uuid") for link in linkgrabber_links if
+                                        link.get("packageUUID") == package_uuid]
+                    if package_link_ids:
                         packages_to_start.append(package_uuid)
-                        links_to_start.extend(linkgrabber_links)
+                        links_to_start.extend(package_link_ids)
                     else:
                         info(f"Package {package_uuid} has no links in linkgrabber - skipping start")
 
@@ -420,13 +430,17 @@ def delete_package(shared_state, package_id):
     try:
         deleted_title = ""
 
-        packages = get_packages(shared_state)
+        # Create cache for this single delete operation
+        # Safe to reuse within this request since we fetch->find->delete atomically
+        cache = JDPackageCache(shared_state.get_device())
+
+        packages = get_packages(shared_state, _cache=cache)
         for package_location in packages:
             for package in packages[package_location]:
                 if package["nzo_id"] == package_id:
                     if package["type"] == "linkgrabber":
-                        ids = get_links_matching_package_uuid(package,
-                                                              shared_state.get_device().linkgrabber.query_links())
+                        # Use cached linkgrabber_links instead of re-querying
+                        ids = get_links_matching_package_uuid(package, cache.linkgrabber_links)
                         if ids:
                             shared_state.get_device().linkgrabber.cleanup(
                                 "DELETE_ALL",
@@ -437,8 +451,8 @@ def delete_package(shared_state, package_id):
                             )
                             break
                     elif package["type"] == "downloader":
-                        ids = get_links_matching_package_uuid(package,
-                                                              shared_state.get_device().downloads.query_links())
+                        # Use cached downloader_links instead of re-querying
+                        ids = get_links_matching_package_uuid(package, cache.downloader_links)
                         if ids:
                             shared_state.get_device().downloads.cleanup(
                                 "DELETE_ALL",
