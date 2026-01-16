@@ -395,42 +395,8 @@ def get_filecrypt_links(shared_state, token, title, url, password=None, mirror=N
                     links.extend(DLC(shared_state, dlc_file).decrypt())
                 except:
                     debug("DLC fallback failed, trying button fallback.")
-                    info("DLC not found! Falling back to first available download Button...")
-
-                    base_url = urlparse(url).netloc
-                    phpsessid = session.cookies.get('PHPSESSID')
-                    if not phpsessid:
-                        info("PHPSESSID cookie not found! Cannot proceed with download links extraction.")
-                        debug("Missing PHPSESSID cookie.")
-                        return False
-
-                    results = []
-                    debug("Parsing fallback buttons for download links.")
-
-                    for button in soup.find_all('button'):
-                        data_attrs = [v for k, v in button.attrs.items() if k.startswith('data-') and k != 'data-i18n']
-                        if not data_attrs:
-                            continue
-
-                        link_id = data_attrs[0]
-                        row = button.find_parent('tr')
-                        mirror_tag = row.find('a', class_='external_link') if row else None
-                        mirror_name = mirror_tag.get_text(strip=True) if mirror_tag else 'unknown'
-                        full_url = f"http://{base_url}/Link/{link_id}.html"
-                        results.append((full_url, mirror_name))
-
-                    sorted_results = sorted(results, key=lambda x: 0 if 'rapidgator' in x[1].lower() else 1)
-                    debug(f"Found {len(sorted_results)} fallback link candidates.")
-
-                    for result_url, mirror in sorted_results:
-                        info("You must solve circlecaptcha separately!")
-                        debug(f'Session "{phpsessid}" for {result_url} will not live long. Submit new CAPTCHA quickly!')
-                        return {
-                            "status": "replaced",
-                            "replace_url": result_url,
-                            "mirror": mirror,
-                            "session": phpsessid
-                        }
+                    info("Click'n'Load and DLC not found. Please use the fallback userscript instead!")
+                    return False
 
     if not links:
         info("No links found in Filecrypt response!")
