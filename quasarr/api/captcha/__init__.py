@@ -308,7 +308,7 @@ def setup_captcha_routes(app):
 
         check_package_exists(package_id)
 
-        package_selector = render_package_selector(package_id)
+        package_selector = render_package_selector(package_id, title)
         failed_warning = render_failed_attempts_warning(package_id)
 
         return render_centered_html(f"""
@@ -318,7 +318,6 @@ def setup_captcha_routes(app):
             <h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
             {package_selector}
             {failed_warning}
-            <p><b>Package:</b> {title}</p>
                 {render_userscript_section(url, package_id, title, password, "hide")}
             <p>
                 {render_button("Delete Package", "secondary", {"onclick": f"location.href='/captcha/delete/{package_id}'"})}
@@ -349,7 +348,7 @@ def setup_captcha_routes(app):
 
         check_package_exists(package_id)
 
-        package_selector = render_package_selector(package_id)
+        package_selector = render_package_selector(package_id, title)
         failed_warning = render_failed_attempts_warning(package_id)
 
         return render_centered_html(f"""
@@ -359,7 +358,6 @@ def setup_captcha_routes(app):
             <h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
             {package_selector}
             {failed_warning}
-            <p><b>Package:</b> {title}</p>
                 {render_userscript_section(url, package_id, title, password, "junkies")}
             <p>
                 {render_button("Delete Package", "secondary", {"onclick": f"location.href='/captcha/delete/{package_id}'"})}
@@ -391,7 +389,7 @@ def setup_captcha_routes(app):
 
         url = urls[0][0] if isinstance(urls[0], (list, tuple)) else urls[0]
 
-        package_selector = render_package_selector(package_id)
+        package_selector = render_package_selector(package_id, title)
         failed_warning = render_failed_attempts_warning(package_id)
 
         return render_centered_html(f"""
@@ -401,7 +399,6 @@ def setup_captcha_routes(app):
             <h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
             {package_selector}
             {failed_warning}
-            <p><b>Package:</b> {title}</p>
                 {render_userscript_section(url, package_id, title, password, "keeplinks")}
             <p>
                 {render_button("Delete Package", "secondary", {"onclick": f"location.href='/captcha/delete/{package_id}'"})}
@@ -433,7 +430,7 @@ def setup_captcha_routes(app):
 
         url = urls[0][0] if isinstance(urls[0], (list, tuple)) else urls[0]
 
-        package_selector = render_package_selector(package_id)
+        package_selector = render_package_selector(package_id, title)
         failed_warning = render_failed_attempts_warning(package_id)
 
         return render_centered_html(f"""
@@ -443,7 +440,6 @@ def setup_captcha_routes(app):
             <h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
             {package_selector}
             {failed_warning}
-            <p><b>Package:</b> {title}</p>
                 {render_userscript_section(url, package_id, title, password, "tolink")}
             <p>
                 {render_button("Delete Package", "secondary", {"onclick": f"location.href='/captcha/delete/{package_id}'"})}
@@ -619,12 +615,22 @@ def setup_captcha_routes(app):
             </script>
         '''
 
-    def render_package_selector(current_package_id):
-        """Render a dropdown selector for all available packages at the top of captcha UIs"""
+    def render_package_selector(current_package_id, current_title=None):
+        """Render package title, with dropdown selector if multiple packages available"""
         protected = shared_state.get_db("protected").retrieve_all_titles()
 
-        if not protected or len(protected) <= 1:
-            return ""  # Don't show selector if only one or no packages
+        if not protected:
+            return ""
+
+        # Single package - just show the title without dropdown
+        if len(protected) <= 1:
+            if current_title:
+                return f'''
+                    <div class="package-selector" style="margin-bottom: 20px; padding: 12px; background: rgba(128, 128, 128, 0.1); border: 1px solid rgba(128, 128, 128, 0.3); border-radius: 8px;">
+                        <p style="margin: 0; word-break: break-all;"><b>📦 Package:</b> {current_title}</p>
+                    </div>
+                '''
+            return ""
 
         sj = shared_state.values["config"]("Hostnames").get("sj")
         dj = shared_state.values["config"]("Hostnames").get("dj")
@@ -815,7 +821,7 @@ def setup_captcha_routes(app):
             f"pkg_pass={quote(password)}"
         )
 
-        package_selector = render_package_selector(package_id)
+        package_selector = render_package_selector(package_id, title)
         failed_warning = render_failed_attempts_warning(package_id)
 
         return render_centered_html(f"""
@@ -825,7 +831,6 @@ def setup_captcha_routes(app):
             <h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
             {package_selector}
             {failed_warning}
-            <p style="max-width: 370px; word-wrap: break-word; overflow-wrap: break-word;"><b>Package:</b> {title}</p>
 
             <div>
                 <!-- Info section explaining the process -->
@@ -1171,7 +1176,7 @@ def setup_captcha_routes(app):
         bypass_section = render_filecrypt_bypass_section(url, package_id, title, password)
 
         # Add package selector and failed attempts warning
-        package_selector = render_package_selector(package_id)
+        package_selector = render_package_selector(package_id, title)
 
         # Create fallback URL for the manual FileCrypt page
         fallback_payload = {
@@ -1186,6 +1191,9 @@ def setup_captcha_routes(app):
 
         failed_warning = render_failed_attempts_warning(package_id, include_delete_button=False,
                                                         fallback_url=filecrypt_fallback_url)  # Delete button is already below
+
+        # Escape title for safe use in JavaScript string
+        escaped_title_js = title.replace('\\', '\\\\').replace('"', '\\"').replace('\n', '\\n').replace('\r', '\\r')
 
         content = render_centered_html(r'''
             <style>
@@ -1203,6 +1211,9 @@ def setup_captcha_routes(app):
                 }
             </style>
             <script type="text/javascript">
+                // Package title for result display
+                var packageTitleText = "''' + escaped_title_js + r'''";
+
                 // Check if we should redirect to fallback due to failed attempts
                 (function() {
                     const storageKey = 'captcha_attempts_''' + package_id + r'''';
@@ -1231,11 +1242,8 @@ def setup_captcha_routes(app):
                     var warnBox = document.getElementById("failed-attempts-warning");
                     if (warnBox) warnBox.style.display = "none";
 
-                    // Remove width limit on result screen
-                    var packageTitle = document.getElementById("package-title");
-                    packageTitle.style.maxWidth = "none";
-
-                    document.getElementById("captcha-key").innerText = 'Using result "' + token + '" to decrypt links...';
+                    // Add package title to result area
+                    document.getElementById("captcha-key").innerHTML = '<p style="word-break: break-all;"><b>Package:</b> ' + packageTitleText + '</p><p style="word-break: break-all;">Using result "' + token + '" to decrypt links...</p>';
                     var link = document.getElementById("link-hidden").value;
                     const fullPath = '/captcha/decrypt-filecrypt';
 
@@ -1288,7 +1296,6 @@ def setup_captcha_routes(app):
                         {package_selector}
                     </div>
                     {failed_warning}
-                    <p id="package-title" style="max-width: 370px; word-wrap: break-word; overflow-wrap: break-word;"><b>Package:</b> {title}</p>
                     <div id="captcha-key"></div>
                     {link_select}<br><br>
                     <input type="hidden" id="link-hidden" value="{prioritized_links[0][0]}" />
