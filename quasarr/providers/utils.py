@@ -202,8 +202,8 @@ def generate_status_url(href, crypter_type):
     Returns None if status URL cannot be generated.
     """
     if crypter_type == "hide":
-        # hide.cx links: https://hide.cx/folder/{UUID} → https://hide.cx/state/{UUID}
-        match = re.search(r'hide\.cx/(?:folder/)?([a-f0-9-]{36})', href, re.IGNORECASE)
+        # hide.cx links: https://hide.cx/folder/{UUID} or /container/{UUID} → https://hide.cx/state/{UUID}
+        match = re.search(r'hide\.cx/(?:folder/|container/)?([a-f0-9-]{36})', href, re.IGNORECASE)
         if match:
             uuid = match.group(1)
             return f"https://hide.cx/state/{uuid}"
