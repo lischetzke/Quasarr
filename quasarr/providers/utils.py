@@ -6,9 +6,12 @@ import os
 import re
 import socket
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from io import BytesIO
 from urllib.parse import urlparse
 
 import requests
+from PIL import Image
 
 # Fallback user agent when FlareSolverr is not available
 FALLBACK_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
@@ -187,3 +190,177 @@ def is_site_usable(shared_state, shorthand):
     password = config.get('password')
 
     return bool(user and password)
+
+
+# =============================================================================
+# LINK STATUS CHECKING
+# =============================================================================
+
+def generate_status_url(href, crypter_type):
+    """
+    Generate a status URL for crypters that support it.
+    Returns None if status URL cannot be generated.
+    """
+    if crypter_type == "hide":
+        # hide.cx links: https://hide.cx/folder/{UUID} → https://hide.cx/state/{UUID}
+        match = re.search(r'hide\.cx/(?:folder/)?([a-f0-9-]{36})', href, re.IGNORECASE)
+        if match:
+            uuid = match.group(1)
+            return f"https://hide.cx/state/{uuid}"
+
+    elif crypter_type == "tolink":
+        # tolink links: https://tolink.to/f/{ID} → https://tolink.to/f/{ID}/s/status.png
+        match = re.search(r'tolink\.to/f/([a-zA-Z0-9]+)', href, re.IGNORECASE)
+        if match:
+            link_id = match.group(1)
+            return f"https://tolink.to/f/{link_id}/s/status.png"
+
+    return None
+
+
+def detect_crypter_type(url):
+    """Detect crypter type from URL for status checking."""
+    url_lower = url.lower()
+    if 'hide.' in url_lower:
+        return "hide"
+    elif 'tolink.' in url_lower:
+        return "tolink"
+    elif 'filecrypt.' in url_lower:
+        return "filecrypt"
+    elif 'keeplinks.' in url_lower:
+        return "keeplinks"
+    return None
+
+
+def image_has_green(image_data):
+    """
+    Analyze image data to check if it contains green pixels.
+    Returns True if any significant green is detected (indicating online status).
+    """
+    try:
+        img = Image.open(BytesIO(image_data))
+        # Convert palette images with transparency to RGBA first to avoid warning
+        if img.mode == 'P' and 'transparency' in img.info:
+            img = img.convert('RGBA')
+        img = img.convert('RGB')
+
+        pixels = list(img.getdata())
+
+        for r, g, b in pixels:
+            # Check if pixel is greenish: green channel is dominant
+            # and has a reasonable absolute value
+            if g > 100 and g > r * 1.3 and g > b * 1.3:
+                return True
+
+        return False
+    except Exception:
+        # If we can't analyze, assume online to not skip valid links
+        return True
+
+
+def fetch_status_image(status_url, shared_state=None):
+    """
+    Fetch a status image and return (status_url, image_data).
+    Returns (status_url, None) on failure.
+    """
+    try:
+        headers = {}
+        if shared_state:
+            user_agent = shared_state.values.get("user_agent")
+            if user_agent:
+                headers["User-Agent"] = user_agent
+        response = requests.get(status_url, headers=headers, timeout=10)
+        if response.status_code == 200:
+            return (status_url, response.content)
+    except Exception:
+        pass
+    return (status_url, None)
+
+
+def check_links_online_status(links_with_status, shared_state=None):
+    """
+    Check online status for links that have status URLs.
+    Returns list of links that are online (or have no status URL to check).
+
+    links_with_status: list of [href, identifier, status_url] where status_url can be None
+    shared_state: optional shared state for user agent
+    """
+    links_to_check = [(i, link) for i, link in enumerate(links_with_status) if link[2]]
+
+    if not links_to_check:
+        # No status URLs to check, return all links as potentially online
+        return [[link[0], link[1]] for link in links_with_status]
+
+    # Batch fetch status images
+    status_results = {}  # status_url -> has_green
+    status_urls = list(set(link[2] for _, link in links_to_check))
+
+    batch_size = 10
+    for i in range(0, len(status_urls), batch_size):
+        batch = status_urls[i:i + batch_size]
+        with ThreadPoolExecutor(max_workers=batch_size) as executor:
+            futures = [executor.submit(fetch_status_image, url, shared_state) for url in batch]
+            for future in as_completed(futures):
+                try:
+                    status_url, image_data = future.result()
+                    if image_data:
+                        status_results[status_url] = image_has_green(image_data)
+                    else:
+                        # Could not fetch, assume online
+                        status_results[status_url] = True
+                except Exception:
+                    pass
+
+    # Filter to online links
+    online_links = []
+
+    for link in links_with_status:
+        href, identifier, status_url = link
+        if not status_url:
+            # No status URL, include link
+            online_links.append([href, identifier])
+        elif status_url in status_results:
+            if status_results[status_url]:
+                online_links.append([href, identifier])
+        else:
+            # Status check failed, include link
+            online_links.append([href, identifier])
+
+    return online_links
+
+
+def filter_offline_links(links, shared_state=None, log_func=None):
+    """
+    Filter out offline links from a list of [url, identifier] pairs.
+    Only checks links where status can be verified (hide.cx, tolink).
+    Returns filtered list of [url, identifier] pairs.
+    """
+    if not links:
+        return links
+
+    # Build list with status URLs
+    links_with_status = []
+    for link in links:
+        url = link[0]
+        identifier = link[1] if len(link) > 1 else "unknown"
+        crypter_type = detect_crypter_type(url)
+        status_url = generate_status_url(url, crypter_type) if crypter_type else None
+        links_with_status.append([url, identifier, status_url])
+
+    # Check if any links can be verified
+    verifiable_count = sum(1 for l in links_with_status if l[2])
+    if verifiable_count == 0:
+        # Nothing to verify, return original links
+        return links
+
+    if log_func:
+        log_func(f"Checking online status for {verifiable_count} verifiable link(s)...")
+
+    # Check status and filter
+    online_links = check_links_online_status(links_with_status, shared_state)
+
+    if log_func and len(online_links) < len(links):
+        offline_count = len(links) - len(online_links)
+        log_func(f"Filtered out {offline_count} offline link(s)")
+
+    return online_links
