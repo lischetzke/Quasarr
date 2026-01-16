@@ -219,7 +219,7 @@ def setup_captcha_routes(app):
 
                 <!-- Primary action - the quick transfer link -->
                 <p>
-                    {render_button(f"Open {provider_name} & Get Download Links", "primary", {"onclick": f"location.href='{url_with_quick_transfer_params}'"})}
+                    {render_button(f"Open {provider_name} & Get Download Links", "primary", {"onclick": f"if(typeof incrementCaptchaAttempts==='function')incrementCaptchaAttempts();location.href='{url_with_quick_transfer_params}'"})}
                 </p>
 
                 <!-- Manual submission - collapsible -->
@@ -230,7 +230,7 @@ def setup_captcha_routes(app):
                             <p style="font-size: 0.9em;">
                                 If the userscript doesn't work, you can manually paste the links below:
                             </p>
-                            <form id="bypass-form" action="/captcha/bypass-submit" method="post" enctype="multipart/form-data">
+                            <form id="bypass-form" action="/captcha/bypass-submit" method="post" enctype="multipart/form-data" onsubmit="if(typeof incrementCaptchaAttempts==='function')incrementCaptchaAttempts();">
                                 <input type="hidden" name="package_id" value="{package_id}" />
                                 <input type="hidden" name="title" value="{title}" />
                                 <input type="hidden" name="password" value="{password}" />
@@ -308,11 +308,16 @@ def setup_captcha_routes(app):
 
         check_package_exists(package_id)
 
+        package_selector = render_package_selector(package_id)
+        failed_warning = render_failed_attempts_warning(package_id)
+
         return render_centered_html(f"""
         <!DOCTYPE html>
         <html>
           <body>
             <h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+            {package_selector}
+            {failed_warning}
             <p><b>Package:</b> {title}</p>
                 {render_userscript_section(url, package_id, title, password, "hide")}
             <p>
@@ -344,11 +349,16 @@ def setup_captcha_routes(app):
 
         check_package_exists(package_id)
 
+        package_selector = render_package_selector(package_id)
+        failed_warning = render_failed_attempts_warning(package_id)
+
         return render_centered_html(f"""
         <!DOCTYPE html>
         <html>
           <body>
             <h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+            {package_selector}
+            {failed_warning}
             <p><b>Package:</b> {title}</p>
                 {render_userscript_section(url, package_id, title, password, "junkies")}
             <p>
@@ -381,11 +391,16 @@ def setup_captcha_routes(app):
 
         url = urls[0][0] if isinstance(urls[0], (list, tuple)) else urls[0]
 
+        package_selector = render_package_selector(package_id)
+        failed_warning = render_failed_attempts_warning(package_id)
+
         return render_centered_html(f"""
         <!DOCTYPE html>
         <html>
           <body>
             <h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+            {package_selector}
+            {failed_warning}
             <p><b>Package:</b> {title}</p>
                 {render_userscript_section(url, package_id, title, password, "keeplinks")}
             <p>
@@ -418,11 +433,16 @@ def setup_captcha_routes(app):
 
         url = urls[0][0] if isinstance(urls[0], (list, tuple)) else urls[0]
 
+        package_selector = render_package_selector(package_id)
+        failed_warning = render_failed_attempts_warning(package_id)
+
         return render_centered_html(f"""
         <!DOCTYPE html>
         <html>
           <body>
             <h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+            {package_selector}
+            {failed_warning}
             <p><b>Package:</b> {title}</p>
                 {render_userscript_section(url, package_id, title, password, "tolink")}
             <p>
@@ -528,7 +548,7 @@ def setup_captcha_routes(app):
 
                     <!-- Primary action button -->
                     <p>
-                        {render_button("Open FileCrypt & Get Download Links", "primary", {"onclick": f"location.href='{url_with_quick_transfer_params}'"})}
+                        {render_button("Open FileCrypt & Get Download Links", "primary", {"onclick": f"if(typeof incrementCaptchaAttempts==='function')incrementCaptchaAttempts();location.href='{url_with_quick_transfer_params}'"})}
                     </p>
 
                     <!-- Manual submission section -->
@@ -536,7 +556,7 @@ def setup_captcha_routes(app):
                         <p style="font-size: 0.9em; margin-bottom: 16px;">
                             If the userscript doesn't work, you can manually paste the links or upload a DLC file:
                         </p>
-                        <form id="bypass-form" action="/captcha/bypass-submit" method="post" enctype="multipart/form-data">
+                        <form id="bypass-form" action="/captcha/bypass-submit" method="post" enctype="multipart/form-data" onsubmit="if(typeof incrementCaptchaAttempts==='function')incrementCaptchaAttempts();">
                             <input type="hidden" name="package_id" value="{package_id}" />
                             <input type="hidden" name="title" value="{title}" />
                             <input type="hidden" name="password" value="{password}" />
@@ -598,6 +618,339 @@ def setup_captcha_routes(app):
               }});
             </script>
         '''
+
+    def render_package_selector(current_package_id):
+        """Render a dropdown selector for all available packages at the top of captcha UIs"""
+        protected = shared_state.get_db("protected").retrieve_all_titles()
+
+        if not protected or len(protected) <= 1:
+            return ""  # Don't show selector if only one or no packages
+
+        sj = shared_state.values["config"]("Hostnames").get("sj")
+        dj = shared_state.values["config"]("Hostnames").get("dj")
+
+        def is_junkies_link(link):
+            url = link[0] if isinstance(link, (list, tuple)) else link
+            mirror = link[1] if isinstance(link, (list, tuple)) and len(link) > 1 else ""
+            if mirror == "junkies":
+                return True
+            return (sj and sj in url) or (dj and dj in url)
+
+        def get_captcha_type_for_links(links):
+            """Determine which captcha type to use based on links"""
+            has_hide = any(("hide." in (l[0] if isinstance(l, (list, tuple)) else l)) for l in links)
+            has_junkies = any(is_junkies_link(l) for l in links)
+            has_keeplinks = any(("keeplinks." in (l[0] if isinstance(l, (list, tuple)) else l)) for l in links)
+            has_tolink = any(("tolink." in (l[0] if isinstance(l, (list, tuple)) else l)) for l in links)
+
+            if has_hide:
+                return "hide"
+            elif has_junkies:
+                return "junkies"
+            elif has_keeplinks:
+                return "keeplinks"
+            elif has_tolink:
+                return "tolink"
+            else:
+                return "cutcaptcha"
+
+        options = []
+        for package in protected:
+            pkg_id = package[0]
+            data = json.loads(package[1])
+            title = data.get("title", "Unknown")
+            links = data.get("links", [])
+            password = data.get("password", "")
+            mirror = data.get("mirror")
+
+            # Prioritize rapidgator links for cutcaptcha
+            rapid = [ln for ln in links if "rapidgator" in ln[1].lower()]
+            others = [ln for ln in links if "rapidgator" not in ln[1].lower()]
+            prioritized = rapid + others
+
+            payload = {
+                "package_id": pkg_id,
+                "title": title,
+                "password": password,
+                "mirror": mirror,
+                "links": prioritized,
+            }
+            encoded = urlsafe_b64encode(json.dumps(payload).encode()).decode()
+            captcha_type = get_captcha_type_for_links(prioritized)
+
+            selected = "selected" if pkg_id == current_package_id else ""
+            # Truncate long titles for display
+            display_title = (title[:50] + "...") if len(title) > 53 else title
+            options.append(f'<option value="{captcha_type}|{quote(encoded)}" {selected}>{display_title}</option>')
+
+        options_html = "\n".join(options)
+
+        return f'''
+            <div class="package-selector" style="margin-bottom: 20px; padding: 12px; background: rgba(128, 128, 128, 0.1); border: 1px solid rgba(128, 128, 128, 0.3); border-radius: 8px;">
+                <label for="package-select" style="display: block; margin-bottom: 8px; font-weight: bold;">📦 Select Package:</label>
+                <select id="package-select" style="width: 100%; padding: 8px; border-radius: 4px; background: inherit; color: inherit; border: 1px solid rgba(128, 128, 128, 0.5); cursor: pointer;">
+                    {options_html}
+                </select>
+            </div>
+            <script>
+                document.getElementById('package-select').addEventListener('change', function() {{
+                    const [captchaType, encodedData] = this.value.split('|');
+                    window.location.href = '/captcha/' + captchaType + '?data=' + encodedData;
+                }});
+            </script>
+        '''
+
+    def render_failed_attempts_warning(package_id, include_delete_button=True, fallback_url=None):
+        """Render a warning block that shows after 2+ failed attempts per package_id.
+        Uses localStorage to track attempts by package_id to ensure reliable tracking
+        even when package titles are duplicated.
+
+        Attempts are NOT incremented on page load - they must be incremented by
+        calling window.incrementCaptchaAttempts() when user takes an action (e.g.,
+        clicking submit, opening bypass link).
+
+        Args:
+            package_id: The unique package identifier
+            include_delete_button: Whether to show delete button in warning
+            fallback_url: Optional URL to a fallback page (e.g., FileCrypt manual fallback)
+        """
+
+        delete_button = ""
+        if include_delete_button:
+            delete_button = render_button("Delete Package", "primary",
+                                          {"onclick": f"location.href='/captcha/delete/{package_id}'"})
+
+        fallback_link = ""
+        if fallback_url:
+            fallback_link = f'''
+                <p style="margin-top: 12px; margin-bottom: 8px;">
+                    <a href="{fallback_url}" style="color: #cc0000;">Try the manual FileCrypt fallback page →</a>
+                </p>
+            '''
+
+        return f'''
+            <div id="failed-attempts-warning" class="warning-box" style="display: none; background: #fee2e2; border: 2px solid #dc2626; border-radius: 8px; padding: 16px; margin-bottom: 20px; text-align: center; color: #991b1b;">
+                <h3 style="color: #dc2626; margin-top: 0;">⚠️ Multiple Failed Attempts Detected</h3>
+                <p style="margin-bottom: 12px; color: #7f1d1d;">This CAPTCHA has failed multiple times. The link may be <b>offline</b> or require a different solution method.</p>
+                <p style="margin-bottom: 8px; color: #7f1d1d;">Please verify the link is still valid, or delete this package if it's no longer available.</p>
+                {fallback_link}
+                <div id="warning-delete-button" style="margin-top: 12px;">
+                    {delete_button}
+                </div>
+            </div>
+            <script>
+                (function() {{
+                    const packageId = '{package_id}';
+                    const storageKey = 'captcha_attempts_' + packageId;
+
+                    // Get current attempt count (do NOT increment on page load)
+                    let attempts = parseInt(localStorage.getItem(storageKey) || '0', 10);
+
+                    // Show warning if 2+ failed attempts
+                    if (attempts >= 2) {{
+                        const warningBox = document.getElementById('failed-attempts-warning');
+                        if (warningBox) {{
+                            warningBox.style.display = 'block';
+                        }}
+                    }}
+
+                    // Function to increment attempts (call this on submit/action)
+                    window.incrementCaptchaAttempts = function() {{
+                        let current = parseInt(localStorage.getItem(storageKey) || '0', 10);
+                        current++;
+                        localStorage.setItem(storageKey, current.toString());
+                        // Show warning immediately if we hit 2+ attempts
+                        if (current >= 2) {{
+                            const warningBox = document.getElementById('failed-attempts-warning');
+                            if (warningBox) {{
+                                warningBox.style.display = 'block';
+                            }}
+                        }}
+                        return current;
+                    }};
+
+                    // Function to get current attempt count
+                    window.getCaptchaAttempts = function() {{
+                        return parseInt(localStorage.getItem(storageKey) || '0', 10);
+                    }};
+
+                    // Function to clear attempts (call on success)
+                    window.clearCaptchaAttempts = function() {{
+                        localStorage.removeItem(storageKey);
+                    }};
+                }})();
+            </script>
+        '''
+
+    @app.get("/captcha/filecrypt")
+    def serve_filecrypt_fallback():
+        """Dedicated FileCrypt fallback page - similar to hide/junkies/keeplinks/tolink"""
+        payload = decode_payload()
+
+        if "error" in payload:
+            return render_centered_html(f'''<h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+            <p>{payload["error"]}</p>
+            <p>
+                {render_button("Back", "secondary", {"onclick": "location.href='/'"})}
+            </p>''')
+
+        package_id = payload.get("package_id")
+        title = payload.get("title")
+        password = payload.get("password")
+        urls = payload.get("links")
+
+        check_package_exists(package_id)
+
+        url = urls[0][0] if isinstance(urls[0], (list, tuple)) else urls[0]
+
+        # Generate userscript URL with transfer params
+        base_url = request.urlparts.scheme + '://' + request.urlparts.netloc
+        transfer_url = f"{base_url}/captcha/quick-transfer"
+
+        url_with_quick_transfer_params = (
+            f"{url}?"
+            f"transfer_url={quote(transfer_url)}&"
+            f"pkg_id={quote(package_id)}&"
+            f"pkg_title={quote(title)}&"
+            f"pkg_pass={quote(password)}"
+        )
+
+        package_selector = render_package_selector(package_id)
+        failed_warning = render_failed_attempts_warning(package_id)
+
+        return render_centered_html(f"""
+        <!DOCTYPE html>
+        <html>
+          <body>
+            <h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+            {package_selector}
+            {failed_warning}
+            <p style="max-width: 370px; word-wrap: break-word; overflow-wrap: break-word;"><b>Package:</b> {title}</p>
+
+            <div>
+                <!-- Info section explaining the process -->
+                <div class="info-box">
+                    <h3>ℹ️ How This Works:</h3>
+                    <p style="margin-bottom: 8px;">
+                        1. Click the button below to open FileCrypt directly
+                    </p>
+                    <p style="margin-top: 0; margin-bottom: 8px;">
+                        2. Solve any CAPTCHAs on their site to reveal the download links
+                    </p>
+                    <p style="margin-top: 0; margin-bottom: 0;">
+                        3. <b>With the userscript installed</b>, links are automatically sent back to Quasarr!
+                    </p>
+                </div>
+
+                <!-- One-time setup section - visually separated -->
+                <div id="setup-instructions" class="setup-box">
+                    <h3>📦 First Time Setup:</h3>
+                    <p style="margin-bottom: 8px;">
+                        <a href="https://www.tampermonkey.net/" target="_blank" rel="noopener noreferrer">1. Install Tampermonkey</a>
+                    </p>
+                    <p style="margin-top: 0; margin-bottom: 12px;">
+                        <a href="/captcha/filecrypt.user.js" target="_blank">2. Install the FileCrypt userscript</a>
+                    </p>
+                    <p style="margin-top: 0;">
+                        <button id="hide-setup-btn" type="button" class="btn-subtle">
+                            ✅ Don't show this again
+                        </button>
+                    </p>
+                </div>
+
+                <!-- Hidden "show instructions" button -->
+                <div id="show-instructions-link" style="display: none; margin-bottom: 16px;">
+                    <button id="show-setup-btn" type="button" class="btn-subtle">
+                        ℹ️ Show setup instructions
+                    </button>
+                </div>
+
+                <!-- Primary action button -->
+                <p>
+                    {render_button("Open FileCrypt & Get Download Links", "primary", {"onclick": f"if(typeof incrementCaptchaAttempts==='function')incrementCaptchaAttempts();location.href='{url_with_quick_transfer_params}'"})}
+                </p>
+
+                <!-- Manual submission section -->
+                <div class="section-divider">
+                    <details id="manualSubmitDetails">
+                        <summary id="manualSubmitSummary" style="cursor: pointer;">Show Manual Submission</summary>
+                        <div style="margin-top: 16px;">
+                            <p style="font-size: 0.9em; margin-bottom: 16px;">
+                                If the userscript doesn't work, you can manually paste the links or upload a DLC file:
+                            </p>
+                            <form id="bypass-form" action="/captcha/bypass-submit" method="post" enctype="multipart/form-data" onsubmit="if(typeof incrementCaptchaAttempts==='function')incrementCaptchaAttempts();">
+                                <input type="hidden" name="package_id" value="{package_id}" />
+                                <input type="hidden" name="title" value="{title}" />
+                                <input type="hidden" name="password" value="{password}" />
+
+                                <div>
+                                    <strong>Paste the download links (one per line):</strong>
+                                    <textarea id="links-input" name="links" rows="5" style="width: 100%; padding: 8px; font-family: monospace; resize: vertical;"></textarea>
+                                </div>
+
+                                <div>
+                                    <strong>Or upload DLC file:</strong><br>
+                                    <input type="file" id="dlc-file" name="dlc_file" accept=".dlc" />
+                                </div>
+
+                                <div>
+                                    {render_button("Submit", "primary", {"type": "submit"})}
+                                </div>
+                            </form>
+                        </div>
+                    </details>
+                </div>
+            </div>
+
+            <p>
+                {render_button("Delete Package", "secondary", {"onclick": f"location.href='/captcha/delete/{package_id}'"})}
+            </p>
+            <p>
+                {render_button("Back", "secondary", {"onclick": "location.href='/'"})}
+            </p>
+
+            <script>
+              // Handle manual submission toggle text
+              const manualDetails = document.getElementById('manualSubmitDetails');
+              const manualSummary = document.getElementById('manualSubmitSummary');
+
+              if (manualDetails && manualSummary) {{
+                manualDetails.addEventListener('toggle', () => {{
+                  if (manualDetails.open) {{
+                    manualSummary.textContent = 'Hide Manual Submission';
+                  }} else {{
+                    manualSummary.textContent = 'Show Manual Submission';
+                  }}
+                }});
+              }}
+
+              // Handle setup instructions hide/show
+              const hideSetup = localStorage.getItem('hideFileCryptFallbackSetupInstructions');
+              const setupBox = document.getElementById('setup-instructions');
+              const showLink = document.getElementById('show-instructions-link');
+
+              if (hideSetup === 'true') {{
+                setupBox.style.display = 'none';
+                showLink.style.display = 'block';
+              }}
+
+              // Hide setup instructions
+              document.getElementById('hide-setup-btn').addEventListener('click', function() {{
+                localStorage.setItem('hideFileCryptFallbackSetupInstructions', 'true');
+                setupBox.style.display = 'none';
+                showLink.style.display = 'block';
+              }});
+
+              // Show setup instructions again
+              document.getElementById('show-setup-btn').addEventListener('click', function() {{
+                localStorage.setItem('hideFileCryptFallbackSetupInstructions', 'false');
+                setupBox.style.display = 'block';
+                showLink.style.display = 'none';
+              }});
+            </script>
+
+          </body>
+        </html>""")
 
     @app.get('/captcha/quick-transfer')
     def handle_quick_transfer():
@@ -700,7 +1053,8 @@ def setup_captcha_routes(app):
                 </p>
                 <p>
                     {render_button("Back", "secondary", {"onclick": "location.href='/'"})}
-                </p>''')
+                </p>
+                <script>localStorage.removeItem('captcha_attempts_{package_id}');</script>''')
             else:
                 StatsHelper(shared_state).increment_failed_decryptions_manual()
                 return render_centered_html(f'''<h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
@@ -740,7 +1094,8 @@ def setup_captcha_routes(app):
             </p>
             <p>
                 {render_button("Back", "secondary", {"onclick": "location.href='/'"})}
-            </p>''')
+            </p>
+            <script>localStorage.removeItem('captcha_attempts_{package_id}');</script>''')
         else:
             return render_centered_html(f'''<h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
             <p>Failed to delete package!</p>
@@ -815,8 +1170,50 @@ def setup_captcha_routes(app):
         # Add bypass section
         bypass_section = render_filecrypt_bypass_section(url, package_id, title, password)
 
+        # Add package selector and failed attempts warning
+        package_selector = render_package_selector(package_id)
+
+        # Create fallback URL for the manual FileCrypt page
+        fallback_payload = {
+            "package_id": package_id,
+            "title": title,
+            "password": password,
+            "mirror": desired_mirror,
+            "links": prioritized_links,
+        }
+        fallback_encoded = urlsafe_b64encode(json.dumps(fallback_payload).encode()).decode()
+        filecrypt_fallback_url = f"/captcha/filecrypt?data={quote(fallback_encoded)}"
+
+        failed_warning = render_failed_attempts_warning(package_id, include_delete_button=False,
+                                                        fallback_url=filecrypt_fallback_url)  # Delete button is already below
+
         content = render_centered_html(r'''
+            <style>
+                @media (max-width: 600px) {
+                    .package-selector,
+                    #failed-attempts-warning {
+                        margin-left: 0 !important;
+                        margin-right: 0 !important;
+                        padding-left: 8px !important;
+                        padding-right: 8px !important;
+                        border-radius: 0 !important;
+                        border-left: none !important;
+                        border-right: none !important;
+                    }
+                }
+            </style>
             <script type="text/javascript">
+                // Check if we should redirect to fallback due to failed attempts
+                (function() {
+                    const storageKey = 'captcha_attempts_''' + package_id + r'''';
+                    const attempts = parseInt(localStorage.getItem(storageKey) || '0', 10);
+                    if (attempts >= 2) {
+                        // Redirect to FileCrypt fallback page
+                        window.location.href = '''' + filecrypt_fallback_url + r'''';
+                        return;
+                    }
+                })();
+
                 var api_key = "''' + obfuscated.captcha_values()["api_key"] + r'''";
                 var endpoint = '/' + window.location.pathname.split('/')[1] + '/' + api_key + '.html';
                 var solveAnotherHtml = `<p>''' + solve_another_html + r'''</p><p>''' + back_button_html + r'''</p>`;
@@ -828,6 +1225,11 @@ def setup_captcha_routes(app):
                     document.getElementById("delete-package-section").style.display = "none";
                     document.getElementById("back-button-section").style.display = "none";
                     document.getElementById("bypass-section").style.display = "none";
+                    // Hide package selector and warning on token submission
+                    var pkgSelector = document.getElementById("package-selector-section");
+                    if (pkgSelector) pkgSelector.style.display = "none";
+                    var warnBox = document.getElementById("failed-attempts-warning");
+                    if (warnBox) warnBox.style.display = "none";
 
                     // Remove width limit on result screen
                     var packageTitle = document.getElementById("package-title");
@@ -856,9 +1258,17 @@ def setup_captcha_routes(app):
                         if (data.success) {
                             document.getElementById("captcha-key").insertAdjacentHTML('afterend', 
                                 '<p>✅ Successful!</p>');
+                            // Clear failed attempts on success
+                            if (typeof clearCaptchaAttempts === 'function') {
+                                clearCaptchaAttempts();
+                            }
                         } else {
                             document.getElementById("captcha-key").insertAdjacentHTML('afterend', 
                                 '<p>Failed. Check console for details!</p>');
+                            // Increment failed attempts on failure
+                            if (typeof incrementCaptchaAttempts === 'function') {
+                                incrementCaptchaAttempts();
+                            }
                         }
 
                         // Show appropriate button based on whether more CAPTCHAs exist
@@ -874,6 +1284,10 @@ def setup_captcha_routes(app):
                 ''' + obfuscated.cutcaptcha_custom_js() + f'''</script>
                 <div>
                     <h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+                    <div id="package-selector-section">
+                        {package_selector}
+                    </div>
+                    {failed_warning}
                     <p id="package-title" style="max-width: 370px; word-wrap: break-word; overflow-wrap: break-word;"><b>Package:</b> {title}</p>
                     <div id="captcha-key"></div>
                     {link_select}<br><br>
@@ -1057,7 +1471,8 @@ def setup_captcha_routes(app):
                     </p>
                     <p>
                         {render_button("Back", "secondary", {"onclick": "location.href='/'"})}
-                    </p>''')
+                    </p>
+                    <script>localStorage.removeItem('captcha_attempts_{package_id}');</script>''')
                 else:
                     StatsHelper(shared_state).increment_failed_decryptions_manual()
                     return render_centered_html(f'''<h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
