@@ -232,6 +232,8 @@ def download(shared_state, request_from, title, url, mirror, size_mb, password, 
     """Main download entry point."""
     category = "docs" if "lazylibrarian" in request_from.lower() else \
         "movies" if "radarr" in request_from.lower() else "tv"
+
+    # Problem, we should make this id deterministic, so same source and same request_from (radarr / sonarr, not their version!) must yield same hash
     package_id = f"Quasarr_{category}_{str(hash(title + url)).replace('-', '')}"
 
     if imdb_id and imdb_id.lower() == "none":
