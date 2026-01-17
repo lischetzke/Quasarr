@@ -97,7 +97,7 @@ def dl_feed(shared_state, start_time, request_from, mirror=None):
                 if not title_elem:
                     continue
 
-                title = title_elem.get_text(strip=True)
+                title = ''.join(title_elem.strings)
                 if not title:
                     continue
 
@@ -230,7 +230,8 @@ def _search_single_page(shared_state, host, search_string, search_id, page_num, 
                 if not title_elem:
                     continue
 
-                title = title_elem.get_text(separator=' ', strip=True)
+                title = ''.join(title_elem.strings)
+
                 title = re.sub(r'\s+', ' ', title)
                 title = unescape(title)
                 title_normalized = normalize_title_for_sonarr(title)

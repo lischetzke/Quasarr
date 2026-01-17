@@ -25,7 +25,7 @@ def get_api(shared_state_dict, shared_state_lock):
 
     # Auth: routes must come first, then hook
     add_auth_routes(app)
-    add_auth_hook(app, whitelist_prefixes=['/api/', '/sponsors_helper/'])
+    add_auth_hook(app, whitelist_prefixes=['/api', '/api/' '/sponsors_helper/', '/download/'])
 
     setup_arr_routes(app)
     setup_captcha_routes(app)
