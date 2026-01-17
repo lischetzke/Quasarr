@@ -7,6 +7,7 @@ import os
 import re
 import time
 import traceback
+import unicodedata
 from datetime import datetime, timedelta, date
 from urllib import parse
 
@@ -826,6 +827,8 @@ def get_recently_searched(shared_state, context, timeout_seconds):
 
 
 def download_package(links, title, password, package_id):
+    links = [sanitize_url(link) for link in links]
+
     device = get_device()
     downloaded = device.linkgrabber.add_links(params=[
         {
@@ -841,3 +844,24 @@ def download_package(links, title, password, package_id):
         }
     ])
     return downloaded
+
+
+def sanitize_url(url: str) -> str:
+    # normalize first
+    url = unicodedata.normalize("NFKC", url)
+
+    # 1) real control characters (U+0000–U+001F, U+007F–U+009F)
+    _REAL_CTRL_RE = re.compile(r'[\u0000-\u001f\u007f-\u009f]')
+
+    # 2) *literal* escaped unicode junk: \u0010, \x10, repeated variants
+    _ESCAPED_CTRL_RE = re.compile(
+        r'(?:\\u00[0-1][0-9a-fA-F]|\\x[0-1][0-9a-fA-F])'
+    )
+
+    # remove literal escaped control sequences like "\u0010"
+    url = _ESCAPED_CTRL_RE.sub("", url)
+
+    # remove actual control characters if already decoded
+    url = _REAL_CTRL_RE.sub("", url)
+
+    return url.strip()
