@@ -239,7 +239,9 @@ def hostname_form_html(shared_state, message, show_restart_button=False, show_sk
     .import-status {{
         margin-top: 0.5rem;
         font-size: 0.875rem;
-        min-height: 1.25rem;
+    }}
+    .import-status:empty {{
+        display: none;
     }}
     .import-status.success {{ color: #198754; }}
     .import-status.error {{ color: #dc3545; }}
