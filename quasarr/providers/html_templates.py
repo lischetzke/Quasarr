@@ -6,7 +6,7 @@ import quasarr.providers.html_images as images
 from quasarr.providers.version import get_version
 
 
-def render_centered_html(inner_content):
+def render_centered_html(inner_content, footer_content=""):
     head = '''
     <head>
         <meta charset="utf-8">
@@ -20,6 +20,7 @@ def render_centered_html(inner_content):
                 --fg-color: #212529;
                 --card-bg: #ffffff;
                 --card-shadow: rgba(0, 0, 0, 0.1);
+                --card-border: #dee2e6;
                 --primary: #0d6efd;
                 --secondary: #6c757d;
                 --code-bg: #f8f9fa;
@@ -27,21 +28,40 @@ def render_centered_html(inner_content):
                 --info-border: #2d5a2d;
                 --setup-border: var(--primary);
                 --divider-color: #dee2e6;
+                --border-color: #dee2e6;
                 --btn-subtle-bg: #e9ecef;
                 --btn-subtle-border: #ced4da;
+                --text-muted: #666;
+                --link-color: #0d6efd;
+                --success-color: #198754;
+                --success-bg: #d1e7dd;
+                --success-border: #a3cfbb;
+                --error-color: #dc3545;
+                --error-bg: #f8d7da;
+                --error-border: #f1aeb5;
             }
             @media (prefers-color-scheme: dark) {
                 :root {
                     --bg-color: #181a1b;
                     --fg-color: #f1f1f1;
-                    --card-bg: #242526;
+                    --card-bg: #2d3748;
                     --card-shadow: rgba(0, 0, 0, 0.5);
+                    --card-border: #4a5568;
                     --code-bg: #2c2f33;
                     --info-border: #4a8c4a;
                     --setup-border: var(--primary);
-                    --divider-color: #444;
+                    --divider-color: #4a5568;
+                    --border-color: #4a5568;
                     --btn-subtle-bg: #444;
                     --btn-subtle-border: #666;
+                    --text-muted: #a0aec0;
+                    --link-color: #63b3ed;
+                    --success-color: #68d391;
+                    --success-bg: #1c4532;
+                    --success-border: #276749;
+                    --error-color: #fc8181;
+                    --error-bg: #3d2d2d;
+                    --error-border: #c53030;
                 }
             }
             /* Info box styling */
@@ -65,6 +85,27 @@ def render_centered_html(inner_content):
             .setup-box h3 {
                 margin-top: 0;
                 color: var(--setup-border);
+            }
+            /* Status pill styling */
+            .status-pill {
+                display: inline-flex;
+                align-items: center;
+                gap: 6px;
+                padding: 6px 12px;
+                border-radius: 20px;
+                font-size: 0.9rem;
+                font-weight: 500;
+                margin: 8px 0;
+            }
+            .status-pill.success {
+                background: var(--success-bg);
+                color: var(--success-color);
+                border: 1px solid var(--success-border);
+            }
+            .status-pill.error {
+                background: var(--error-bg);
+                color: var(--error-color);
+                border: 1px solid var(--error-border);
             }
             /* Subtle button styling (ghost style) */
             .btn-subtle {
@@ -112,7 +153,7 @@ def render_centered_html(inner_content):
                 width: 100%;
                 padding: 0.5rem;
                 font-size: 1rem;
-                border: 1px solid #ced4da;
+                border: 1px solid var(--card-border);
                 border-radius: 0.5rem;
                 background-color: var(--card-bg);
                 color: var(--fg-color);
@@ -220,21 +261,35 @@ def render_centered_html(inner_content):
                 box-shadow: 0 2px 6px rgba(108, 117, 125, 0.4);
             }
             a {
-                color: var(--primary);
+                color: var(--link-color);
                 text-decoration: none;
             }
             a:hover {
-
+                text-decoration: underline;
             }
             /* footer styling */
             footer {
                 text-align: center;
                 font-size: 0.75rem;
-                color: var(--secondary);
+                color: var(--text-muted);
                 padding: 0.5rem 0;
+            }
+            footer a {
+                color: var(--text-muted);
+                margin: 0 0;
+            }
+            footer a:hover {
+                color: var(--fg-color);
             }
         </style>
     </head>'''
+
+    # Build footer content
+    version_text = f"Quasarr v.{get_version()}"
+    if footer_content:
+        footer_html = f"{footer_content} · {version_text}"
+    else:
+        footer_html = version_text
 
     body = f'''
     {head}
@@ -245,7 +300,7 @@ def render_centered_html(inner_content):
             </div>
         </div>
         <footer>
-            Quasarr v.{get_version()}
+            {footer_html}
         </footer>
     </body>
     '''
@@ -260,14 +315,14 @@ def render_button(text, button_type="primary", attributes=None):
     return f'<button class="{cls}" {attr_str}>{text}</button>'
 
 
-def render_form(header, form="", script=""):
+def render_form(header, form="", script="", footer_content=""):
     content = f'''
     <h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
     <h2>{header}</h2>
     {form}
     {script}
     '''
-    return render_centered_html(content)
+    return render_centered_html(content, footer_content)
 
 
 def render_success(message, timeout=10, optional_text=""):

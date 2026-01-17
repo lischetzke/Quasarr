@@ -66,7 +66,7 @@ def get_api(shared_state_dict, shared_state_lock):
         # JDownloader status
         jd_status = f"""
             <div class="status-bar">
-                <span class="status-item {'status-ok' if jd_connected else 'status-error'}">
+                <span class="status-pill {'success' if jd_connected else 'error'}">
                     {'✅' if jd_connected else '❌'} JDownloader {'Connected' if jd_connected else 'Disconnected'}
                 </span>
             </div>
@@ -389,8 +389,8 @@ def get_api(shared_state_dict, shared_state_lock):
         </script>
         """
         # Add logout link for form auth
-        logout_html = '<div class="logout-link"><a href="/logout">Logout</a></div>' if show_logout_link() else ''
-        return render_centered_html(info + logout_html)
+        logout_html = '<a href="/logout">Logout</a>' if show_logout_link() else ''
+        return render_centered_html(info, footer_content=logout_html)
 
     @app.get('/regenerate-api-key')
     def regenerate_api_key():
