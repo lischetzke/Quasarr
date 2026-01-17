@@ -12,6 +12,7 @@ from quasarr.api.packages import setup_packages_routes
 from quasarr.api.sponsors_helper import setup_sponsors_helper_routes
 from quasarr.api.statistics import setup_statistics
 from quasarr.providers import shared_state
+from quasarr.providers.auth import add_auth_routes, add_auth_hook, show_logout_link
 from quasarr.providers.html_templates import render_button, render_centered_html
 from quasarr.providers.web_server import Server
 from quasarr.storage.config import Config
@@ -21,6 +22,10 @@ def get_api(shared_state_dict, shared_state_lock):
     shared_state.set_state(shared_state_dict, shared_state_lock)
 
     app = Bottle()
+
+    # Auth: routes must come first, then hook
+    add_auth_routes(app)
+    add_auth_hook(app, whitelist_prefixes=['/api/', '/sponsors_helper/'])
 
     setup_arr_routes(app)
     setup_captcha_routes(app)
@@ -271,6 +276,18 @@ def get_api(shared_state_dict, shared_state_lock):
             }}
             .help-link a:hover {{ text-decoration: underline; }}
 
+            .logout-link {{
+                display: block;
+                text-align: center;
+                margin-top: 20px;
+                font-size: 0.85em;
+            }}
+            .logout-link a {{
+                color: var(--text-muted, #666);
+                text-decoration: none;
+            }}
+            .logout-link a:hover {{ text-decoration: underline; }}
+
             /* Dark mode */
             @media (prefers-color-scheme: dark) {{
                 :root {{
@@ -371,7 +388,9 @@ def get_api(shared_state_dict, shared_state_lock):
             }})();
         </script>
         """
-        return render_centered_html(info)
+        # Add logout link for form auth
+        logout_html = '<div class="logout-link"><a href="/logout">Logout</a></div>' if show_logout_link() else ''
+        return render_centered_html(info + logout_html)
 
     @app.get('/regenerate-api-key')
     def regenerate_api_key():
