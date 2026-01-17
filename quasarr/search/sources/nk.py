@@ -168,7 +168,7 @@ def nk_search(shared_state, start_time, request_from, search_string="", mirror=N
             published = convert_to_rss_date(date_text) if date_text else ""
 
             payload = urlsafe_b64encode(
-                f"{title}|{source}|{mirror}|{mb}|{password}|{release_imdb_id}".encode("utf-8")).decode()
+                f"{title}|{source}|{mirror}|{mb}|{password}|{release_imdb_id}|{hostname}".encode("utf-8")).decode()
             link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
 
             releases.append({

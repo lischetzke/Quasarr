@@ -123,7 +123,7 @@ def dl_feed(shared_state, start_time, request_from, mirror=None):
                 password = ""
 
                 payload = urlsafe_b64encode(
-                    f"{title}|{thread_url}|{mirror}|{mb}|{password}|{imdb_id or ''}".encode("utf-8")
+                    f"{title}|{thread_url}|{mirror}|{mb}|{password}|{imdb_id or ''}|{hostname}".encode("utf-8")
                 ).decode("utf-8")
                 link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
 
@@ -261,7 +261,8 @@ def _search_single_page(shared_state, host, search_string, search_id, page_num, 
                 password = ""
 
                 payload = urlsafe_b64encode(
-                    f"{title_normalized}|{thread_url}|{mirror}|{mb}|{password}|{imdb_id or ''}".encode("utf-8")
+                    f"{title_normalized}|{thread_url}|{mirror}|{mb}|{password}|{imdb_id or ''}|{hostname}".encode(
+                        "utf-8")
                 ).decode("utf-8")
                 link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
 

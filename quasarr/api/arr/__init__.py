@@ -34,18 +34,57 @@ def require_api_key(func):
     return decorated
 
 
+def parse_payload(payload_str):
+    """
+    Parse the base64-encoded payload string into its components.
+
+    Supports both legacy 6-field format and new 7-field format:
+    - Legacy (6 fields): title|url|mirror|size_mb|password|imdb_id
+    - New (7 fields): title|url|mirror|size_mb|password|imdb_id|source_key
+
+    Returns:
+        dict with keys: title, url, mirror, size_mb, password, imdb_id, source_key
+    """
+    decoded = urlsafe_b64decode(payload_str.encode()).decode()
+    parts = decoded.split("|")
+
+    if len(parts) == 6:
+        # Legacy format - no source_key provided
+        title, url, mirror, size_mb, password, imdb_id = parts
+        source_key = None
+    elif len(parts) == 7:
+        # New format with source_key
+        title, url, mirror, size_mb, password, imdb_id, source_key = parts
+    else:
+        raise ValueError(f"expected 6 or 7 fields, got {len(parts)}")
+
+    return {
+        "title": title,
+        "url": url,
+        "mirror": None if mirror == "None" else mirror,
+        "size_mb": size_mb,
+        "password": password if password else None,
+        "imdb_id": imdb_id if imdb_id else None,
+        "source_key": source_key if source_key else None
+    }
+
+
 def setup_arr_routes(app):
     @app.get('/download/')
     def fake_nzb_file():
         payload = request.query.payload
         decoded_payload = urlsafe_b64decode(payload).decode("utf-8").split("|")
+
+        # Support both 6 and 7 field formats
         title = decoded_payload[0]
         url = decoded_payload[1]
         mirror = decoded_payload[2]
         size_mb = decoded_payload[3]
         password = decoded_payload[4]
         imdb_id = decoded_payload[5]
-        return f'<nzb><file title="{title}" url="{url}" mirror="{mirror}" size_mb="{size_mb}" password="{password}" imdb_id="{imdb_id}"/></nzb>'
+        source_key = decoded_payload[6] if len(decoded_payload) > 6 else ""
+
+        return f'<nzb><file title="{title}" url="{url}" mirror="{mirror}" size_mb="{size_mb}" password="{password}" imdb_id="{imdb_id}" source_key="{source_key}"/></nzb>'
 
     @app.post('/api')
     @require_api_key
@@ -65,10 +104,12 @@ def setup_arr_routes(app):
             size_mb = root.find(".//file").attrib["size_mb"]
             password = root.find(".//file").attrib.get("password")
             imdb_id = root.find(".//file").attrib.get("imdb_id")
+            source_key = root.find(".//file").attrib.get("source_key") or None
 
             info(f'Attempting download for "{title}"')
             request_from = request.headers.get('User-Agent')
-            downloaded = download(shared_state, request_from, title, url, mirror, size_mb, password, imdb_id)
+            downloaded = download(shared_state, request_from, title, url, mirror, size_mb, password, imdb_id,
+                                  source_key)
             try:
                 success = downloaded["success"]
                 package_id = downloaded["package_id"]
@@ -166,37 +207,31 @@ def setup_arr_routes(app):
                     if not payload:
                         abort(400, "missing 'payload' parameter in URL")
 
-                    title = url = mirror = size_mb = password = imdb_id = None
                     try:
-                        decoded = urlsafe_b64decode(payload.encode()).decode()
-                        parts = decoded.split("|")
-                        if len(parts) != 6:
-                            raise ValueError(f"expected 6 fields, got {len(parts)}")
-                        title, url, mirror, size_mb, password, imdb_id = parts
+                        parsed_payload = parse_payload(payload)
                     except Exception as e:
                         abort(400, f"invalid payload format: {e}")
 
-                    mirror = None if mirror == "None" else mirror
-
                     nzo_ids = []
-                    info(f'Attempting download for "{title}"')
+                    info(f'Attempting download for "{parsed_payload["title"]}"')
                     request_from = "lazylibrarian"
 
                     downloaded = download(
                         shared_state,
                         request_from,
-                        title,
-                        url,
-                        mirror,
-                        size_mb,
-                        password or None,
-                        imdb_id or None,
+                        parsed_payload["title"],
+                        parsed_payload["url"],
+                        parsed_payload["mirror"],
+                        parsed_payload["size_mb"],
+                        parsed_payload["password"],
+                        parsed_payload["imdb_id"],
+                        parsed_payload["source_key"],
                     )
 
                     try:
                         success = downloaded["success"]
                         package_id = downloaded["package_id"]
-                        title = downloaded.get("title", title)
+                        title = downloaded.get("title", parsed_payload["title"])
 
                         if success:
                             info(f'"{title}" added successfully!')
@@ -204,7 +239,7 @@ def setup_arr_routes(app):
                             info(f'"{title}" added unsuccessfully! See log for details.')
                         nzo_ids.append(package_id)
                     except KeyError:
-                        info(f'Failed to download "{title}" - no package_id returned')
+                        info(f'Failed to download "{parsed_payload["title"]}" - no package_id returned')
 
                     return {
                         "status": True,
@@ -353,7 +388,8 @@ def setup_arr_routes(app):
                             <enclosure url="{release.get("link", "")}" length="{release.get("size", 0)}" type="application/x-nzb" />
                         </item>'''
 
-                    requires_placeholder_item = not getattr(request.query, 'imdbid', '') and not getattr(request.query, 'q', '')
+                    requires_placeholder_item = not getattr(request.query, 'imdbid', '') and not getattr(request.query,
+                                                                                                         'q', '')
                     if requires_placeholder_item and not items:
                         items = f'''
                         <item>

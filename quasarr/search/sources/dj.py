@@ -68,7 +68,7 @@ def dj_feed(shared_state, start_time, request_from, mirror=None):
             imdb_id = None
 
             payload = urlsafe_b64encode(
-                f"{title}|{series_url}|{mirror}|{mb}|{password}|{imdb_id}".encode("utf-8")
+                f"{title}|{series_url}|{mirror}|{mb}|{password}|{imdb_id}|{hostname}".encode("utf-8")
             ).decode("utf-8")
 
             link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
@@ -186,7 +186,7 @@ def dj_search(shared_state, start_time, request_from, search_string, mirror=None
                     size = 0
 
                     payload = urlsafe_b64encode(
-                        f"{title}|{series_url}|{mirror}|{mb}|{password}|{imdb_id}".encode("utf-8")
+                        f"{title}|{series_url}|{mirror}|{mb}|{password}|{imdb_id}|{hostname}".encode("utf-8")
                     ).decode("utf-8")
 
                     link = f"{shared_state.values['internal_address']}/download/?payload={payload}"

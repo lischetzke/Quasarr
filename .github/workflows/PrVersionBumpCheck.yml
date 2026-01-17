@@ -2,7 +2,7 @@ name: PR Version Bump Check
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [ opened, synchronize, reopened ]
 
 jobs:
   version-check:
@@ -99,22 +99,22 @@ jobs:
 
           if pr_parsed <= base_parsed:
               gh_error(f"Version not bumped: {base_version} → {pr_version}")
-              
+          
               write_summary("## ❌ Version Bump Check Failed\n")
               write_summary(f"| Branch | Version |")
               write_summary(f"|--------|---------|")
               write_summary(f"| `main` | {format_version_type(base_version)} |")
               write_summary(f"| PR | {format_version_type(pr_version)} |")
               write_summary("")
-              
+          
               if pr_parsed == base_parsed:
                   write_summary(f"**Problem:** Version unchanged at `{pr_version}`")
               else:
                   write_summary(f"**Problem:** PR version `{pr_version}` is lower than base `{base_version}`")
-              
+          
               write_summary("")
               write_summary("Please update `quasarr/providers/version.py` with an incremented version.")
-              
+          
               sys.exit(1)
 
           gh_notice(f"Version bumped: {base_version} → {pr_version}")

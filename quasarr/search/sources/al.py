@@ -208,7 +208,7 @@ def al_feed(shared_state, start_time, request_from, mirror=None):
 
                 # Build payload using final_title
                 mb = 0  # size not available in feed
-                raw = f"{final_title}|{url}|{mirror}|{mb}|{release_id}|".encode("utf-8")
+                raw = f"{final_title}|{url}|{mirror}|{mb}|{release_id}||{hostname}".encode("utf-8")
                 payload = urlsafe_b64encode(raw).decode("utf-8")
                 link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
 

@@ -98,7 +98,7 @@ def dw_feed(shared_state, start_time, request_from, mirror=None):
                 date = article.parent.parent.find("span", {"class": "date updated"}).text.strip()
                 published = convert_to_rss_date(date)
                 payload = urlsafe_b64encode(
-                    f"{title}|{source}|{mirror}|{mb}|{password}|{imdb_id}".encode("utf-8")).decode("utf-8")
+                    f"{title}|{source}|{mirror}|{mb}|{password}|{imdb_id}|{hostname}".encode("utf-8")).decode("utf-8")
                 link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
             except Exception as e:
                 info(f"Error parsing {hostname.upper()} feed: {e}")
@@ -136,7 +136,6 @@ def dw_search(shared_state, start_time, request_from, search_string, mirror=None
         debug(f'Skipping {request_from} search on "{hostname.upper()}" (unsupported media type)!')
         return releases
 
-
     if "Radarr" in request_from:
         search_type = "videocategory=filme"
     else:
@@ -168,10 +167,10 @@ def dw_search(shared_state, start_time, request_from, search_string, mirror=None
                 title = result.a.text.strip()
 
                 if not shared_state.is_valid_release(title,
-                                                                     request_from,
-                                                                     search_string,
-                                                                     season,
-                                                                     episode):
+                                                     request_from,
+                                                     search_string,
+                                                     season,
+                                                     episode):
                     continue
 
                 if not imdb_id:
@@ -188,7 +187,7 @@ def dw_search(shared_state, start_time, request_from, search_string, mirror=None
                 date = result.parent.parent.find("span", {"class": "date updated"}).text.strip()
                 published = convert_to_rss_date(date)
                 payload = urlsafe_b64encode(
-                    f"{title}|{source}|{mirror}|{mb}|{password}|{imdb_id}".encode("utf-8")).decode("utf-8")
+                    f"{title}|{source}|{mirror}|{mb}|{password}|{imdb_id}|{hostname}".encode("utf-8")).decode("utf-8")
                 link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
             except Exception as e:
                 info(f"Error parsing {hostname.upper()} search: {e}")
