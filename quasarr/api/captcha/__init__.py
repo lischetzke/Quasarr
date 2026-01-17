@@ -61,7 +61,21 @@ def setup_captcha_routes(app):
                 {render_button("Confirm", "secondary", {"onclick": "location.href='/'"})}
             </p>''')
         else:
-            package = protected[0]
+            # Check if a specific package_id was requested
+            requested_package_id = request.query.get('package_id')
+            package = None
+
+            if requested_package_id:
+                # Find the specific package
+                for p in protected:
+                    if p[0] == requested_package_id:
+                        package = p
+                        break
+
+            # Fall back to first package if not found or not specified
+            if package is None:
+                package = protected[0]
+
             package_id = package[0]
             data = json.loads(package[1])
             title = data["title"]
@@ -1208,6 +1222,17 @@ def setup_captcha_routes(app):
                         border-left: none !important;
                         border-right: none !important;
                     }
+                }
+                /* Fix captcha container to shrink-wrap iframe on desktop */
+                .captcha-container {
+                    display: inline-block;
+                    background-color: var(--secondary);
+                }
+                #puzzle-captcha {
+                    display: block;
+                }
+                #puzzle-captcha iframe {
+                    display: block;
                 }
             </style>
             <script type="text/javascript">

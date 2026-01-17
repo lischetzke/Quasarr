@@ -48,6 +48,11 @@ http://192.168.1.1:8191/v1
 
 📋 Alternatively, browse community suggestions via [pastebin search](https://pastebin.com/search?q=hostnames+quasarr) (login required).
 
+> Authentication is optional but strongly recommended.
+>
+> - 🔐 Set `USER` and `PASS` to enable form-based login (30-day session)
+> - 🔑 Set `AUTH=basic` to use HTTP Basic Authentication instead
+
 ---
 
 ## JDownloader
@@ -143,7 +148,10 @@ docker run -d \
   -e 'INTERNAL_ADDRESS'='http://192.168.0.1:8080' \
   -e 'EXTERNAL_ADDRESS'='https://foo.bar/' \
   -e 'DISCORD'='https://discord.com/api/webhooks/1234567890/ABCDEFGHIJKLMN' \
-  -e 'HOSTNAMES'='https://quasarr-host.name/ini?token=123...'
+  -e 'HOSTNAMES'='https://quasarr-host.name/ini?token=123...' \
+  -e 'USER'='admin' \
+  -e 'PASS'='change-me' \
+  -e 'AUTH'='form' \
   -e 'SILENT'='True' \
   -e 'DEBUG'='' \
   -e 'TZ'='Europe/Berlin' \
@@ -157,6 +165,8 @@ docker run -d \
     * Must be a publicly available `HTTP` or `HTTPs` link
     * Must be a raw `.ini` / text file (not HTML or JSON)
     * Must contain at least one valid Hostname per line `ab = xyz`
+* `USER` / `PASS` are credentials to protect the web UI
+* `AUTH` is the authentication mode (`form` or `basic`)
 * `SILENT` is optional and silences all discord notifications except for error messages from SponsorsHelper if `True`.
 * `DEBUG` is optional and enables debug logging if `True`.
 * `TZ` is optional, wrong timezone can cause HTTPS/SSL issues

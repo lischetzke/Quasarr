@@ -164,3 +164,7 @@ def setup_sponsors_helper_routes(app):
         except:
             pass
         return abort(500, "Failed")
+
+    @app.get("/sponsors_helper/api/ping/")
+    def get_sponsor_status():
+        return "pong"

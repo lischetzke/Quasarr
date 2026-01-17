@@ -15,6 +15,7 @@ import quasarr.providers.sessions.al
 import quasarr.providers.sessions.dd
 import quasarr.providers.sessions.dl
 import quasarr.providers.sessions.nx
+from quasarr.providers.auth import add_auth_routes, add_auth_hook
 from quasarr.providers.html_templates import render_button, render_form, render_success, render_fail, \
     render_centered_html
 from quasarr.providers.log import info
@@ -91,9 +92,16 @@ def add_no_cache_headers(app):
         response.set_header('Expires', '0')
 
 
+def setup_auth(app):
+    """Add authentication to setup app if enabled."""
+    add_auth_routes(app)
+    add_auth_hook(app)
+
+
 def path_config(shared_state):
     app = Bottle()
     add_no_cache_headers(app)
+    setup_auth(app)
 
     current_path = os.path.dirname(os.path.abspath(sys.argv[0]))
 
@@ -560,6 +568,7 @@ def save_hostnames(shared_state, timeout=5, first_run=True):
 def hostnames_config(shared_state):
     app = Bottle()
     add_no_cache_headers(app)
+    setup_auth(app)
 
     @app.get('/')
     def hostname_form():
@@ -638,6 +647,7 @@ def hostnames_config(shared_state):
 def hostname_credentials_config(shared_state, shorthand, domain):
     app = Bottle()
     add_no_cache_headers(app)
+    setup_auth(app)
 
     shorthand = shorthand.upper()
 
@@ -793,6 +803,7 @@ def hostname_credentials_config(shared_state, shorthand, domain):
 def flaresolverr_config(shared_state):
     app = Bottle()
     add_no_cache_headers(app)
+    setup_auth(app)
 
     @app.get('/')
     def url_form():
@@ -933,6 +944,7 @@ def flaresolverr_config(shared_state):
 def jdownloader_config(shared_state):
     app = Bottle()
     add_no_cache_headers(app)
+    setup_auth(app)
 
     @app.get('/')
     def jd_form():
