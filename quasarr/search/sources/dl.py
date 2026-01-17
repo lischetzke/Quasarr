@@ -230,6 +230,11 @@ def _search_single_page(shared_state, host, search_string, search_id, page_num, 
                 if not title_elem:
                     continue
 
+                # Skip "Wird gesucht" threads
+                label = item.select_one('.contentRow-minor .label')
+                if label and 'wird gesucht' in label.get_text(strip=True).lower():
+                    continue
+
                 title = ''.join(title_elem.strings)
 
                 title = re.sub(r'\s+', ' ', title)
