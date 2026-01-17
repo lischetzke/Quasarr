@@ -128,7 +128,7 @@ def _parse_rows(
             published = convert_to_rss_date(date_txt) if date_txt else one_hour_ago
 
             payload = urlsafe_b64encode(
-                f"{title}|{source}|{mirror_filter}|{mb}|{password}|{imdb_id}".encode()
+                f"{title}|{source}|{mirror_filter}|{mb}|{password}|{imdb_id}|{hostname}".encode()
             ).decode()
             download_link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
 

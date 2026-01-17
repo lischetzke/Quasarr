@@ -13,21 +13,17 @@ def setup_packages_routes(app):
     def delete_package_route(package_id):
         success = delete_package(shared_state, package_id)
 
+        # Redirect back to packages page with status message via query param
+        from bottle import redirect
         if success:
-            return render_centered_html(f'''
-                <h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
-                <p>✅ Package deleted successfully.</p>
-                <p>{render_button("Back to Packages", "primary", {"onclick": "location.href='/packages'"})}</p>
-            ''')
+            redirect('/packages?deleted=1')
         else:
-            return render_centered_html(f'''
-                <h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
-                <p>❌ Failed to delete package.</p>
-                <p>{render_button("Back to Packages", "secondary", {"onclick": "location.href='/packages'"})}</p>
-            ''')
+            redirect('/packages?deleted=0')
 
     @app.get('/packages')
     def packages_status():
+        from bottle import request
+
         try:
             device = shared_state.values["device"]
         except KeyError:
@@ -40,6 +36,14 @@ def setup_packages_routes(app):
                 <p>JDownloader connection not established.</p>
                 <p>{back_btn}</p>
             ''')
+
+        # Check for delete status from redirect
+        deleted = request.query.get('deleted')
+        status_message = ""
+        if deleted == '1':
+            status_message = '<div class="status-message success">✅ Package deleted successfully.</div>'
+        elif deleted == '0':
+            status_message = '<div class="status-message error">❌ Failed to delete package.</div>'
 
         # Get packages data
         downloads = get_packages(shared_state)
@@ -143,29 +147,43 @@ def setup_packages_routes(app):
         def render_history_item(item):
             name = item.get('name', 'Unknown')
             status = item.get('status', 'Unknown')
-            category = item.get('category', 'not_quasarr')
             bytes_val = item.get('bytes', 0)
-            is_archive = item.get('is_archive')
-            extraction_ok = item.get('extraction_ok', False)
+            category = item.get('category', 'not_quasarr')
+            is_archive = item.get('is_archive', False)
+            extraction_status = item.get('extraction_status', '')
             fail_message = item.get('fail_message', '')
             nzo_id = item.get('nzo_id', '')
 
-            status_emoji = '✅' if status == 'Completed' else '❌'
-
-            archive_badge = ''
-            if is_archive:
-                archive_badge = '<span class="badge extracted">📁 EXTRACTED</span>' if extraction_ok else '<span class="badge pending">📁 NOT EXTRACTED</span>'
+            is_error = status.lower() in ['failed', 'error'] or fail_message
+            card_class = 'package-card error' if is_error else 'package-card'
 
             cat_emoji = get_category_emoji(category)
             size_str = format_size(bytes_val=bytes_val)
 
-            error_html = f'<div class="package-error">⚠️ {fail_message}</div>' if fail_message else ''
-            error_class = 'error' if status != 'Completed' else ''
+            archive_badge = ''
+            if is_archive:
+                if extraction_status == 'SUCCESSFUL':
+                    archive_badge = '<span class="badge extracted">✅ EXTRACTED</span>'
+                elif extraction_status == 'RUNNING':
+                    archive_badge = '<span class="badge pending">⏳ EXTRACTING</span>'
+                else:
+                    archive_badge = '<span class="badge archive">📁 ARCHIVE</span>'
 
-            delete_btn = f'<div class="package-actions right-only"><button class="btn-small danger" onclick="confirmDelete(\'{nzo_id}\', \'{escape_js(name)}\')">🗑️</button></div>' if nzo_id else ''
+            status_emoji = '❌' if is_error else '✅'
+            error_html = f'<div class="package-error">⚠️ {fail_message}</div>' if fail_message else ''
+
+            # Delete button for history items
+            if nzo_id:
+                actions = f'''
+                    <div class="package-actions right-only">
+                        <button class="btn-small danger" onclick="confirmDelete('{nzo_id}', '{escape_js(name)}')">🗑️</button>
+                    </div>
+                '''
+            else:
+                actions = ''
 
             return f'''
-                <div class="package-card {error_class}">
+                <div class="{card_class}">
                     <div class="package-header">
                         <span class="status-emoji">{status_emoji}</span>
                         <span class="package-name">{name}</span>
@@ -176,24 +194,46 @@ def setup_packages_routes(app):
                         <span>{cat_emoji} {category}</span>
                     </div>
                     {error_html}
-                    {delete_btn}
+                    {actions}
                 </div>
             '''
 
-        # Build HTML sections
-        queue_html = ''.join(render_queue_item(item) for item in
-                             quasarr_queue) if quasarr_queue else '<p class="empty-message">No Quasarr packages in queue</p>'
-        history_html = ''.join(render_history_item(item) for item in
-                               quasarr_history) if quasarr_history else '<p class="empty-message">No Quasarr packages in history</p>'
+        # Build queue section
+        queue_html = ''
+        if quasarr_queue:
+            queue_items = ''.join(render_queue_item(item) for item in quasarr_queue)
+            queue_html = f'''
+                <div class="section">
+                    <h3>⬇️ Downloading</h3>
+                    <div class="packages-list">{queue_items}</div>
+                </div>
+            '''
+        else:
+            queue_html = '<div class="section"><p class="empty-message">No active downloads</p></div>'
 
+        # Build history section
+        history_html = ''
+        if quasarr_history:
+            history_items = ''.join(render_history_item(item) for item in quasarr_history[:10])
+            history_html = f'''
+                <div class="section">
+                    <h3>📜 Recent History</h3>
+                    <div class="packages-list">{history_items}</div>
+                </div>
+            '''
+
+        # Build "other packages" section (non-Quasarr)
         other_html = ''
-        if other_queue or other_history:
-            other_count = len(other_queue) + len(other_history)
+        other_count = len(other_queue) + len(other_history)
+        if other_count > 0:
             other_items = ''
             if other_queue:
-                other_items += '<h4>⏳ Queue</h4>' + ''.join(render_queue_item(item) for item in other_queue)
+                other_items += f'<h4>Queue ({len(other_queue)})</h4>'
+                other_items += ''.join(render_queue_item(item) for item in other_queue)
             if other_history:
-                other_items += '<h4>📜 History</h4>' + ''.join(render_history_item(item) for item in other_history)
+                other_items += f'<h4>History ({len(other_history)})</h4>'
+                other_items += ''.join(render_history_item(item) for item in other_history[:5])
+
             plural = 's' if other_count != 1 else ''
             other_html = f'''
                 <div class="other-packages-section">
@@ -204,36 +244,30 @@ def setup_packages_routes(app):
                 </div>
             '''
 
-        queue_extra = f" + {len(other_queue)} other" if other_queue else ""
-        history_extra = f" + {len(other_history)} other" if other_history else ""
-
-        refresh_btn = render_button("Refresh Now", "primary", {"onclick": "location.reload()"})
         back_btn = render_button("Back", "secondary", {"onclick": "location.href='/'"})
 
         packages_html = f'''
             <h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
-            <h2>📦 Package Status</h2>
-            <div class="refresh-indicator"><span id="countdown">30</span>s until refresh</div>
+            <h2>Packages</h2>
+
+            {status_message}
+
+            <div class="refresh-indicator" onclick="location.reload()">
+                Auto-refresh in <span id="countdown">10</span>s
+            </div>
 
             <div class="packages-container">
-                <div class="section">
-                    <h3>⏳ Queue ({len(quasarr_queue)}{queue_extra})</h3>
-                    <div class="packages-list">{queue_html}</div>
-                </div>
-                <div class="section">
-                    <h3>📜 History ({len(quasarr_history)}{history_extra})</h3>
-                    <div class="packages-list">{history_html}</div>
-                </div>
+                {queue_html}
+                {history_html}
                 {other_html}
             </div>
 
-            <p>{refresh_btn}</p>
             <p>{back_btn}</p>
 
-            <!-- Delete Confirmation Modal -->
-            <div id="deleteModal" class="modal">
+            <!-- Delete confirmation modal -->
+            <div class="modal" id="deleteModal">
                 <div class="modal-content">
-                    <h3>⚠️ Delete Package?</h3>
+                    <h3>🗑️ Delete Package?</h3>
                     <p class="modal-package-name" id="modalPackageName"></p>
                     <div class="modal-warning">
                         <strong>⛔ Warning:</strong> This will permanently delete the package AND all associated files from disk. This action cannot be undone!
@@ -289,7 +323,8 @@ def setup_packages_routes(app):
                 .btn-small.danger:hover {{ background: var(--btn-danger-hover-bg, #dc3545); color: white; }}
 
                 .empty-message {{ color: var(--text-muted, #888); font-style: italic; text-align: center; padding: 20px; }}
-                .refresh-indicator {{ text-align: center; font-size: 0.85em; color: var(--text-muted, #888); margin-bottom: 15px; }}
+                .refresh-indicator {{ text-align: center; font-size: 0.85em; color: var(--text-muted, #888); margin-bottom: 15px; cursor: pointer; }}
+                .refresh-indicator:hover {{ color: var(--link-color, #0066cc); text-decoration: underline; }}
 
                 .other-packages-section {{ margin-top: 30px; padding-top: 20px; border-top: 1px solid var(--border-color, #ddd); }}
                 .other-packages-section summary {{ cursor: pointer; padding: 8px 0; color: var(--text-muted, #666); }}
@@ -297,12 +332,30 @@ def setup_packages_routes(app):
                 .other-packages-content {{ margin-top: 15px; }}
                 .other-packages-content h4 {{ margin: 15px 0 10px 0; font-size: 0.95em; color: var(--text-muted, #666); }}
 
+                /* Status message styling */
+                .status-message {{
+                    padding: 10px 15px;
+                    border-radius: 6px;
+                    margin-bottom: 15px;
+                    font-weight: 500;
+                }}
+                .status-message.success {{
+                    background: var(--success-bg, #d1e7dd);
+                    color: var(--success-color, #198754);
+                    border: 1px solid var(--success-border, #a3cfbb);
+                }}
+                .status-message.error {{
+                    background: var(--error-bg, #f8d7da);
+                    color: var(--error-color, #dc3545);
+                    border: 1px solid var(--error-border, #f1aeb5);
+                }}
+
                 /* Modal */
                 .modal {{ display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center; }}
                 .modal.show {{ display: flex; }}
                 .modal-content {{ background: var(--modal-bg, white); padding: 25px; border-radius: 12px; max-width: 400px; width: 90%; text-align: center; }}
                 .modal-content h3 {{ margin: 0 0 15px 0; color: var(--error-msg-color, #c62828); }}
-                .modal-package-name {{ font-weight: 500; word-break: break-word; padding: 10px; background: var(--card-bg, #f5f5f5); border-radius: 6px; margin: 10px 0; }}
+                .modal-package-name {{ font-weight: 500; word-break: break-word; padding: 10px; background: var(--code-bg, #f5f5f5); border-radius: 6px; margin: 10px 0; }}
                 .modal-warning {{ background: var(--error-msg-bg, #ffebee); color: var(--error-msg-color, #c62828); padding: 12px; border-radius: 6px; margin: 15px 0; font-size: 0.9em; text-align: left; }}
                 .modal-buttons {{ display: flex; gap: 10px; justify-content: center; margin-top: 20px; }}
                 .btn-danger {{ background: var(--btn-danger-bg, #dc3545); color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-weight: 500; }}
@@ -314,25 +367,33 @@ def setup_packages_routes(app):
                         --card-bg: #2d3748; --card-border: #4a5568; --card-shadow: rgba(0,0,0,0.3);
                         --border-color: #4a5568; --text-muted: #a0aec0;
                         --progress-track: #4a5568; --progress-fill: #68d391;
-                        --error-border: #fc8181; --error-bg: #2d2d2d; --error-msg-bg: #3d2d2d; --error-msg-color: #fc8181;
+                        --error-border: #fc8181; --error-bg: #3d2d2d; --error-msg-bg: #3d2d2d; --error-msg-color: #fc8181;
                         --badge-archive-bg: #1a365d; --badge-archive-color: #63b3ed;
                         --badge-success-bg: #1c4532; --badge-success-color: #68d391;
                         --badge-warning-bg: #3d2d1a; --badge-warning-color: #f6ad55;
-                        --link-color: #63b3ed; --modal-bg: #2d3748;
+                        --link-color: #63b3ed; --modal-bg: #2d3748; --code-bg: #1a202c;
                         --btn-primary-bg: #3182ce; --btn-primary-hover: #2c5282;
                         --btn-danger-text: #fc8181; --btn-danger-border: #fc8181; --btn-danger-hover-bg: #e53e3e;
+                        --success-bg: #1c4532; --success-color: #68d391; --success-border: #276749;
                     }}
                 }}
             </style>
 
             <script>
-                let countdown = 30;
+                let countdown = 10;
                 const countdownEl = document.getElementById('countdown');
                 const refreshInterval = setInterval(() => {{
                     countdown--;
                     if (countdownEl) countdownEl.textContent = countdown;
                     if (countdown <= 0) location.reload();
                 }}, 1000);
+
+                // Clear status message from URL after display
+                if (window.location.search.includes('deleted=')) {{
+                    const url = new URL(window.location);
+                    url.searchParams.delete('deleted');
+                    window.history.replaceState({{}}, '', url);
+                }}
 
                 // Restore collapse state from localStorage
                 const otherDetails = document.getElementById('otherPackagesDetails');

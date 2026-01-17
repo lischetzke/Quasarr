@@ -34,7 +34,6 @@ def fx_feed(shared_state, start_time, request_from, mirror=None):
         debug(f'Skipping {request_from} search on "{hostname.upper()}" (unsupported media type)!')
         return releases
 
-
     if mirror and mirror not in supported_mirrors:
         debug(f'Mirror "{mirror}" not supported by "{hostname.upper()}". Supported mirrors: {supported_mirrors}.'
               ' Skipping search!')
@@ -81,7 +80,8 @@ def fx_feed(shared_state, start_time, request_from, mirror=None):
                         mb = shared_state.convert_to_mb(size_item)
                         size = mb * 1024 * 1024
                         payload = urlsafe_b64encode(
-                            f"{title}|{link}|{mirror}|{mb}|{password}|{imdb_id}".encode("utf-8")).decode("utf-8")
+                            f"{title}|{link}|{mirror}|{mb}|{password}|{imdb_id}|{hostname}".encode("utf-8")).decode(
+                            "utf-8")
                         link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
                     except:
                         continue
@@ -124,7 +124,6 @@ def fx_search(shared_state, start_time, request_from, search_string, mirror=None
     if not "arr" in request_from.lower():
         debug(f'Skipping {request_from} search on "{hostname.upper()}" (unsupported media type)!')
         return releases
-
 
     if mirror and mirror not in supported_mirrors:
         debug(f'Mirror "{mirror}" not supported by "{hostname.upper()}". Supported mirrors: {supported_mirrors}.'
@@ -188,7 +187,8 @@ def fx_search(shared_state, start_time, request_from, search_string, mirror=None
                             mb = shared_state.convert_to_mb(size_item)
                             size = mb * 1024 * 1024
                             payload = urlsafe_b64encode(
-                                f"{title}|{link}|{mirror}|{mb}|{password}|{imdb_id}".encode("utf-8")).decode("utf-8")
+                                f"{title}|{link}|{mirror}|{mb}|{password}|{imdb_id}|{hostname}".encode("utf-8")).decode(
+                                "utf-8")
                             link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
                         except:
                             continue

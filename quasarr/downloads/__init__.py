@@ -2,6 +2,7 @@
 # Quasarr
 # Project by https://github.com/rix1337
 
+import hashlib
 import json
 import re
 
@@ -63,6 +64,72 @@ SOURCE_GETTERS = {
     'wd': get_wd_download_links,
     'wx': get_wx_download_links,
 }
+
+
+# =============================================================================
+# DETERMINISTIC PACKAGE ID GENERATION
+# =============================================================================
+
+def extract_client_type(request_from):
+    """
+    Extract client type from User-Agent, stripping version info.
+
+    Examples:
+        "Radarr/6.0.4.10291 (alpine 3.23.2)" → "radarr"
+        "Sonarr/4.0.0.123" → "sonarr"
+        "LazyLibrarian/1.0" → "lazylibrarian"
+    """
+    if not request_from:
+        return "unknown"
+
+    # Extract the client name before the version (first part before '/')
+    client = request_from.split('/')[0].lower().strip()
+
+    # Normalize known clients
+    if 'radarr' in client:
+        return 'radarr'
+    elif 'sonarr' in client:
+        return 'sonarr'
+    elif 'lazylibrarian' in client:
+        return 'lazylibrarian'
+
+    return client
+
+
+def generate_deterministic_package_id(title, source_key, client_type):
+    """
+    Generate a deterministic package ID from title, source, and client type.
+
+    The same combination of (title, source_key, client_type) will ALWAYS produce
+    the same package_id, allowing clients to reliably blocklist erroneous releases.
+
+    Args:
+        title: Release title (e.g., "Movie.Name.2024.1080p.BluRay")
+        source_key: Source identifier/hostname shorthand (e.g., "nx", "dl", "al")
+        client_type: Client type without version (e.g., "radarr", "sonarr", "lazylibrarian")
+
+    Returns:
+        Deterministic package ID in format: Quasarr_{category}_{hash32}
+    """
+    # Normalize inputs for consistency
+    normalized_title = title.strip()
+    normalized_source = source_key.lower().strip() if source_key else "unknown"
+    normalized_client = client_type.lower().strip() if client_type else "unknown"
+
+    # Category mapping (for compatibility with existing package ID format)
+    category_map = {
+        "lazylibrarian": "docs",
+        "radarr": "movies",
+        "sonarr": "tv"
+    }
+    category = category_map.get(normalized_client, "tv")
+
+    # Create deterministic hash from combination using SHA256
+    hash_input = f"{normalized_title}|{normalized_source}|{normalized_client}"
+    hash_bytes = hashlib.sha256(hash_input.encode('utf-8')).hexdigest()
+
+    # Use first 32 characters for good collision resistance (128-bit)
+    return f"Quasarr_{category}_{hash_bytes[:32]}"
 
 
 # =============================================================================
@@ -228,28 +295,41 @@ def process_links(shared_state, source_result, title, password, package_id, imdb
 # MAIN ENTRY POINT
 # =============================================================================
 
-def download(shared_state, request_from, title, url, mirror, size_mb, password, imdb_id=None):
-    """Main download entry point."""
-    category = "docs" if "lazylibrarian" in request_from.lower() else \
-        "movies" if "radarr" in request_from.lower() else "tv"
+def download(shared_state, request_from, title, url, mirror, size_mb, password, imdb_id=None, source_key=None):
+    """
+    Main download entry point.
 
-    # Problem, we should make this id deterministic, so same source and same request_from (radarr / sonarr, not their version!) must yield same hash
-    package_id = f"Quasarr_{category}_{str(hash(title + url)).replace('-', '')}"
-
+    Args:
+        shared_state: Application shared state
+        request_from: User-Agent string (e.g., "Radarr/6.0.4.10291")
+        title: Release title
+        url: Source URL
+        mirror: Preferred mirror/hoster
+        size_mb: Size in MB
+        password: Archive password
+        imdb_id: IMDb ID (optional)
+        source_key: Hostname shorthand from search (e.g., "nx", "dl"). If not provided,
+                    will be derived from URL matching against configured hostnames.
+    """
     if imdb_id and imdb_id.lower() == "none":
         imdb_id = None
 
     config = shared_state.values["config"]("Hostnames")
 
+    # Extract client type (without version) for deterministic hashing
+    client_type = extract_client_type(request_from)
+
     # Find matching source - all getters have unified signature
     source_result = None
     label = None
+    detected_source_key = None
 
     for key, getter in SOURCE_GETTERS.items():
         hostname = config.get(key)
         if hostname and hostname.lower() in url.lower():
             source_result = getter(shared_state, url, mirror, title, password)
             label = key.upper()
+            detected_source_key = key
             break
 
     # No source matched - check if URL is a known crypter directly
@@ -259,6 +339,14 @@ def download(shared_state, request_from, title, url, mirror, size_mb, password, 
             # For direct crypter URLs, we only know the crypter type, not the hoster inside
             source_result = {"links": [[url, crypter]]}
             label = crypter.upper()
+            detected_source_key = crypter
+
+    # Use provided source_key if available, otherwise use detected one
+    # This ensures we use the authoritative source from the search results
+    final_source_key = source_key if source_key else detected_source_key
+
+    # Generate DETERMINISTIC package_id
+    package_id = generate_deterministic_package_id(title, final_source_key, client_type)
 
     if source_result is None:
         info(f'Could not find matching source for "{title}" - "{url}"')

@@ -6,9 +6,9 @@ import datetime
 import html
 import re
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
 import xml.etree.ElementTree as ET
 from base64 import urlsafe_b64encode
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import quote_plus
 
 import requests
@@ -90,7 +90,7 @@ def sl_feed(shared_state, start_time, request_from, mirror=None):
                 imdb_id = m.group(1) if m else None
 
                 payload = urlsafe_b64encode(
-                    f"{title}|{source}|{mirror}|{mb}|{password}|{imdb_id}".encode("utf-8")
+                    f"{title}|{source}|{mirror}|{mb}|{password}|{imdb_id}|{hostname}".encode("utf-8")
                 ).decode("utf-8")
                 link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
 
@@ -214,7 +214,7 @@ def sl_search(shared_state, start_time, request_from, search_string, mirror=None
                         imdb_id = None
 
                         payload = urlsafe_b64encode(
-                            f"{title}|{source}|{mirror}|0|{password}|{imdb_id}".encode('utf-8')
+                            f"{title}|{source}|{mirror}|0|{password}|{imdb_id}|{hostname}".encode('utf-8')
                         ).decode('utf-8')
                         link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
 

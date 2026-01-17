@@ -106,7 +106,8 @@ def dd_search(shared_state, start_time, request_from, search_string="", mirror=N
                     mb = shared_state.convert_to_mb(size_item) * 1024 * 1024
                     published = convert_to_rss_date(release.get("when"))
                     payload = urlsafe_b64encode(
-                        f"{title}|{source}|{mirror}|{mb}|{password}|{imdb_id}".encode("utf-8")).decode("utf-8")
+                        f"{title}|{source}|{mirror}|{mb}|{password}|{imdb_id}|{hostname}".encode("utf-8")).decode(
+                        "utf-8")
                     link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
 
                     releases.append({

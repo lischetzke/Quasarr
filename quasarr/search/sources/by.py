@@ -124,7 +124,7 @@ def _parse_posts(soup, shared_state, base_url, password, mirror_filter,
                 imdb_id = None
 
             payload = urlsafe_b64encode(
-                f"{title}|{source}|{mirror_filter}|{mb}|{password}|{imdb_id}".encode()
+                f"{title}|{source}|{mirror_filter}|{mb}|{password}|{imdb_id}|{hostname}".encode()
             ).decode()
             link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
 

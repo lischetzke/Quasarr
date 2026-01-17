@@ -142,7 +142,8 @@ def sf_feed(shared_state, start_time, request_from, mirror=None):
                         imdb_id = None  # imdb info is missing here
 
                         payload = urlsafe_b64encode(
-                            f"{title}|{source}|{mirror}|{mb}|{password}|{imdb_id}".encode("utf-8")).decode("utf-8")
+                            f"{title}|{source}|{mirror}|{mb}|{password}|{imdb_id}|{hostname}".encode("utf-8")).decode(
+                            "utf-8")
                         link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
                     except:
                         continue
@@ -349,7 +350,8 @@ def sf_search(shared_state, start_time, request_from, search_string, mirror=None
                                                      episode):
                     continue
 
-                payload = urlsafe_b64encode(f"{title}|{source}|{mirror}|{mb}|{password}|{imdb_id}".encode()).decode()
+                payload = urlsafe_b64encode(
+                    f"{title}|{source}|{mirror}|{mb}|{password}|{imdb_id}|{hostname}".encode()).decode()
                 link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
                 size_bytes = mb * 1024 * 1024
 

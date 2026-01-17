@@ -229,7 +229,7 @@ def get_filecrypt_links(shared_state, token, title, url, password=None, mirror=N
         debug(f"Circle captcha present: {circle_captcha}")
         i = 0
         while circle_captcha and i < 3:
-            debug(f"Submitting fake circle captcha click attempt {i+1}.")
+            debug(f"Submitting fake circle captcha click attempt {i + 1}.")
             random_x = str(random.randint(100, 200))
             random_y = str(random.randint(100, 200))
             output = session.post(url, data="buttonx.x=" + random_x + "&buttonx.y=" + random_y,

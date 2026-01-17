@@ -59,7 +59,7 @@ def nx_feed(shared_state, start_time, request_from, mirror=None):
                     imdb_id = item.get('_media', {}).get('imdbid', None)
                     mb = shared_state.convert_to_mb(item)
                     payload = urlsafe_b64encode(
-                        f"{title}|{source}|{mirror}|{mb}|{password}|{imdb_id}".encode("utf-8")).decode(
+                        f"{title}|{source}|{mirror}|{mb}|{password}|{imdb_id}|{hostname}".encode("utf-8")).decode(
                         "utf-8")
                     link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
                 except:

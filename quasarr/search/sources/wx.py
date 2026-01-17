@@ -96,7 +96,7 @@ def wx_feed(shared_state, start_time, request_from, mirror=None):
                 password = host.upper()
 
                 payload = urlsafe_b64encode(
-                    f"{title}|{source}|{mirror}|{mb}|{password}|{imdb_id or ''}".encode("utf-8")
+                    f"{title}|{source}|{mirror}|{mb}|{password}|{imdb_id or ''}|{hostname}".encode("utf-8")
                 ).decode("utf-8")
                 link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
 
@@ -253,7 +253,8 @@ def wx_search(shared_state, start_time, request_from, search_string, mirror=None
                             password = f"www.{host}"
 
                             payload = urlsafe_b64encode(
-                                f"{title}|{source}|{mirror}|0|{password}|{item_imdb_id or ''}".encode("utf-8")
+                                f"{title}|{source}|{mirror}|0|{password}|{item_imdb_id or ''}|{hostname}".encode(
+                                    "utf-8")
                             ).decode("utf-8")
                             link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
 
@@ -309,7 +310,7 @@ def wx_search(shared_state, start_time, request_from, search_string, mirror=None
                             password = f"www.{host}"
 
                             payload = urlsafe_b64encode(
-                                f"{release_title}|{release_source}|{mirror}|{release_size}|{password}|{item_imdb_id or ''}".encode(
+                                f"{release_title}|{release_source}|{mirror}|{release_size}|{password}|{item_imdb_id or ''}|{hostname}".encode(
                                     "utf-8")
                             ).decode("utf-8")
                             link = f"{shared_state.values['internal_address']}/download/?payload={payload}"

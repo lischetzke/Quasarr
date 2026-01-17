@@ -235,7 +235,7 @@ def setup_config(app, shared_state):
         }}
         </script>
         '''
-        return render_form("Configure FlareSolverr", form_html)
+        return render_form("FlareSolverr", form_html)
 
     @app.post('/api/flaresolverr')
     def set_flaresolverr_url():

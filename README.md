@@ -1,4 +1,4 @@
-#   
+#    
 
 <img src="https://raw.githubusercontent.com/rix1337/Quasarr/main/Quasarr.png" data-canonical-src="https://raw.githubusercontent.com/rix1337/Quasarr/main/Quasarr.png" width="64" height="64" />
 
@@ -14,7 +14,8 @@ indexers. It simply does not know what NZB files are.
 Quasarr includes a solution to quickly and easily decrypt protected links.
 [Active monthly Sponsors get access to SponsorsHelper to do so automatically.](https://github.com/rix1337/Quasarr?tab=readme-ov-file#sponsorshelper)
 Alternatively, follow the link from the console output (or discord notification) to solve CAPTCHAs manually.
-Quasarr will confidently handle the rest. Some CAPTCHA types require [Tampermonkey](https://www.tampermonkey.net/) to be installed in your browser.
+Quasarr will confidently handle the rest. Some CAPTCHA types require [Tampermonkey](https://www.tampermonkey.net/) to be
+installed in your browser.
 
 # Instructions
 
@@ -29,9 +30,11 @@ Quasarr will confidently handle the rest. Some CAPTCHA types require [Tampermonk
 
 ## FlareSolverr (Optional)
 
-FlareSolverr is **optional** but **required for some sites** (e.g., AL) that use Cloudflare protection. You can skip FlareSolverr during setup and configure it later via the web UI.
+FlareSolverr is **optional** but **required for some sites** (e.g., AL) that use Cloudflare protection. You can skip
+FlareSolverr during setup and configure it later via the web UI.
 
 If using FlareSolverr, provide your URL including the version path:
+
 ```
 http://192.168.1.1:8191/v1
 ```
@@ -42,11 +45,13 @@ http://192.168.1.1:8191/v1
 
 ## Quasarr
 
-> ⚠️ Quasarr requires at least one valid hostname to start. It does not provide or endorse any specific sources, but community-maintained lists are available:
+> ⚠️ Quasarr requires at least one valid hostname to start. It does not provide or endorse any specific sources, but
+> community-maintained lists are available:
 
 🔗 **[https://quasarr-host.name](https://quasarr-host.name)** — community guide for finding hostnames
 
-📋 Alternatively, browse community suggestions via [pastebin search](https://pastebin.com/search?q=hostnames+quasarr) (login required).
+📋 Alternatively, browse community suggestions via [pastebin search](https://pastebin.com/search?q=hostnames+quasarr) (
+login required).
 
 > Authentication is optional but strongly recommended.
 >
@@ -57,8 +62,9 @@ http://192.168.1.1:8191/v1
 
 ## JDownloader
 
-> ⚠️ If using Docker: 
-> JDownloader's download path must be available to Radarr/Sonarr/LazyLibrarian with **identical internal and external path mappings**!
+> ⚠️ If using Docker:
+> JDownloader's download path must be available to Radarr/Sonarr/LazyLibrarian with **identical internal and external
+path mappings**!
 > Matching only the external path is not sufficient.
 
 1. Start and connect JDownloader to [My JDownloader](https://my.jdownloader.org)
@@ -67,7 +73,8 @@ http://192.168.1.1:8191/v1
 <details>
 <summary>Fresh install recommended</summary>
 
-Consider setting up a fresh JDownloader instance. Quasarr will modify JDownloader's settings to enable Radarr/Sonarr/LazyLibrarian integration.
+Consider setting up a fresh JDownloader instance. Quasarr will modify JDownloader's settings to enable
+Radarr/Sonarr/LazyLibrarian integration.
 
 </details>
 
@@ -75,7 +82,8 @@ Consider setting up a fresh JDownloader instance. Quasarr will modify JDownloade
 
 ## Radarr / Sonarr
 
-> ⚠️ **Sonarr users:** Set all shows (including anime) to the **Standard** series type. Quasarr cannot find releases for shows set to Anime/Absolute.
+> ⚠️ **Sonarr users:** Set all shows (including anime) to the **Standard** series type. Quasarr cannot find releases for
+> shows set to Anime/Absolute.
 
 
 Add Quasarr as both a **Newznab Indexer** and **SABnzbd Download Client** using your Quasarr URL and API Key.
@@ -91,9 +99,11 @@ Add Quasarr as both a **Newznab Indexer** and **SABnzbd Download Client** using 
 <summary>Restrict results to a specific mirror</summary>
 
 Append the mirror name to your Newznab URL:
+
 ```
 /api/dropbox/
 ```
+
 Only releases with `dropbox` in a link will be returned. If the mirror isn't available, the release will fail.
 
 </details>
@@ -109,27 +119,29 @@ Only releases with `dropbox` in a link will be returned. If the mirror isn't ava
 
 ### SABnzbd+ Downloader
 
-| Setting | Value |
-|---------|-------|
+| Setting  | Value                      |
+|----------|----------------------------|
 | URL/Port | Your Quasarr host and port |
-| API Key | Your Quasarr API Key |
-| Category | `docs` |
+| API Key  | Your Quasarr API Key       |
+| Category | `docs`                     |
 
 ### Newznab Provider
 
-| Setting | Value |
-|---------|-------|
-| URL | Your Quasarr URL |
-| API | Your Quasarr API Key |
+| Setting | Value                |
+|---------|----------------------|
+| URL     | Your Quasarr URL     |
+| API     | Your Quasarr API Key |
 
 ### Fix Import & Processing
 
 **Importing:**
+
 - Enable `OpenLibrary api for book/author information`
 - Set Primary Information Source to `OpenLibrary`
 - Add to Import languages: `, Unknown` (German users: `, de, ger, de-DE`)
 
 **Processing → Folders:**
+
 - Add your Quasarr download path (typically `/downloads/Quasarr/`)
 
 </details>
@@ -209,7 +221,8 @@ Most feature requests can be satisfied by:
 - There are no hostname integrations in active development unless you see an open pull request
   [here](https://github.com/rix1337/Quasarr/pulls).
 - **Pull requests are welcome!** Especially for popular hostnames.
-    - A short guide to set up required dev services is found in [/docker/dev-setup.md](https://github.com/rix1337/Quasarr/blob/main/docker/dev-setup.md)
+    - A short guide to set up required dev services is found
+      in [/docker/dev-setup.md](https://github.com/rix1337/Quasarr/blob/main/docker/dev-setup.md)
     - Always reach out on Discord before starting work on a new feature to prevent waste of time.
     - Please follow the existing code style and project structure.
     - Anti-bot measures must be circumvented fully by Quasarr. Thus, you will need to provide a working solution for new
@@ -231,11 +244,11 @@ Image access is limited to [active monthly GitHub sponsors](https://github.com/u
 
 1. Start your [sponsorship](https://github.com/users/rix1337/sponsorship) first.
 2. Open [GitHub Classic Token Settings](https://github.com/settings/tokens/new?type=classic)
-3. Name it (e.g., `SponsorsHelper`) and choose unlimited expiration  
+3. Name it (e.g., `SponsorsHelper`) and choose unlimited expiration
 4. Enable these scopes:
-   - `read:packages`
-   - `read:user`
-   - `read:org`
+    - `read:packages`
+    - `read:user`
+    - `read:org`
 5. Click **Generate token** and copy it for the next steps
 
 ---
