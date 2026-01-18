@@ -9,14 +9,24 @@ from quasarr.providers.html_templates import render_button, render_centered_html
 
 
 def _get_category_emoji(cat):
-    return {'movies': '🎬', 'tv': '📺', 'docs': '📄', 'not_quasarr': '📦'}.get(cat, '📦')
+    return {'movies': '🎬', 'tv': '📺', 'docs': '📄', 'not_quasarr': '❓'}.get(cat, '❓')
 
 
 def _format_size(mb=None, bytes_val=None):
     if bytes_val is not None:
+        # Handle bytes directly for better precision with small files
+        if bytes_val == 0:
+            return "? MB"
+        if bytes_val < 1024 * 1024:  # Less than 1 MB
+            kb = bytes_val / 1024
+            if kb < 1:
+                return f"{bytes_val} B"
+            return f"{kb:.0f} KB"
         mb = bytes_val / (1024 * 1024)
     if mb is None or mb == 0:
         return "? MB"
+    if mb < 1:
+        return f"{mb * 1024:.0f} KB"
     if mb < 1024:
         return f"{mb:.0f} MB"
     return f"{mb / 1024:.1f} GB"
@@ -30,7 +40,7 @@ def _render_queue_item(item):
     filename = item.get('filename', 'Unknown')
     percentage = item.get('percentage', 0)
     timeleft = item.get('timeleft', '??:??:??')
-    mb = item.get('mb', 0)
+    bytes_val = item.get('bytes', 0)
     cat = item.get('cat', 'not_quasarr')
     is_archive = item.get('is_archive', False)
     nzo_id = item.get('nzo_id', '')
@@ -51,9 +61,9 @@ def _render_queue_item(item):
     for prefix in ['[Downloading] ', '[Extracting] ', '[Paused] ', '[Linkgrabber] ', '[CAPTCHA not solved!] ']:
         display_name = display_name.replace(prefix, '')
 
-    archive_badge = '<span class="badge archive">📁 ARCHIVE</span>' if is_archive else ''
+    archive_badge = '<span class="badge archive">📁</span>' if is_archive else ''
     cat_emoji = _get_category_emoji(cat)
-    size_str = _format_size(mb=mb)
+    size_str = _format_size(bytes_val=bytes_val)
 
     # Progress bar - show "waiting..." for 0%
     if percentage == 0:
@@ -84,7 +94,6 @@ def _render_queue_item(item):
             <div class="package-header">
                 <span class="status-emoji">{status_emoji}</span>
                 <span class="package-name">{display_name}</span>
-                {archive_badge}
             </div>
             <div class="package-progress">
                 {progress_html}
@@ -93,7 +102,8 @@ def _render_queue_item(item):
             <div class="package-details">
                 <span>⏱️ {timeleft}</span>
                 <span>💾 {size_str}</span>
-                <span>{cat_emoji} {cat}</span>
+                <span>{cat_emoji}</span>
+                {archive_badge}
             </div>
             {actions}
         </div>
@@ -119,11 +129,11 @@ def _render_history_item(item):
     archive_badge = ''
     if is_archive:
         if extraction_status == 'SUCCESSFUL':
-            archive_badge = '<span class="badge extracted">✅ EXTRACTED</span>'
+            archive_badge = '<span class="badge extracted">✅</span>'
         elif extraction_status == 'RUNNING':
-            archive_badge = '<span class="badge pending">⏳ EXTRACTING</span>'
+            archive_badge = '<span class="badge pending">⏳</span>'
         else:
-            archive_badge = '<span class="badge archive">📁 ARCHIVE</span>'
+            archive_badge = '<span class="badge archive">📁</span>'
 
     status_emoji = '❌' if is_error else '✅'
     error_html = f'<div class="package-error">⚠️ {fail_message}</div>' if fail_message else ''
@@ -143,11 +153,11 @@ def _render_history_item(item):
             <div class="package-header">
                 <span class="status-emoji">{status_emoji}</span>
                 <span class="package-name">{name}</span>
-                {archive_badge}
             </div>
             <div class="package-details">
                 <span>💾 {size_str}</span>
-                <span>{cat_emoji} {category}</span>
+                <span>{cat_emoji}</span>
+                {archive_badge}
             </div>
             {error_html}
             {actions}
@@ -167,7 +177,12 @@ def _render_packages_content():
     quasarr_history = [p for p in history if p.get('category') != 'not_quasarr']
     other_history = [p for p in history if p.get('category') == 'not_quasarr']
 
-    # Build queue section
+    # Check if there's anything at all
+    has_quasarr_content = quasarr_queue or quasarr_history
+    has_other_content = other_queue or other_history
+    has_any_content = has_quasarr_content or has_other_content
+
+    # Build queue section (only if has items)
     queue_html = ''
     if quasarr_queue:
         queue_items = ''.join(_render_queue_item(item) for item in quasarr_queue)
@@ -177,10 +192,8 @@ def _render_packages_content():
                 <div class="packages-list">{queue_items}</div>
             </div>
         '''
-    else:
-        queue_html = '<div class="section"><p class="empty-message">No active downloads</p></div>'
 
-    # Build history section
+    # Build history section (only if has items)
     history_html = ''
     if quasarr_history:
         history_items = ''.join(_render_history_item(item) for item in quasarr_history[:10])
@@ -204,20 +217,28 @@ def _render_packages_content():
             other_items += ''.join(_render_history_item(item) for item in other_history[:5])
 
         plural = 's' if other_count != 1 else ''
+        # Only add separator class if there's Quasarr content above
+        section_class = 'other-packages-section' if has_quasarr_content else 'other-packages-section no-separator'
         other_html = f'''
-            <div class="other-packages-section">
+            <div class="{section_class}">
                 <details id="otherPackagesDetails">
-                    <summary id="otherPackagesSummary">Show {other_count} non-Quasarr package{plural}</summary>
+                    <summary id="otherPackagesSummary">Show {other_count} other package{plural}</summary>
                     <div class="other-packages-content">{other_items}</div>
                 </details>
             </div>
         '''
+
+    # Only show "no downloads" if there's literally nothing
+    empty_html = ''
+    if not has_any_content:
+        empty_html = '<p class="empty-message">No packages</p>'
 
     return f'''
         <div class="packages-container">
             {queue_html}
             {history_html}
             {other_html}
+            {empty_html}
         </div>
     '''
 
@@ -282,6 +303,8 @@ def setup_packages_routes(app):
             <h2>Packages</h2>
 
             {status_message}
+
+            <div id="slow-warning" class="slow-warning" style="display:none;">⚠️ Slow connection detected</div>
 
             <div id="packages-content">
                 {packages_content}
@@ -349,7 +372,26 @@ def setup_packages_routes(app):
 
                 .empty-message {{ color: var(--text-muted, #888); font-style: italic; text-align: center; padding: 20px; }}
 
+                .slow-warning {{
+                    text-align: center;
+                    font-size: 0.85em;
+                    color: #856404;
+                    background: #fff3cd;
+                    border: 1px solid #ffc107;
+                    padding: 8px 12px;
+                    border-radius: 6px;
+                    margin-bottom: 15px;
+                }}
+                @media (prefers-color-scheme: dark) {{
+                    .slow-warning {{
+                        color: #ffc107;
+                        background: #3d3510;
+                        border-color: #665c00;
+                    }}
+                }}
+
                 .other-packages-section {{ margin-top: 30px; padding-top: 20px; border-top: 1px solid var(--border-color, #ddd); }}
+                .other-packages-section.no-separator {{ margin-top: 0; padding-top: 0; border-top: none; }}
                 .other-packages-section summary {{ cursor: pointer; padding: 8px 0; color: var(--text-muted, #666); }}
                 .other-packages-section summary:hover {{ color: var(--link-color, #0066cc); }}
                 .other-packages-content {{ margin-top: 15px; }}
@@ -405,24 +447,51 @@ def setup_packages_routes(app):
             <script>
                 // Background refresh - fetches content via AJAX, waits 5s between refresh cycles
                 let refreshPaused = false;
+                let slowConnection = false;
 
                 async function refreshContent() {{
                     if (refreshPaused) return;
+
+                    const startTime = Date.now();
+                    const warningEl = document.getElementById('slow-warning');
+
+                    // Save scroll position before refresh
+                    const scrollY = window.scrollY;
+
+                    // Show warning after 5s if still loading
+                    const slowTimer = setTimeout(() => {{
+                        slowConnection = true;
+                        if (warningEl) warningEl.style.display = 'block';
+                    }}, 5000);
+
                     try {{
                         const response = await fetch('/api/packages/content');
+                        const elapsed = Date.now() - startTime;
+
+                        clearTimeout(slowTimer);
+
+                        // Update slow connection state
+                        if (elapsed < 5000) {{
+                            slowConnection = false;
+                            if (warningEl) warningEl.style.display = 'none';
+                        }} else {{
+                            slowConnection = true;
+                            if (warningEl) warningEl.style.display = 'block';
+                        }}
+
                         if (response.ok) {{
                             const html = await response.text();
                             const container = document.getElementById('packages-content');
                             if (container && html) {{
                                 container.innerHTML = html;
-                                // Re-apply collapse state after content update
                                 restoreCollapseState();
+                                // Restore scroll position after content update
+                                window.scrollTo(0, scrollY);
                             }}
                         }}
                     }} catch (e) {{
-                        // Silent fail - will retry on next cycle
+                        clearTimeout(slowTimer);
                     }}
-                    // Schedule next refresh 5 seconds after this one completes
                     setTimeout(refreshContent, 5000);
                 }}
 
@@ -434,7 +503,7 @@ def setup_packages_routes(app):
                         const plural = count !== '1' ? 's' : '';
                         if (localStorage.getItem('otherPackagesOpen') === 'true') {{
                             otherDetails.open = true;
-                            otherSummary.textContent = 'Hide ' + count + ' non-Quasarr package' + plural;
+                            otherSummary.textContent = 'Hide ' + count + ' other package' + plural;
                         }}
                         // Re-attach event listener
                         otherDetails.onclick = null;
@@ -442,23 +511,36 @@ def setup_packages_routes(app):
                             localStorage.setItem('otherPackagesOpen', this.open);
                             const summaryEl = document.getElementById('otherPackagesSummary');
                             if (summaryEl) {{
-                                summaryEl.textContent = (this.open ? 'Hide ' : 'Show ') + count + ' non-Quasarr package' + plural;
+                                summaryEl.textContent = (this.open ? 'Hide ' : 'Show ') + count + ' other package' + plural;
                             }}
                         }});
                     }}
                 }}
 
-                // Start refresh cycle after initial 5s delay
-                setTimeout(refreshContent, 5000);
-
                 // Initial collapse state setup
                 restoreCollapseState();
 
-                // Clear status message from URL after display
+                // Clear status message from URL after display and auto-hide after 5s
                 if (window.location.search.includes('deleted=')) {{
                     const url = new URL(window.location);
                     url.searchParams.delete('deleted');
                     window.history.replaceState({{}}, '', url);
+
+                    // Hide the status message after 5 seconds
+                    const statusMsg = document.querySelector('.status-message');
+                    if (statusMsg) {{
+                        setTimeout(() => {{
+                            statusMsg.style.transition = 'opacity 0.3s';
+                            statusMsg.style.opacity = '0';
+                            setTimeout(() => statusMsg.remove(), 300);
+                        }}, 5000);
+                    }}
+
+                    // Reset refresh - start fresh 5s countdown after delete
+                    setTimeout(refreshContent, 5000);
+                }} else {{
+                    // Normal start - 5s delay
+                    setTimeout(refreshContent, 5000);
                 }}
 
                 // Delete modal
