@@ -14,19 +14,15 @@ def _get_category_emoji(cat):
 
 def _format_size(mb=None, bytes_val=None):
     if bytes_val is not None:
-        # Handle bytes directly for better precision with small files
         if bytes_val == 0:
             return "? MB"
-        if bytes_val < 1024 * 1024:  # Less than 1 MB
-            kb = bytes_val / 1024
-            if kb < 1:
-                return f"{bytes_val} B"
-            return f"{kb:.0f} KB"
+        if bytes_val < 1024:
+            return f"{bytes_val} B"
+        if bytes_val < 1024 * 1024:
+            return f"{bytes_val // 1024} KB"
         mb = bytes_val / (1024 * 1024)
     if mb is None or mb == 0:
         return "? MB"
-    if mb < 1:
-        return f"{mb * 1024:.0f} KB"
     if mb < 1024:
         return f"{mb:.0f} MB"
     return f"{mb / 1024:.1f} GB"
@@ -41,6 +37,7 @@ def _render_queue_item(item):
     percentage = item.get('percentage', 0)
     timeleft = item.get('timeleft', '??:??:??')
     bytes_val = item.get('bytes', 0)
+    mb = item.get('mb', 0)
     cat = item.get('cat', 'not_quasarr')
     is_archive = item.get('is_archive', False)
     nzo_id = item.get('nzo_id', '')
@@ -63,7 +60,7 @@ def _render_queue_item(item):
 
     archive_badge = '<span class="badge archive">📁</span>' if is_archive else ''
     cat_emoji = _get_category_emoji(cat)
-    size_str = _format_size(bytes_val=bytes_val)
+    size_str = _format_size(bytes_val=bytes_val) if bytes_val else _format_size(mb=mb)
 
     # Progress bar - show "waiting..." for 0%
     if percentage == 0:
