@@ -1,4 +1,4 @@
-#    
+#         
 
 <img src="https://raw.githubusercontent.com/rix1337/Quasarr/main/Quasarr.png" data-canonical-src="https://raw.githubusercontent.com/rix1337/Quasarr/main/Quasarr.png" width="64" height="64" />
 
@@ -170,18 +170,18 @@ docker run -d \
   ghcr.io/rix1337/quasarr:latest
   ```
 
-* `INTERNAL_ADDRESS` is required so Radarr/Sonarr/LazyLibrarian can reach Quasarr. **Must** include port!
-* `EXTERNAL_ADDRESS` is optional and helpful if using a reverse proxy. Always protect external access with basic auth!
-* `DISCORD` is optional and must be a valid Discord webhook URL.
-* `HOSTNAMES` is optional and allows skipping the manual hostname step during setup.
-    * Must be a publicly available `HTTP` or `HTTPs` link
-    * Must be a raw `.ini` / text file (not HTML or JSON)
-    * Must contain at least one valid Hostname per line `ab = xyz`
-* `USER` / `PASS` are credentials to protect the web UI
-* `AUTH` is the authentication mode (`form` or `basic`)
-* `SILENT` is optional and silences all discord notifications except for error messages from SponsorsHelper if `True`.
-* `DEBUG` is optional and enables debug logging if `True`.
-* `TZ` is optional, wrong timezone can cause HTTPS/SSL issues
+| Parameter          | Description                                                                                                                                                                                                                                 |
+|--------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `INTERNAL_ADDRESS` | **Required.** Internal URL so Radarr/Sonarr/LazyLibrarian can reach Quasarr. **Must include port.**                                                                                                                                         |
+| `EXTERNAL_ADDRESS` | Optional. External URL (e.g. reverse proxy). Always protect external access with authentication.                                                                                                                                            |
+| `DISCORD`          | Optional. Discord webhook URL for notifications.                                                                                                                                                                                            |
+| `HOSTNAMES`        | Optional. URL to a hostname list to skip manual setup. Must be a publicly accessible `HTTP`/`HTTPS` link, point to a raw `.ini` or plain text file (not HTML or JSON), and contain at least one hostname per line in the format `ab = xyz`. |
+| `USER`             | Username to protect the web UI.                                                                                                                                                                                                             |
+| `PASS`             | Password to protect the web UI.                                                                                                                                                                                                             |
+| `AUTH`             | Authentication mode. Supported values: `form` or `basic`.                                                                                                                                                                                   |
+| `SILENT`           | Optional. If `True`, silences all Discord notifications except SponsorHelper error messages.                                                                                                                                                |
+| `DEBUG`            | Optional. If `True`, enables debug logging.                                                                                                                                                                                                 |
+| `TZ`               | Optional. Timezone. Incorrect values may cause HTTPS/SSL issues.                                                                                                                                                                            |
 
 # Manual setup
 
@@ -253,9 +253,21 @@ Image access is limited to [active monthly GitHub sponsors](https://github.com/u
 
 ---
 
+## 🔐 Quasarr API Key Setup
+
+1. Open your Quasarr web UI in a browser
+2. On the main page, expand **"Show API Settings"**
+3. Copy the **API Key** value
+4. Use this value for the `QUASARR_API_KEY` environment variable
+
+> **Note:** The API key is required for SponsorsHelper to communicate securely with Quasarr. Without it, all requests
+> will be rejected with a 401/403 error.
+
+---
+
 ## 🐋 Docker Login
 
-⚠️ **Before logging in, the image will not download.**
+⚠️ **If not logged in, the image will not download.**
 
 ```bash
 echo "GITHUB_TOKEN" | docker login ghcr.io -u USERNAME --password-stdin
@@ -272,6 +284,7 @@ echo "GITHUB_TOKEN" | docker login ghcr.io -u USERNAME --password-stdin
 docker run -d \
   --name='SponsorsHelper' \
   -e 'QUASARR_URL'='http://192.168.0.1:8080' \
+  -e 'QUASARR_API_KEY'='your_quasarr_api_key_here' \
   -e 'DEATHBYCAPTCHA_TOKEN'='2FMum5zuDBxMmbXDIsADnllEFl73bomydIpzo7...' \
   -e 'GITHUB_TOKEN'='ghp_123.....456789' \
   -e 'FLARESOLVERR_URL'='http://10.10.0.1:8191/v1' \
@@ -283,10 +296,13 @@ docker run -d \
   ghcr.io/rix1337-sponsors/docker/helper:latest
 ```
 
-* `QUASARR_URL` → Local URL of Quasarr
-* `DEATHBYCAPTCHA_TOKEN` → [DeathByCaptcha](https://deathbycaptcha.com/register?refid=6184288242b) account token
-* `GITHUB_TOKEN` → Classic GitHub PAT with the scopes listed above
-* `FLARESOLVERR_URL` → Local URL of [FlareSolverr](https://github.com/FlareSolverr/FlareSolverr) - required!
-* `NX_USER` / `NX_PASS` → NX account credentials
-* `JUNKIES_USER` / `JUNKIES_PASS` → Junkies account credentials
-* `JUNKIES_HOSTER` → Preferred hoster for Junkies links
+| Parameter                       | Description                                                                           |
+|---------------------------------|---------------------------------------------------------------------------------------|
+| `QUASARR_URL`                   | Local URL of Quasarr (e.g., `http://192.168.0.1:8080`)                                |
+| `QUASARR_API_KEY`               | Your Quasarr API key (found in Quasarr web UI under "API Settings")                   |
+| `DEATHBYCAPTCHA_TOKEN`          | [DeathByCaptcha](https://deathbycaptcha.com/register?refid=6184288242b) account token |
+| `GITHUB_TOKEN`                  | Classic GitHub PAT with the scopes listed above                                       |
+| `FLARESOLVERR_URL`              | Local URL of [FlareSolverr](https://github.com/FlareSolverr/FlareSolverr)             |
+| `NX_USER` / `NX_PASS`           | Optional. NX account credentials                                                      |
+| `JUNKIES_USER` / `JUNKIES_PASS` | Optional. Junkies account credentials                                                 |
+| `JUNKIES_HOSTER`                | Optional. Preferred hoster for Junkies links                                          |

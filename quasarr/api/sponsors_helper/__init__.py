@@ -8,13 +8,21 @@ from bottle import request, abort
 
 from quasarr.downloads import fail
 from quasarr.providers import shared_state
+from quasarr.providers.auth import require_api_key
 from quasarr.providers.log import info
 from quasarr.providers.notifications import send_discord_message
 from quasarr.providers.statistics import StatsHelper
 
 
 def setup_sponsors_helper_routes(app):
+    @app.get("/sponsors_helper/api/ping/")
+    @require_api_key
+    def ping_api():
+        """Health check endpoint for SponsorsHelper to verify connectivity."""
+        return "pong"
+
     @app.get("/sponsors_helper/api/to_decrypt/")
+    @require_api_key
     def to_decrypt_api():
         try:
             if not shared_state.values["helper_active"]:
@@ -60,6 +68,7 @@ def setup_sponsors_helper_routes(app):
             return abort(500, str(e))
 
     @app.post("/sponsors_helper/api/to_download/")
+    @require_api_key
     def to_download_api():
         try:
             data = request.json
@@ -86,9 +95,10 @@ def setup_sponsors_helper_routes(app):
             info(f"Error decrypting: {e}")
 
         StatsHelper(shared_state).increment_failed_decryptions_automatic()
-        return abort(500, "Failed")  #
+        return abort(500, "Failed")
 
     @app.post("/sponsors_helper/api/to_replace/")
+    @require_api_key
     def to_replace_api():
         try:
             data = request.json
@@ -130,6 +140,7 @@ def setup_sponsors_helper_routes(app):
             return {"error": str(e)}, 500
 
     @app.delete("/sponsors_helper/api/to_failed/")
+    @require_api_key
     def move_to_failed_api():
         try:
             StatsHelper(shared_state).increment_failed_decryptions_automatic()
@@ -153,6 +164,7 @@ def setup_sponsors_helper_routes(app):
         return abort(500, "Failed")
 
     @app.put("/sponsors_helper/api/set_sponsor_status/")
+    @require_api_key
     def activate_sponsor_status():
         try:
             data = request.body.read().decode("utf-8")
@@ -164,7 +176,3 @@ def setup_sponsors_helper_routes(app):
         except:
             pass
         return abort(500, "Failed")
-
-    @app.get("/sponsors_helper/api/ping/")
-    def get_sponsor_status():
-        return "pong"
