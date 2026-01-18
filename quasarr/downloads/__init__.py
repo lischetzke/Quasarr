@@ -7,6 +7,7 @@ import json
 import re
 
 from quasarr.downloads.linkcrypters.hide import decrypt_links_if_hide
+from quasarr.downloads.packages import get_packages
 from quasarr.downloads.sources.al import get_al_download_links
 from quasarr.downloads.sources.by import get_by_download_links
 from quasarr.downloads.sources.dd import get_dd_download_links
@@ -295,6 +296,23 @@ def process_links(shared_state, source_result, title, password, package_id, imdb
 # MAIN ENTRY POINT
 # =============================================================================
 
+def package_id_exists(shared_state, package_id):
+    # DB checks
+    if shared_state.get_db("protected").retrieve(package_id):
+        return True
+    if shared_state.get_db("failed").retrieve(package_id):
+        return True
+
+    data = get_packages(shared_state) or {}
+
+    for section in ("queue", "history"):
+        for pkg in data.get(section, []) or []:
+            if pkg.get("nzo_id") == package_id:
+                return True
+
+    return False
+
+
 def download(shared_state, request_from, title, url, mirror, size_mb, password, imdb_id=None, source_key=None):
     """
     Main download entry point.
@@ -347,6 +365,11 @@ def download(shared_state, request_from, title, url, mirror, size_mb, password, 
 
     # Generate DETERMINISTIC package_id
     package_id = generate_deterministic_package_id(title, final_source_key, client_type)
+
+    # Skip Download if package_id already exists
+    if package_id_exists(shared_state, package_id):
+        info(f"Package {package_id} already exists. Skipping download!")
+        return {"success": True, "package_id": package_id, "title": title}
 
     if source_result is None:
         info(f'Could not find matching source for "{title}" - "{url}"')

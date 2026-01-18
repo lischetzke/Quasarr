@@ -6,7 +6,6 @@ import traceback
 import xml.sax.saxutils as sax_utils
 from base64 import urlsafe_b64decode
 from datetime import datetime
-from functools import wraps
 from urllib.parse import urlparse, parse_qs
 from xml.etree import ElementTree
 
@@ -15,23 +14,10 @@ from bottle import abort, request
 from quasarr.downloads import download
 from quasarr.downloads.packages import get_packages, delete_package
 from quasarr.providers import shared_state
+from quasarr.providers.auth import require_api_key
 from quasarr.providers.log import info, debug
 from quasarr.providers.version import get_version
 from quasarr.search import get_search_results
-from quasarr.storage.config import Config
-
-
-def require_api_key(func):
-    @wraps(func)
-    def decorated(*args, **kwargs):
-        api_key = Config('API').get('key')
-        if not request.query.apikey:
-            return abort(401, "Missing API key")
-        if request.query.apikey != api_key:
-            return abort(403, "Invalid API key")
-        return func(*args, **kwargs)
-
-    return decorated
 
 
 def parse_payload(payload_str):

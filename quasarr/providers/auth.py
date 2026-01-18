@@ -7,11 +7,13 @@ import hashlib
 import hmac
 import os
 import time
+from functools import wraps
 
-from bottle import request, response, redirect
+from bottle import request, response, redirect, abort
 
 import quasarr.providers.html_images as images
 from quasarr.providers.version import get_version
+from quasarr.storage.config import Config
 
 # Auth configuration from environment
 AUTH_USER = os.environ.get('USER', '')
@@ -248,3 +250,16 @@ def add_auth_hook(app, whitelist_prefixes=None):
         else:
             if not check_basic_auth():
                 return require_basic_auth()
+
+
+def require_api_key(func):
+    @wraps(func)
+    def decorated(*args, **kwargs):
+        api_key = Config('API').get('key')
+        if not request.query.apikey:
+            return abort(401, "Missing API key")
+        if request.query.apikey != api_key:
+            return abort(403, "Invalid API key")
+        return func(*args, **kwargs)
+
+    return decorated
