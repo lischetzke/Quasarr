@@ -510,22 +510,27 @@ def get_packages(shared_state, _cache=None):
                 package_type = "protected"
                 package_uuid = None
 
-            if package_id:
+            # Use package_id if available, otherwise use uuid as fallback for non-Quasarr packages
+            effective_id = package_id or package_uuid
+
+            if effective_id:
                 try:
-                    mb_left = int(mb_left) if mb_left else 0
-                    mb = int(mb) if mb else 0
                     percentage = int(100 * (mb - mb_left) / mb) if mb > 0 else 0
                 except (ZeroDivisionError, ValueError, TypeError):
                     percentage = 0
 
+                # Keep mb/mbleft as integers for API compatibility, add bytes for UI display
+                bytes_total = int(mb * 1024 * 1024) if mb else 0
+
                 downloads["queue"].append({
                     "index": queue_index,
-                    "nzo_id": package_id,
+                    "nzo_id": effective_id,
                     "priority": "Normal",
                     "filename": name,
                     "cat": category,
-                    "mbleft": mb_left,
-                    "mb": mb,
+                    "mbleft": int(mb_left) if mb_left else 0,
+                    "mb": int(mb) if mb else 0,
+                    "bytes": bytes_total,
                     "status": "Downloading",
                     "percentage": percentage,
                     "timeleft": time_left,
@@ -535,18 +540,21 @@ def get_packages(shared_state, _cache=None):
                 })
                 queue_index += 1
             else:
-                debug(f"get_packages: Skipping queue package without package_id: {name}")
+                debug(f"get_packages: Skipping queue package without package_id or uuid: {name}")
 
         elif package["location"] == "history":
             details = package["details"]
             name = details.get("name", "unknown")
             try:
-                size = int(details.get("bytesLoaded", 0))
+                # Use bytesLoaded first, fall back to bytesTotal for failed/incomplete downloads
+                size = int(details.get("bytesLoaded", 0)) or int(details.get("bytesTotal", 0))
             except (KeyError, TypeError, ValueError):
                 size = 0
             storage = details.get("saveTo", "/")
 
             package_id = package.get("comment")
+            # Use package_id if available, otherwise use uuid as fallback for non-Quasarr packages
+            effective_id = package_id or package.get("uuid")
             category = get_category_from_package_id(package_id)
 
             error = package.get("error")
@@ -562,7 +570,7 @@ def get_packages(shared_state, _cache=None):
                 "category": category,
                 "storage": storage,
                 "status": status,
-                "nzo_id": package_id,
+                "nzo_id": effective_id,
                 "name": name,
                 "bytes": int(size),
                 "percentage": 100,
@@ -671,7 +679,8 @@ def delete_package(shared_state, package_id):
         found = False
         for package_location in packages:
             for package in packages[package_location]:
-                if package.get("nzo_id") == package_id:
+                # Compare as strings to handle int UUIDs from JDownloader
+                if str(package.get("nzo_id", "")) == str(package_id):
                     found = True
                     package_type = package.get("type")
                     package_uuid = package.get("uuid")
