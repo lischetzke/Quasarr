@@ -86,13 +86,17 @@ def render_centered_html(inner_content, footer_content=""):
                 margin-top: 0;
                 color: var(--setup-border);
             }
+            a.action-card,
+            a.action-card {
+                text-decoration: none !important;
+            }
             /* Status pill styling */
             .status-pill {
                 display: inline-flex;
                 align-items: center;
                 gap: 6px;
                 padding: 6px 12px;
-                border-radius: 20px;
+                border-radius: 0.5rem;
                 font-size: 0.9rem;
                 font-weight: 500;
                 margin: 8px 0;
