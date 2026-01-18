@@ -5,6 +5,7 @@
 import base64
 import hashlib
 import hmac
+import json
 import os
 import time
 from functools import wraps
@@ -24,6 +25,9 @@ AUTH_TYPE = os.environ.get('AUTH', '').lower()
 COOKIE_NAME = 'quasarr_session'
 COOKIE_MAX_AGE = 30 * 24 * 60 * 60  # 30 days
 
+# Stable secret derived from PASS (restart-safe)
+_SECRET_KEY = hashlib.sha256(AUTH_PASS.encode('utf-8')).digest()
+
 
 def is_auth_enabled():
     """Check if authentication is enabled (both USER and PASS set)."""
@@ -35,32 +39,75 @@ def is_form_auth():
     return AUTH_TYPE == 'form'
 
 
-def _sign_cookie(user, expiry):
-    """Create HMAC signature for cookie."""
-    msg = f"{user}:{expiry}".encode()
-    return hmac.new(AUTH_PASS.encode(), msg, hashlib.sha256).hexdigest()
+def _b64encode(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).decode('ascii').rstrip('=')
 
 
-def _create_session_cookie(user):
-    """Create a signed session cookie value."""
-    expiry = int(time.time()) + COOKIE_MAX_AGE
-    signature = _sign_cookie(user, expiry)
-    return f"{user}:{expiry}:{signature}"
+def _b64decode(data: str) -> bytes:
+    padding = '=' * (-len(data) % 4)
+    return base64.urlsafe_b64decode(data + padding)
 
 
-def _verify_session_cookie(cookie_value):
-    """Verify a session cookie. Returns True if valid."""
+def _sign(data: bytes) -> bytes:
+    return hmac.new(_SECRET_KEY, data, hashlib.sha256).digest()
+
+
+def _mask_user(user: str) -> str:
+    """
+    One-way masked user identifier.
+    Stable across restarts, not reversible.
+    """
+    return hashlib.sha256(f"user:{user}".encode('utf-8')).hexdigest()
+
+
+def _create_session_cookie(user: str) -> str:
+    """
+    Stateless, signed cookie.
+    Stores only masked user + expiry.
+    """
+    payload = {
+        "u": _mask_user(user),
+        "exp": int(time.time()) + COOKIE_MAX_AGE,
+    }
+    raw = json.dumps(payload, separators=(',', ':')).encode('utf-8')
+    sig = _sign(raw)
+    return f"{_b64encode(raw)}.{_b64encode(sig)}"
+
+
+def _invalidate_cookie():
     try:
-        parts = cookie_value.split(':')
-        if len(parts) != 3:
-            return False
-        user, expiry, signature = parts
-        expiry = int(expiry)
-        if time.time() > expiry:
-            return False
-        expected_sig = _sign_cookie(user, expiry)
-        return hmac.compare_digest(signature, expected_sig)
-    except:
+        response.delete_cookie(COOKIE_NAME, path='/')
+    except Exception:
+        pass
+
+
+def _verify_session_cookie(value: str) -> bool:
+    """
+    Verify signature, expiry, and masked user.
+    On ANY failure → force logout (cookie deletion).
+    """
+    try:
+        if not value or '.' not in value:
+            raise ValueError
+
+        raw_b64, sig_b64 = value.split('.', 1)
+        raw = _b64decode(raw_b64)
+        sig = _b64decode(sig_b64)
+
+        if not hmac.compare_digest(sig, _sign(raw)):
+            raise ValueError
+
+        payload = json.loads(raw.decode('utf-8'))
+
+        if payload.get("u") != _mask_user(AUTH_USER):
+            raise ValueError
+
+        if int(time.time()) > int(payload.get("exp", 0)):
+            raise ValueError
+
+        return True
+    except Exception:
+        _invalidate_cookie()
         return False
 
 
@@ -80,7 +127,7 @@ def check_basic_auth():
 def check_form_auth():
     """Check session cookie. Returns True if valid."""
     cookie = request.get_cookie(COOKIE_NAME)
-    return cookie and _verify_session_cookie(cookie)
+    return bool(cookie and _verify_session_cookie(cookie))
 
 
 def require_basic_auth():
@@ -178,16 +225,25 @@ def _handle_login_post():
     next_url = request.forms.get('next', '/')
 
     if username == AUTH_USER and password == AUTH_PASS:
-        cookie_value = _create_session_cookie(username)
-        response.set_cookie(COOKIE_NAME, cookie_value, max_age=COOKIE_MAX_AGE, path='/', httponly=True)
+        cookie = _create_session_cookie(username)
+        secure_flag = request.url.startswith('https://')
+        response.set_cookie(
+            COOKIE_NAME,
+            cookie,
+            max_age=COOKIE_MAX_AGE,
+            path='/',
+            httponly=True,
+            secure=secure_flag,
+            samesite='Lax'
+        )
         redirect(next_url)
     else:
-        return _render_login_page(error="Invalid username or password")
+        _invalidate_cookie()
+        return _render_login_page("Invalid username or password")
 
 
 def _handle_logout():
-    """Handle logout - clear cookie and redirect to login."""
-    response.delete_cookie(COOKIE_NAME, path='/')
+    _invalidate_cookie()
     redirect('/login')
 
 
@@ -246,6 +302,7 @@ def add_auth_hook(app, whitelist_prefixes=None):
         # Check authentication
         if is_form_auth():
             if not check_form_auth():
+                _invalidate_cookie()
                 redirect(f'/login?next={path}')
         else:
             if not check_basic_auth():

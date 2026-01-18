@@ -8,6 +8,220 @@ from quasarr.providers import shared_state
 from quasarr.providers.html_templates import render_button, render_centered_html
 
 
+def _get_category_emoji(cat):
+    return {'movies': '🎬', 'tv': '📺', 'docs': '📄', 'not_quasarr': '📦'}.get(cat, '📦')
+
+
+def _format_size(mb=None, bytes_val=None):
+    if bytes_val is not None:
+        mb = bytes_val / (1024 * 1024)
+    if mb is None or mb == 0:
+        return "? MB"
+    if mb < 1024:
+        return f"{mb:.0f} MB"
+    return f"{mb / 1024:.1f} GB"
+
+
+def _escape_js(s):
+    return s.replace('\\', '\\\\').replace("'", "\\'").replace('"', '\\"').replace('\n', '\\n')
+
+
+def _render_queue_item(item):
+    filename = item.get('filename', 'Unknown')
+    percentage = item.get('percentage', 0)
+    timeleft = item.get('timeleft', '??:??:??')
+    mb = item.get('mb', 0)
+    cat = item.get('cat', 'not_quasarr')
+    is_archive = item.get('is_archive', False)
+    nzo_id = item.get('nzo_id', '')
+
+    is_captcha = '[CAPTCHA' in filename
+    if is_captcha:
+        status_emoji = '🔒'
+    elif '[Extracting]' in filename:
+        status_emoji = '📦'
+    elif '[Paused]' in filename:
+        status_emoji = '⏸️'
+    elif '[Linkgrabber]' in filename:
+        status_emoji = '🔗'
+    else:
+        status_emoji = '⬇️'
+
+    display_name = filename
+    for prefix in ['[Downloading] ', '[Extracting] ', '[Paused] ', '[Linkgrabber] ', '[CAPTCHA not solved!] ']:
+        display_name = display_name.replace(prefix, '')
+
+    archive_badge = '<span class="badge archive">📁 ARCHIVE</span>' if is_archive else ''
+    cat_emoji = _get_category_emoji(cat)
+    size_str = _format_size(mb=mb)
+
+    # Progress bar - show "waiting..." for 0%
+    if percentage == 0:
+        progress_html = '<span class="progress-waiting"></span>'
+    else:
+        progress_html = f'<div class="progress-track"><div class="progress-fill" style="width: {percentage}%"></div></div>'
+
+    # Action buttons - CAPTCHA left, delete right
+    if is_captcha and nzo_id:
+        actions = f'''
+            <div class="package-actions">
+                <button class="btn-small primary" onclick="location.href='/captcha?package_id={nzo_id}'">🔓 Solve CAPTCHA</button>
+                <span class="spacer"></span>
+                <button class="btn-small danger" onclick="confirmDelete('{nzo_id}', '{_escape_js(display_name)}')">🗑️</button>
+            </div>
+        '''
+    elif nzo_id:
+        actions = f'''
+            <div class="package-actions right-only">
+                <button class="btn-small danger" onclick="confirmDelete('{nzo_id}', '{_escape_js(display_name)}')">🗑️</button>
+            </div>
+        '''
+    else:
+        actions = ''
+
+    return f'''
+        <div class="package-card">
+            <div class="package-header">
+                <span class="status-emoji">{status_emoji}</span>
+                <span class="package-name">{display_name}</span>
+                {archive_badge}
+            </div>
+            <div class="package-progress">
+                {progress_html}
+                <span class="progress-percent">{percentage}%</span>
+            </div>
+            <div class="package-details">
+                <span>⏱️ {timeleft}</span>
+                <span>💾 {size_str}</span>
+                <span>{cat_emoji} {cat}</span>
+            </div>
+            {actions}
+        </div>
+    '''
+
+
+def _render_history_item(item):
+    name = item.get('name', 'Unknown')
+    status = item.get('status', 'Unknown')
+    bytes_val = item.get('bytes', 0)
+    category = item.get('category', 'not_quasarr')
+    is_archive = item.get('is_archive', False)
+    extraction_status = item.get('extraction_status', '')
+    fail_message = item.get('fail_message', '')
+    nzo_id = item.get('nzo_id', '')
+
+    is_error = status.lower() in ['failed', 'error'] or fail_message
+    card_class = 'package-card error' if is_error else 'package-card'
+
+    cat_emoji = _get_category_emoji(category)
+    size_str = _format_size(bytes_val=bytes_val)
+
+    archive_badge = ''
+    if is_archive:
+        if extraction_status == 'SUCCESSFUL':
+            archive_badge = '<span class="badge extracted">✅ EXTRACTED</span>'
+        elif extraction_status == 'RUNNING':
+            archive_badge = '<span class="badge pending">⏳ EXTRACTING</span>'
+        else:
+            archive_badge = '<span class="badge archive">📁 ARCHIVE</span>'
+
+    status_emoji = '❌' if is_error else '✅'
+    error_html = f'<div class="package-error">⚠️ {fail_message}</div>' if fail_message else ''
+
+    # Delete button for history items
+    if nzo_id:
+        actions = f'''
+            <div class="package-actions right-only">
+                <button class="btn-small danger" onclick="confirmDelete('{nzo_id}', '{_escape_js(name)}')">🗑️</button>
+            </div>
+        '''
+    else:
+        actions = ''
+
+    return f'''
+        <div class="{card_class}">
+            <div class="package-header">
+                <span class="status-emoji">{status_emoji}</span>
+                <span class="package-name">{name}</span>
+                {archive_badge}
+            </div>
+            <div class="package-details">
+                <span>💾 {size_str}</span>
+                <span>{cat_emoji} {category}</span>
+            </div>
+            {error_html}
+            {actions}
+        </div>
+    '''
+
+
+def _render_packages_content():
+    """Render just the packages content (used for both full page and AJAX refresh)."""
+    downloads = get_packages(shared_state)
+    queue = downloads.get('queue', [])
+    history = downloads.get('history', [])
+
+    # Separate Quasarr packages from others
+    quasarr_queue = [p for p in queue if p.get('cat') != 'not_quasarr']
+    other_queue = [p for p in queue if p.get('cat') == 'not_quasarr']
+    quasarr_history = [p for p in history if p.get('category') != 'not_quasarr']
+    other_history = [p for p in history if p.get('category') == 'not_quasarr']
+
+    # Build queue section
+    queue_html = ''
+    if quasarr_queue:
+        queue_items = ''.join(_render_queue_item(item) for item in quasarr_queue)
+        queue_html = f'''
+            <div class="section">
+                <h3>⬇️ Downloading</h3>
+                <div class="packages-list">{queue_items}</div>
+            </div>
+        '''
+    else:
+        queue_html = '<div class="section"><p class="empty-message">No active downloads</p></div>'
+
+    # Build history section
+    history_html = ''
+    if quasarr_history:
+        history_items = ''.join(_render_history_item(item) for item in quasarr_history[:10])
+        history_html = f'''
+            <div class="section">
+                <h3>📜 Recent History</h3>
+                <div class="packages-list">{history_items}</div>
+            </div>
+        '''
+
+    # Build "other packages" section (non-Quasarr)
+    other_html = ''
+    other_count = len(other_queue) + len(other_history)
+    if other_count > 0:
+        other_items = ''
+        if other_queue:
+            other_items += f'<h4>Queue ({len(other_queue)})</h4>'
+            other_items += ''.join(_render_queue_item(item) for item in other_queue)
+        if other_history:
+            other_items += f'<h4>History ({len(other_history)})</h4>'
+            other_items += ''.join(_render_history_item(item) for item in other_history[:5])
+
+        plural = 's' if other_count != 1 else ''
+        other_html = f'''
+            <div class="other-packages-section">
+                <details id="otherPackagesDetails">
+                    <summary id="otherPackagesSummary">Show {other_count} non-Quasarr package{plural}</summary>
+                    <div class="other-packages-content">{other_items}</div>
+                </details>
+            </div>
+        '''
+
+    return f'''
+        <div class="packages-container">
+            {queue_html}
+            {history_html}
+            {other_html}
+        </div>
+    '''
+
+
 def setup_packages_routes(app):
     @app.get('/packages/delete/<package_id>')
     def delete_package_route(package_id):
@@ -19,6 +233,19 @@ def setup_packages_routes(app):
             redirect('/packages?deleted=1')
         else:
             redirect('/packages?deleted=0')
+
+    @app.get('/api/packages/content')
+    def packages_content_api():
+        """AJAX endpoint - returns just the packages content HTML for background refresh."""
+        try:
+            device = shared_state.values["device"]
+        except KeyError:
+            device = None
+
+        if not device:
+            return '<p class="empty-message">JDownloader connection not established.</p>'
+
+        return _render_packages_content()
 
     @app.get('/packages')
     def packages_status():
@@ -45,204 +272,8 @@ def setup_packages_routes(app):
         elif deleted == '0':
             status_message = '<div class="status-message error">❌ Failed to delete package.</div>'
 
-        # Get packages data
-        downloads = get_packages(shared_state)
-        queue = downloads.get('queue', [])
-        history = downloads.get('history', [])
-
-        # Separate Quasarr packages from others
-        quasarr_queue = [p for p in queue if p.get('cat') != 'not_quasarr']
-        other_queue = [p for p in queue if p.get('cat') == 'not_quasarr']
-        quasarr_history = [p for p in history if p.get('category') != 'not_quasarr']
-        other_history = [p for p in history if p.get('category') == 'not_quasarr']
-
-        def get_category_emoji(cat):
-            return {'movies': '🎬', 'tv': '📺', 'docs': '📄', 'not_quasarr': '📦'}.get(cat, '📦')
-
-        def format_size(mb=None, bytes_val=None):
-            if bytes_val is not None:
-                mb = bytes_val / (1024 * 1024)
-            if mb is None or mb == 0:
-                return "? MB"
-            if mb < 1024:
-                return f"{mb:.0f} MB"
-            return f"{mb / 1024:.1f} GB"
-
-        def escape_js(s):
-            return s.replace('\\', '\\\\').replace("'", "\\'").replace('"', '\\"').replace('\n', '\\n')
-
-        def render_queue_item(item):
-            filename = item.get('filename', 'Unknown')
-            percentage = item.get('percentage', 0)
-            timeleft = item.get('timeleft', '??:??:??')
-            mb = item.get('mb', 0)
-            cat = item.get('cat', 'not_quasarr')
-            is_archive = item.get('is_archive', False)
-            nzo_id = item.get('nzo_id', '')
-
-            is_captcha = '[CAPTCHA' in filename
-            if is_captcha:
-                status_emoji = '🔒'
-            elif '[Extracting]' in filename:
-                status_emoji = '📦'
-            elif '[Paused]' in filename:
-                status_emoji = '⏸️'
-            elif '[Linkgrabber]' in filename:
-                status_emoji = '🔗'
-            else:
-                status_emoji = '⬇️'
-
-            display_name = filename
-            for prefix in ['[Downloading] ', '[Extracting] ', '[Paused] ', '[Linkgrabber] ', '[CAPTCHA not solved!] ']:
-                display_name = display_name.replace(prefix, '')
-
-            archive_badge = '<span class="badge archive">📁 ARCHIVE</span>' if is_archive else ''
-            cat_emoji = get_category_emoji(cat)
-            size_str = format_size(mb=mb)
-
-            # Progress bar - show "waiting..." for 0%
-            if percentage == 0:
-                progress_html = '<span class="progress-waiting"></span>'
-            else:
-                progress_html = f'<div class="progress-track"><div class="progress-fill" style="width: {percentage}%"></div></div>'
-
-            # Action buttons - CAPTCHA left, delete right
-            if is_captcha and nzo_id:
-                actions = f'''
-                    <div class="package-actions">
-                        <button class="btn-small primary" onclick="location.href='/captcha?package_id={nzo_id}'">🔓 Solve CAPTCHA</button>
-                        <span class="spacer"></span>
-                        <button class="btn-small danger" onclick="confirmDelete('{nzo_id}', '{escape_js(display_name)}')">🗑️</button>
-                    </div>
-                '''
-            elif nzo_id:
-                actions = f'''
-                    <div class="package-actions right-only">
-                        <button class="btn-small danger" onclick="confirmDelete('{nzo_id}', '{escape_js(display_name)}')">🗑️</button>
-                    </div>
-                '''
-            else:
-                actions = ''
-
-            return f'''
-                <div class="package-card">
-                    <div class="package-header">
-                        <span class="status-emoji">{status_emoji}</span>
-                        <span class="package-name">{display_name}</span>
-                        {archive_badge}
-                    </div>
-                    <div class="package-progress">
-                        {progress_html}
-                        <span class="progress-percent">{percentage}%</span>
-                    </div>
-                    <div class="package-details">
-                        <span>⏱️ {timeleft}</span>
-                        <span>💾 {size_str}</span>
-                        <span>{cat_emoji} {cat}</span>
-                    </div>
-                    {actions}
-                </div>
-            '''
-
-        def render_history_item(item):
-            name = item.get('name', 'Unknown')
-            status = item.get('status', 'Unknown')
-            bytes_val = item.get('bytes', 0)
-            category = item.get('category', 'not_quasarr')
-            is_archive = item.get('is_archive', False)
-            extraction_status = item.get('extraction_status', '')
-            fail_message = item.get('fail_message', '')
-            nzo_id = item.get('nzo_id', '')
-
-            is_error = status.lower() in ['failed', 'error'] or fail_message
-            card_class = 'package-card error' if is_error else 'package-card'
-
-            cat_emoji = get_category_emoji(category)
-            size_str = format_size(bytes_val=bytes_val)
-
-            archive_badge = ''
-            if is_archive:
-                if extraction_status == 'SUCCESSFUL':
-                    archive_badge = '<span class="badge extracted">✅ EXTRACTED</span>'
-                elif extraction_status == 'RUNNING':
-                    archive_badge = '<span class="badge pending">⏳ EXTRACTING</span>'
-                else:
-                    archive_badge = '<span class="badge archive">📁 ARCHIVE</span>'
-
-            status_emoji = '❌' if is_error else '✅'
-            error_html = f'<div class="package-error">⚠️ {fail_message}</div>' if fail_message else ''
-
-            # Delete button for history items
-            if nzo_id:
-                actions = f'''
-                    <div class="package-actions right-only">
-                        <button class="btn-small danger" onclick="confirmDelete('{nzo_id}', '{escape_js(name)}')">🗑️</button>
-                    </div>
-                '''
-            else:
-                actions = ''
-
-            return f'''
-                <div class="{card_class}">
-                    <div class="package-header">
-                        <span class="status-emoji">{status_emoji}</span>
-                        <span class="package-name">{name}</span>
-                        {archive_badge}
-                    </div>
-                    <div class="package-details">
-                        <span>💾 {size_str}</span>
-                        <span>{cat_emoji} {category}</span>
-                    </div>
-                    {error_html}
-                    {actions}
-                </div>
-            '''
-
-        # Build queue section
-        queue_html = ''
-        if quasarr_queue:
-            queue_items = ''.join(render_queue_item(item) for item in quasarr_queue)
-            queue_html = f'''
-                <div class="section">
-                    <h3>⬇️ Downloading</h3>
-                    <div class="packages-list">{queue_items}</div>
-                </div>
-            '''
-        else:
-            queue_html = '<div class="section"><p class="empty-message">No active downloads</p></div>'
-
-        # Build history section
-        history_html = ''
-        if quasarr_history:
-            history_items = ''.join(render_history_item(item) for item in quasarr_history[:10])
-            history_html = f'''
-                <div class="section">
-                    <h3>📜 Recent History</h3>
-                    <div class="packages-list">{history_items}</div>
-                </div>
-            '''
-
-        # Build "other packages" section (non-Quasarr)
-        other_html = ''
-        other_count = len(other_queue) + len(other_history)
-        if other_count > 0:
-            other_items = ''
-            if other_queue:
-                other_items += f'<h4>Queue ({len(other_queue)})</h4>'
-                other_items += ''.join(render_queue_item(item) for item in other_queue)
-            if other_history:
-                other_items += f'<h4>History ({len(other_history)})</h4>'
-                other_items += ''.join(render_history_item(item) for item in other_history[:5])
-
-            plural = 's' if other_count != 1 else ''
-            other_html = f'''
-                <div class="other-packages-section">
-                    <details id="otherPackagesDetails">
-                        <summary id="otherPackagesSummary">Show {other_count} non-Quasarr package{plural}</summary>
-                        <div class="other-packages-content">{other_items}</div>
-                    </details>
-                </div>
-            '''
+        # Get rendered packages content using shared helper
+        packages_content = _render_packages_content()
 
         back_btn = render_button("Back", "secondary", {"onclick": "location.href='/'"})
 
@@ -252,14 +283,8 @@ def setup_packages_routes(app):
 
             {status_message}
 
-            <div class="refresh-indicator" onclick="location.reload()">
-                Auto-refresh in <span id="countdown">10</span>s
-            </div>
-
-            <div class="packages-container">
-                {queue_html}
-                {history_html}
-                {other_html}
+            <div id="packages-content">
+                {packages_content}
             </div>
 
             <p>{back_btn}</p>
@@ -323,8 +348,6 @@ def setup_packages_routes(app):
                 .btn-small.danger:hover {{ background: var(--btn-danger-hover-bg, #dc3545); color: white; }}
 
                 .empty-message {{ color: var(--text-muted, #888); font-style: italic; text-align: center; padding: 20px; }}
-                .refresh-indicator {{ text-align: center; font-size: 0.85em; color: var(--text-muted, #888); margin-bottom: 15px; cursor: pointer; }}
-                .refresh-indicator:hover {{ color: var(--link-color, #0066cc); text-decoration: underline; }}
 
                 .other-packages-section {{ margin-top: 30px; padding-top: 20px; border-top: 1px solid var(--border-color, #ddd); }}
                 .other-packages-section summary {{ cursor: pointer; padding: 8px 0; color: var(--text-muted, #666); }}
@@ -380,13 +403,56 @@ def setup_packages_routes(app):
             </style>
 
             <script>
-                let countdown = 10;
-                const countdownEl = document.getElementById('countdown');
-                const refreshInterval = setInterval(() => {{
-                    countdown--;
-                    if (countdownEl) countdownEl.textContent = countdown;
-                    if (countdown <= 0) location.reload();
-                }}, 1000);
+                // Background refresh - fetches content via AJAX, waits 5s between refresh cycles
+                let refreshPaused = false;
+
+                async function refreshContent() {{
+                    if (refreshPaused) return;
+                    try {{
+                        const response = await fetch('/api/packages/content');
+                        if (response.ok) {{
+                            const html = await response.text();
+                            const container = document.getElementById('packages-content');
+                            if (container && html) {{
+                                container.innerHTML = html;
+                                // Re-apply collapse state after content update
+                                restoreCollapseState();
+                            }}
+                        }}
+                    }} catch (e) {{
+                        // Silent fail - will retry on next cycle
+                    }}
+                    // Schedule next refresh 5 seconds after this one completes
+                    setTimeout(refreshContent, 5000);
+                }}
+
+                function restoreCollapseState() {{
+                    const otherDetails = document.getElementById('otherPackagesDetails');
+                    const otherSummary = document.getElementById('otherPackagesSummary');
+                    if (otherDetails && otherSummary) {{
+                        const count = otherSummary.textContent.match(/\\d+/)?.[0] || '0';
+                        const plural = count !== '1' ? 's' : '';
+                        if (localStorage.getItem('otherPackagesOpen') === 'true') {{
+                            otherDetails.open = true;
+                            otherSummary.textContent = 'Hide ' + count + ' non-Quasarr package' + plural;
+                        }}
+                        // Re-attach event listener
+                        otherDetails.onclick = null;
+                        otherDetails.addEventListener('toggle', function() {{
+                            localStorage.setItem('otherPackagesOpen', this.open);
+                            const summaryEl = document.getElementById('otherPackagesSummary');
+                            if (summaryEl) {{
+                                summaryEl.textContent = (this.open ? 'Hide ' : 'Show ') + count + ' non-Quasarr package' + plural;
+                            }}
+                        }});
+                    }}
+                }}
+
+                // Start refresh cycle after initial 5s delay
+                setTimeout(refreshContent, 5000);
+
+                // Initial collapse state setup
+                restoreCollapseState();
 
                 // Clear status message from URL after display
                 if (window.location.search.includes('deleted=')) {{
@@ -395,34 +461,18 @@ def setup_packages_routes(app):
                     window.history.replaceState({{}}, '', url);
                 }}
 
-                // Restore collapse state from localStorage
-                const otherDetails = document.getElementById('otherPackagesDetails');
-                const otherSummary = document.getElementById('otherPackagesSummary');
-                if (otherDetails && otherSummary) {{
-                    const count = otherSummary.textContent.match(/\\d+/)?.[0] || '0';
-                    const plural = count !== '1' ? 's' : '';
-                    if (localStorage.getItem('otherPackagesOpen') === 'true') {{
-                        otherDetails.open = true;
-                        otherSummary.textContent = 'Hide ' + count + ' non-Quasarr package' + plural;
-                    }}
-                    otherDetails.addEventListener('toggle', () => {{
-                        localStorage.setItem('otherPackagesOpen', otherDetails.open);
-                        otherSummary.textContent = (otherDetails.open ? 'Hide ' : 'Show ') + count + ' non-Quasarr package' + plural;
-                    }});
-                }}
-
                 // Delete modal
                 let deletePackageId = null;
                 function confirmDelete(packageId, packageName) {{
                     deletePackageId = packageId;
                     document.getElementById('modalPackageName').textContent = packageName;
                     document.getElementById('deleteModal').classList.add('show');
-                    clearInterval(refreshInterval);
+                    refreshPaused = true;  // Pause background refresh while modal is open
                 }}
                 function closeModal() {{
                     document.getElementById('deleteModal').classList.remove('show');
                     deletePackageId = null;
-                    location.reload();
+                    refreshPaused = false;  // Resume background refresh
                 }}
                 document.getElementById('confirmDeleteBtn').onclick = function() {{
                     if (deletePackageId) location.href = '/packages/delete/' + encodeURIComponent(deletePackageId);
