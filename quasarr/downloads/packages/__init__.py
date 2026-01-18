@@ -468,8 +468,10 @@ def get_packages(shared_state, _cache=None):
                 details = package["details"]
                 name = f"[Linkgrabber] {details.get('name', 'unknown')}"
                 try:
-                    mb = mb_left = int(details.get("bytesTotal", 0)) / (1024 * 1024)
+                    bytes_total = int(details.get("bytesTotal", 0))
+                    mb = mb_left = bytes_total / (1024 * 1024)
                 except (KeyError, TypeError, ValueError):
+                    bytes_total = 0
                     mb = mb_left = 0
                 package_id = package["comment"]
                 category = get_category_from_package_id(package_id)
@@ -505,6 +507,7 @@ def get_packages(shared_state, _cache=None):
                 details = package["details"]
                 name = f"[CAPTCHA not solved!] {details.get('title', 'unknown')}"
                 mb = mb_left = details.get("size_mb") or 0
+                bytes_total = 0  # Protected packages don't have reliable byte data
                 package_id = package.get("package_id")
                 category = get_category_from_package_id(package_id)
                 package_type = "protected"
@@ -518,9 +521,6 @@ def get_packages(shared_state, _cache=None):
                     percentage = int(100 * (mb - mb_left) / mb) if mb > 0 else 0
                 except (ZeroDivisionError, ValueError, TypeError):
                     percentage = 0
-
-                # Keep mb/mbleft as integers for API compatibility, add bytes for UI display
-                bytes_total = int(mb * 1024 * 1024) if mb else 0
 
                 downloads["queue"].append({
                     "index": queue_index,
