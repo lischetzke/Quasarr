@@ -10,6 +10,7 @@ from base64 import urlsafe_b64encode
 import requests
 from bs4 import BeautifulSoup
 
+from quasarr.providers.hostname_issues import mark_hostname_issue, clear_hostname_issue
 from quasarr.providers.log import info, debug
 
 hostname = "dw"
@@ -77,8 +78,9 @@ def dw_feed(shared_state, start_time, request_from, mirror=None):
     }
 
     try:
-        request = requests.get(url, headers=headers, timeout=10).content
-        feed = BeautifulSoup(request, "html.parser")
+        r = requests.get(url, headers=headers, timeout=30)
+        r.raise_for_status()
+        feed = BeautifulSoup(r.content, "html.parser")
         articles = feed.find_all('h4')
 
         for article in articles:
@@ -102,6 +104,7 @@ def dw_feed(shared_state, start_time, request_from, mirror=None):
                 link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
             except Exception as e:
                 info(f"Error parsing {hostname.upper()} feed: {e}")
+                mark_hostname_issue(hostname, "feed", str(e) if "e" in dir() else "Error occurred")
                 continue
 
             releases.append({
@@ -120,10 +123,13 @@ def dw_feed(shared_state, start_time, request_from, mirror=None):
 
     except Exception as e:
         info(f"Error loading {hostname.upper()} feed: {e}")
+        mark_hostname_issue(hostname, "feed", str(e) if "e" in dir() else "Error occurred")
 
     elapsed_time = time.time() - start_time
     debug(f"Time taken: {elapsed_time:.2f}s ({hostname})")
 
+    if releases:
+        clear_hostname_issue(hostname)
     return releases
 
 
@@ -151,12 +157,14 @@ def dw_search(shared_state, start_time, request_from, search_string, mirror=None
     }
 
     try:
-        request = requests.get(url, headers=headers, timeout=10).content
-        search = BeautifulSoup(request, "html.parser")
+        r = requests.get(url, headers=headers, timeout=10)
+        r.raise_for_status()
+        search = BeautifulSoup(r.content, "html.parser")
         results = search.find_all('h4')
 
     except Exception as e:
         info(f"Error loading {hostname.upper()} search feed: {e}")
+        mark_hostname_issue(hostname, "search", str(e) if "e" in dir() else "Error occurred")
         return releases
 
     imdb_id = shared_state.is_imdb_id(search_string)
@@ -191,6 +199,7 @@ def dw_search(shared_state, start_time, request_from, search_string, mirror=None
                 link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
             except Exception as e:
                 info(f"Error parsing {hostname.upper()} search: {e}")
+                mark_hostname_issue(hostname, "search", str(e) if "e" in dir() else "Error occurred")
                 continue
 
             releases.append({
@@ -210,4 +219,6 @@ def dw_search(shared_state, start_time, request_from, search_string, mirror=None
     elapsed_time = time.time() - start_time
     debug(f"Time taken: {elapsed_time:.2f}s ({hostname})")
 
+    if releases:
+        clear_hostname_issue(hostname)
     return releases

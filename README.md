@@ -1,4 +1,4 @@
-#         
+#
 
 <img src="https://raw.githubusercontent.com/rix1337/Quasarr/main/Quasarr.png" data-canonical-src="https://raw.githubusercontent.com/rix1337/Quasarr/main/Quasarr.png" width="64" height="64" />
 
@@ -98,11 +98,14 @@ Add Quasarr as both a **Newznab Indexer** and **SABnzbd Download Client** using 
 <details>
 <summary>Restrict results to a specific mirror</summary>
 
-Append the mirror name to your Newznab URL:
+1. In the Newznab Settings for Quasarr, enable advanced settings.
+2. Append the desired mirror name to the `API Path` field.
 
 ```
 /api/dropbox/
 ```
+
+Using the `URL` field will not work!
 
 Only releases with `dropbox` in a link will be returned. If the mirror isn't available, the release will fail.
 

@@ -8,6 +8,7 @@ from urllib.parse import urlparse, urljoin
 import requests
 from bs4 import BeautifulSoup
 
+from quasarr.providers.hostname_issues import mark_hostname_issue
 from quasarr.providers.log import info, debug
 
 hostname = "he"
@@ -27,10 +28,12 @@ def get_he_download_links(shared_state, url, mirror, title, password):
     session = requests.Session()
 
     try:
-        resp = session.get(url, headers=headers, timeout=30)
-        soup = BeautifulSoup(resp.text, 'html.parser')
+        r = session.get(url, headers=headers, timeout=10)
+        r.raise_for_status()
+        soup = BeautifulSoup(r.text, 'html.parser')
     except Exception as e:
         info(f"{hostname}: could not fetch release for {title}: {e}")
+        mark_hostname_issue(hostname, "download", str(e) if "e" in dir() else "Download error")
         return {"links": [], "imdb_id": None}
 
     imdb_id = None
@@ -55,7 +58,7 @@ def get_he_download_links(shared_state, url, mirror, title, password):
             return {"links": [], "imdb_id": None}
 
         action = form.get('action') or url
-        action_url = urljoin(resp.url, action)
+        action_url = urljoin(r.url, action)
 
         payload = {}
         for inp in form.find_all('input'):
@@ -76,12 +79,14 @@ def get_he_download_links(shared_state, url, mirror, title, password):
                 payload[m.group('key')] = m.group('val')
 
         post_headers = headers.copy()
-        post_headers.update({'Referer': resp.url})
+        post_headers.update({'Referer': r.url})
         try:
-            resp = session.post(action_url, data=payload, headers=post_headers, timeout=30)
-            soup = BeautifulSoup(resp.text, 'html.parser')
+            r = session.post(action_url, data=payload, headers=post_headers, timeout=10)
+            r.raise_for_status()
+            soup = BeautifulSoup(r.text, 'html.parser')
         except Exception as e:
             info(f"{hostname}: could not submit protector form for {title}: {e}")
+            mark_hostname_issue(hostname, "download", str(e) if "e" in dir() else "Download error")
             break
 
         unlocked = soup.select('.content-protector-access-form')

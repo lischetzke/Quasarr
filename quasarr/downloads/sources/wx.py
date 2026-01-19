@@ -6,6 +6,7 @@ import re
 
 import requests
 
+from quasarr.providers.hostname_issues import mark_hostname_issue
 from quasarr.providers.log import info, debug
 from quasarr.providers.utils import check_links_online_status
 
@@ -32,11 +33,8 @@ def get_wx_download_links(shared_state, url, mirror, title, password):
         session = requests.Session()
 
         # First, load the page to establish session cookies
-        response = session.get(url, headers=headers, timeout=30)
-
-        if response.status_code != 200:
-            info(f"{hostname.upper()}: Failed to load page: {url} (Status: {response.status_code})")
-            return {"links": []}
+        r = session.get(url, headers=headers, timeout=30)
+        r.raise_for_status()
 
         # Extract slug from URL
         slug_match = re.search(r'/detail/([^/?]+)', url)
@@ -53,13 +51,10 @@ def get_wx_download_links(shared_state, url, mirror, title, password):
         }
 
         debug(f"{hostname.upper()}: Fetching API data from: {api_url}")
-        api_response = session.get(api_url, headers=api_headers, timeout=30)
+        api_r = session.get(api_url, headers=api_headers, timeout=30)
+        api_r.raise_for_status()
 
-        if api_response.status_code != 200:
-            info(f"{hostname.upper()}: Failed to load API: {api_url} (Status: {api_response.status_code})")
-            return {"links": []}
-
-        data = api_response.json()
+        data = api_r.json()
 
         # Navigate to releases in the API response
         if 'item' not in data or 'releases' not in data['item']:
@@ -165,4 +160,5 @@ def get_wx_download_links(shared_state, url, mirror, title, password):
 
     except Exception as e:
         info(f"{hostname.upper()}: Error extracting download links from {url}: {e}")
+        mark_hostname_issue(hostname, "download", str(e) if "e" in dir() else "Download error")
         return {"links": []}

@@ -11,6 +11,7 @@ from html import unescape
 import requests
 from bs4 import BeautifulSoup
 
+from quasarr.providers.hostname_issues import mark_hostname_issue, clear_hostname_issue
 from quasarr.providers.imdb_metadata import get_localized_title
 from quasarr.providers.log import info, debug
 
@@ -90,6 +91,13 @@ def he_search(shared_state, start_time, request_from, search_string="", mirror=N
     else:
         imdb_id = None
 
+    if not source_search:
+        search_type = "feed"
+        timeout=30
+    else:
+        search_type = "search"
+        timeout = 10
+
     if season:
         source_search += f" S{int(season):02d}"
 
@@ -102,11 +110,13 @@ def he_search(shared_state, start_time, request_from, search_string="", mirror=N
     params = {"s": source_search}
 
     try:
-        r = requests.get(url, headers=headers, params=params, timeout=10)
+        r = requests.get(url, headers=headers, params=params, timeout=timeout)
+        r.raise_for_status()
         soup = BeautifulSoup(r.content, 'html.parser')
         results = soup.find_all('div', class_='item')
     except Exception as e:
-        info(f"{hostname}: search load error: {e}")
+        info(f"{hostname}: {search_type} load error: {e}")
+        mark_hostname_issue(hostname, search_type, str(e) if "e" in dir() else "Error occurred")
         return releases
 
     if not results:
@@ -199,4 +209,7 @@ def he_search(shared_state, start_time, request_from, search_string="", mirror=N
 
     elapsed = time.time() - start_time
     debug(f"Time taken: {elapsed:.2f}s ({hostname})")
+
+    if releases:
+        clear_hostname_issue(hostname)
     return releases

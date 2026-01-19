@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 
 import requests
 
+from quasarr.providers.hostname_issues import mark_hostname_issue, clear_hostname_issue
 from quasarr.providers.imdb_metadata import get_localized_title
 from quasarr.providers.log import info, debug
 
@@ -91,6 +92,7 @@ def parse_mirrors(base_url, entry):
         }
     except Exception as e:
         info(f"Error parsing mirrors: {e}")
+        mark_hostname_issue(hostname, "feed", str(e) if "e" in dir() else "Error occurred")
 
     return mirrors
 
@@ -122,12 +124,14 @@ def sf_feed(shared_state, start_time, request_from, mirror=None):
         date -= timedelta(days=1)
 
         try:
-            response = requests.get(f"https://{sf}/updates/{formatted_date}#list", headers, timeout=10)
+            r = requests.get(f"https://{sf}/updates/{formatted_date}#list", headers, timeout=30)
+            r.raise_for_status()
         except Exception as e:
             info(f"Error loading {hostname.upper()} feed: {e} for {formatted_date}")
+            mark_hostname_issue(hostname, "feed", str(e) if "e" in dir() else "Error occurred")
             return releases
 
-        content = BeautifulSoup(response.text, "html.parser")
+        content = BeautifulSoup(r.text, "html.parser")
         items = content.find_all("div", {"class": "row"}, style=re.compile("order"))
 
         for item in items:
@@ -175,10 +179,13 @@ def sf_feed(shared_state, start_time, request_from, mirror=None):
 
             except Exception as e:
                 info(f"Error parsing {hostname.upper()} feed: {e}")
+                mark_hostname_issue(hostname, "feed", str(e) if "e" in dir() else "Error occurred")
 
     elapsed_time = time.time() - start_time
     debug(f"Time taken: {elapsed_time:.2f}s ({hostname})")
 
+    if releases:
+        clear_hostname_issue(hostname)
     return releases
 
 
@@ -220,10 +227,12 @@ def sf_search(shared_state, start_time, request_from, search_string, mirror=None
     headers = {'User-Agent': shared_state.values["user_agent"]}
 
     try:
-        response = requests.get(url, headers=headers, timeout=10)
-        feed = response.json()
+        r = requests.get(url, headers=headers, timeout=10)
+        r.raise_for_status()
+        feed = r.json()
     except Exception as e:
         info(f"Error loading {hostname.upper()} search: {e}")
+        mark_hostname_issue(hostname, "search", str(e) if "e" in dir() else "Error occurred")
         return releases
 
     results = feed.get('result', [])
@@ -257,12 +266,15 @@ def sf_search(shared_state, start_time, request_from, search_string, mirror=None
             # load series page
             series_url = f"https://{sf}/{series_id}"
             try:
-                series_page = requests.get(series_url, headers=headers, timeout=10).text
+                r = requests.get(series_url, headers=headers, timeout=10)
+                r.raise_for_status()
+                series_page = r.text
                 imdb_link = BeautifulSoup(series_page, "html.parser").find("a", href=re.compile(r"imdb\.com"))
                 imdb_id = re.search(r'tt\d+', str(imdb_link)).group() if imdb_link else None
                 season_id = re.findall(r"initSeason\('(.+?)\',", series_page)[0]
-            except Exception:
+            except Exception as e:
                 debug(f"Failed to load or parse series page for {series_id}")
+                mark_hostname_issue(hostname, "search", str(e))
                 continue
 
             # fetch API HTML
@@ -270,14 +282,16 @@ def sf_search(shared_state, start_time, request_from, search_string, mirror=None
             api_url = f'https://{sf}/api/v1/{season_id}/season/ALL?lang=ALL&_={epoch}'
             debug(f"Requesting SF API URL: {api_url}")
             try:
-                api_resp = requests.get(api_url, headers=headers, timeout=10)
-                resp_json = api_resp.json()
+                r = requests.get(api_url, headers=headers, timeout=10)
+                r.raise_for_status()
+                resp_json = r.json()
                 if resp_json.get('error'):
                     info(f"SF API error for series '{series_id}' at URL {api_url}: {resp_json.get('message')}")
                     continue
                 data_html = resp_json.get("html", "")
             except Exception as e:
                 info(f"Error loading SF API for {series_id} at {api_url}: {e}")
+                mark_hostname_issue(hostname, "search", str(e) if "e" in dir() else "Error occurred")
                 continue
 
             # cache content and imdb_id
@@ -373,4 +387,7 @@ def sf_search(shared_state, start_time, request_from, search_string, mirror=None
 
     elapsed_time = time.time() - start_time
     debug(f"Time taken: {elapsed_time:.2f}s ({hostname})")
+
+    if releases:
+        clear_hostname_issue(hostname)
     return releases

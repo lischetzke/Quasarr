@@ -16,6 +16,7 @@ import quasarr.providers.sessions.dd
 import quasarr.providers.sessions.dl
 import quasarr.providers.sessions.nx
 from quasarr.providers.auth import add_auth_routes, add_auth_hook
+from quasarr.providers.hostname_issues import get_all_hostname_issues
 from quasarr.providers.html_templates import render_button, render_form, render_success, render_fail, \
     render_centered_html
 from quasarr.providers.log import info
@@ -158,7 +159,12 @@ def path_config(shared_state):
 
 def hostname_form_html(shared_state, message, show_restart_button=False, show_skip_management=False):
     hostname_fields = '''
-    <label for="{id}" style="display:inline-flex; align-items:center; gap:4px;">{label}{img_html}</label>
+    <label for="{id}" style="display:inline-flex; align-items:center; gap:4px;">
+        <span class="status-indicator" id="status-{id}" data-status="{status}" data-message="{status_message}" 
+              onclick="showStatusDetail(\'{id}\', \'{label}\', \'{status}\', this.dataset.message)" 
+              style="cursor:pointer; font-size:1rem;" title="{status_title}">{status_emoji}</span>
+        {label}{img_html}
+    </label>
     <input type="text" id="{id}" name="{id}" placeholder="example.com" autocorrect="off" autocomplete="off" value="{value}"><br>
     '''
 
@@ -172,6 +178,7 @@ def hostname_form_html(shared_state, message, show_restart_button=False, show_sk
     field_html = []
     hostnames = Config('Hostnames')  # Load once outside the loop
     skip_login_db = DataBase("skip_login")
+    hostname_issues = get_all_hostname_issues()
     login_required_sites = ['al', 'dd', 'dl', 'nx']
 
     for label in shared_state.values["sites"]:
@@ -189,11 +196,42 @@ def hostname_form_html(shared_state, message, show_restart_button=False, show_sk
         if not current_value:
             current_value = ''  # Ensure it's empty if None or ""
 
+        # Determine traffic light status
+        is_login_skipped = field_id in login_required_sites and skip_login_db.retrieve(field_id)
+        issue = hostname_issues.get(field_id)
+
+        if not current_value:
+            status = "unset"
+            status_emoji = "⚫️"
+            status_title = "Hostname not configured"
+            status_message = "This hostname is not configured."
+        elif is_login_skipped:
+            status = "skipped"
+            status_emoji = "🟡"
+            status_title = "Login was skipped"
+            status_message = "Login was skipped for this site."
+        elif issue:
+            status = "error"
+            status_emoji = "🔴"
+            operation = issue.get("operation", "unknown")
+            error_msg = issue.get("error", "Unknown error")[:200]
+            status_title = f"Error during {operation}"
+            status_message = f"Error during {operation}: {error_msg}"
+        else:
+            status = "ok"
+            status_emoji = "🟢"
+            status_title = "Working normally"
+            status_message = "Configured and working normally."
+
         field_html.append(hostname_fields.format(
             id=field_id,
             label=label,
             img_html=img_html,
-            value=current_value
+            value=current_value,
+            status=status,
+            status_emoji=status_emoji,
+            status_title=status_title,
+            status_message=status_message.replace('"', '&quot;').replace("'", "&#39;")
         ))
 
         # Add skip indicator for login-required sites if skip management is enabled
@@ -254,6 +292,47 @@ def hostname_form_html(shared_state, message, show_restart_button=False, show_sk
     .import-status.success {{ color: #198754; }}
     .import-status.error {{ color: #dc3545; }}
     .import-status.loading {{ color: var(--secondary, #6c757d); }}
+    .status-indicator {{
+        transition: transform 0.1s ease;
+    }}
+    .status-indicator:hover {{
+        transform: scale(1.2);
+    }}
+    .status-modal-overlay {{
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 9999;
+    }}
+    .status-modal {{
+        background: var(--card-bg, #fff);
+        border-radius: 0.5rem;
+        padding: 1.5rem;
+        max-width: 400px;
+        width: 90%;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+    }}
+    .status-modal h3 {{
+        margin: 0 0 1rem 0;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }}
+    .status-modal p {{
+        margin: 0 0 1rem 0;
+        word-break: break-word;
+    }}
+    .status-modal .btn-row {{
+        display: flex;
+        gap: 0.5rem;
+        justify-content: flex-end;
+    }}
     .btn-subtle {{
         background: transparent;
         color: var(--fg-color, #212529);
@@ -274,7 +353,7 @@ def hostname_form_html(shared_state, message, show_restart_button=False, show_sk
 <div class="url-import-section">
     <h3>📥 Import from URL</h3>
     <div class="url-import-row">
-        <input type="text" id="hostnamesUrl" placeholder="https://quasarr-host.name/ini?token=123..." value="{stored_url}" autocorrect="off" autocomplete="off" onfocus="onHostnameFieldFocus()">
+        <input type="url" id="hostnamesUrl" placeholder="https://quasarr-host.name/ini?token=123..." value="{stored_url}" onfocus="onHostnameFieldFocus()">
         <button type="button" class="btn-secondary" id="importBtn" onclick="importHostnames()">Import</button>
     </div>
     <div id="importStatus" class="import-status"></div>
@@ -480,6 +559,55 @@ def hostname_form_html(shared_state, message, show_restart_button=False, show_sk
 
     attempt();
   }}
+</script>
+<script>
+    function showStatusDetail(id, label, status, message) {{
+        if (document.getElementById('status-modal-overlay')) return;
+    
+        var statusTextMap = {{
+            ok: 'Working normally',
+            error: 'Error',
+            unset: 'Not configured',
+            skipped: 'Login skipped'
+        }};
+    
+        var emojiMap = {{
+            ok: '🟢',
+            error: '🔴',
+            unset: '⚫️',
+            skipped: '🟡'
+        }};
+    
+        var overlay = document.createElement('div');
+        overlay.id = 'status-modal-overlay';
+        overlay.className = 'status-modal-overlay';
+    
+        overlay.innerHTML =
+            '<div class="status-modal">' +
+                '<h3>' +
+                    '<span>' + (emojiMap[status] || 'ℹ️') + '</span>' +
+                    label +
+                '</h3>' +
+                '<p><strong>Status:</strong> ' + (statusTextMap[status] || status) + '</p>' +
+                '<p>' + (message || 'No additional details available.') + '</p>' +
+                '<div class="btn-row">' +
+                    '<button class="btn-secondary" id="statusModalClose">Close</button>' +
+                '</div>' +
+            '</div>';
+    
+        overlay.addEventListener('click', function(e) {{
+            if (e.target === overlay) closeStatusModal();
+        }});
+    
+        document.body.appendChild(overlay);
+    
+        document.getElementById('statusModalClose').addEventListener('click', closeStatusModal);
+    
+        function closeStatusModal() {{
+            var el = document.getElementById('status-modal-overlay');
+            if (el) el.remove();
+        }}
+    }}
 </script>
 """
     return template.format(

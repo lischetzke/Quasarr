@@ -8,19 +8,22 @@ from urllib.parse import urlparse
 import requests
 from bs4 import BeautifulSoup
 
+from quasarr.providers.hostname_issues import mark_hostname_issue, clear_hostname_issue
 from quasarr.providers.log import info
+
+hostname = "dt"
 
 
 def derive_mirror_from_url(url):
     """Extract hoster name from URL hostname."""
     try:
-        hostname = urlparse(url).netloc.lower()
-        if hostname.startswith('www.'):
-            hostname = hostname[4:]
-        parts = hostname.split('.')
+        mirror_hostname = urlparse(url).netloc.lower()
+        if mirror_hostname.startswith('www.'):
+            mirror_hostname = mirror_hostname[4:]
+        parts = mirror_hostname.split('.')
         if len(parts) >= 2:
             return parts[-2]
-        return hostname
+        return mirror_hostname
     except:
         return "unknown"
 
@@ -36,23 +39,27 @@ def get_dt_download_links(shared_state, url, mirror, title, password):
     session = requests.Session()
 
     try:
-        resp = session.get(url, headers=headers, timeout=10)
-        soup = BeautifulSoup(resp.text, "html.parser")
+        r = session.get(url, headers=headers, timeout=10)
+        r.raise_for_status()
+        soup = BeautifulSoup(r.text, "html.parser")
 
         article = soup.find("article")
         if not article:
             info(f"Could not find article block on DT page for {title}")
+            mark_hostname_issue(hostname, "download", "Could not find article block")
             return None
 
         body = article.find("div", class_="card-body")
         if not body:
             info(f"Could not find download section for {title}")
+            mark_hostname_issue(hostname, "download", "Could not find download section")
             return None
 
         anchors = body.find_all("a", href=True)
 
     except Exception as e:
         info(f"DT site has been updated. Grabbing download links for {title} not possible! ({e})")
+        mark_hostname_issue(hostname, "download", str(e))
         return None
 
     filtered = []
@@ -85,4 +92,6 @@ def get_dt_download_links(shared_state, url, mirror, title, password):
                         mirror_name = derive_mirror_from_url(u)
                         filtered.append([u, mirror_name])
 
+    if filtered:
+        clear_hostname_issue(hostname)
     return {"links": filtered} if filtered else None

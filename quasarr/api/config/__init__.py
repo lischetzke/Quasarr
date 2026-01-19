@@ -22,6 +22,12 @@ from quasarr.storage.sqlite_database import DataBase
 
 
 def setup_config(app, shared_state):
+    @app.get("/api/hostname-issues")
+    def get_hostname_issues_api():
+        response.content_type = 'application/json'
+        from quasarr.providers.hostname_issues import get_all_hostname_issues
+        return {"issues": get_all_hostname_issues()}
+
     @app.get('/hostnames')
     def hostnames_ui():
         message = """<p>

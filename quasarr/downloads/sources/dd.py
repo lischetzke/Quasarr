@@ -2,8 +2,11 @@
 # Quasarr
 # Project by https://github.com/rix1337
 
+from quasarr.providers.hostname_issues import mark_hostname_issue
 from quasarr.providers.log import info, debug
 from quasarr.providers.sessions.dd import create_and_persist_session, retrieve_and_validate_session
+
+hostname = "dd"
 
 
 def get_dd_download_links(shared_state, url, mirror, title, password):
@@ -18,6 +21,7 @@ def get_dd_download_links(shared_state, url, mirror, title, password):
     dd_session = retrieve_and_validate_session(shared_state)
     if not dd_session:
         info(f"Could not retrieve valid session for {dd}")
+        mark_hostname_issue(hostname, "download", "Session error")
         return {"links": []}
 
     links = []
@@ -43,7 +47,9 @@ def get_dd_download_links(shared_state, url, mirror, title, password):
         for page in range(0, 100, 20):
             api_url = f'https://{dd}/index/search/keyword/{title}/qualities/{",".join(qualities)}/from/{page}/search'
 
-            releases_on_page = dd_session.get(api_url, headers=headers, timeout=10).json()
+            r = dd_session.get(api_url, headers=headers, timeout=10)
+            r.raise_for_status()
+            releases_on_page = r.json()
             if releases_on_page:
                 release_list.extend(releases_on_page)
 
@@ -75,9 +81,11 @@ def get_dd_download_links(shared_state, url, mirror, title, password):
                     break
             except Exception as e:
                 info(f"Error parsing DD download: {e}")
+                mark_hostname_issue(hostname, "download", str(e) if "e" in dir() else "Download error")
                 continue
 
     except Exception as e:
         info(f"Error loading DD download: {e}")
+        mark_hostname_issue(hostname, "download", str(e) if "e" in dir() else "Download error")
 
     return {"links": links}
