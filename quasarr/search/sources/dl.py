@@ -10,6 +10,7 @@ from html import unescape
 
 from bs4 import BeautifulSoup
 
+from quasarr.providers.hostname_issues import mark_hostname_issue, clear_hostname_issue
 from quasarr.providers.imdb_metadata import get_localized_title
 from quasarr.providers.log import info, debug
 from quasarr.providers.sessions.dl import retrieve_and_validate_session, invalidate_session, fetch_via_requests_session
@@ -75,13 +76,10 @@ def dl_feed(shared_state, start_time, request_from, mirror=None):
             return releases
 
         forum_url = f'https://www.{host}/forums/{forum}/?order=post_date&direction=desc'
-        response = sess.get(forum_url, timeout=30)
+        r = sess.get(forum_url, timeout=30)
+        r.raise_for_status()
 
-        if response.status_code != 200:
-            info(f"{hostname}: Forum request failed with {response.status_code}")
-            return releases
-
-        soup = BeautifulSoup(response.content, 'html.parser')
+        soup = BeautifulSoup(r.content, 'html.parser')
 
         # Find all thread items in the forum
         items = soup.select('div.structItem.structItem--thread')
@@ -147,10 +145,14 @@ def dl_feed(shared_state, start_time, request_from, mirror=None):
 
     except Exception as e:
         info(f"{hostname}: Forum feed error: {e}")
+        mark_hostname_issue(hostname, "feed", str(e) if "e" in dir() else "Error occurred")
         invalidate_session(shared_state)
 
     elapsed = time.time() - start_time
     debug(f"Time taken: {elapsed:.2f}s ({hostname})")
+
+    if releases:
+        clear_hostname_issue(hostname)
     return releases
 
 
@@ -292,6 +294,7 @@ def _search_single_page(shared_state, host, search_string, search_id, page_num, 
 
     except Exception as e:
         info(f"{hostname}: [Page {page_num}] error: {e}")
+        mark_hostname_issue(hostname, "search", str(e) if "e" in dir() else "Error occurred")
         return page_releases, None
 
 
@@ -355,6 +358,7 @@ def dl_search(shared_state, start_time, request_from, search_string,
 
     except Exception as e:
         info(f"{hostname}: search error: {e}")
+        mark_hostname_issue(hostname, "search", str(e) if "e" in dir() else "Error occurred")
         invalidate_session(shared_state)
 
     debug(f"{hostname}: FINAL - Found {len(releases)} valid releases - providing to {request_from}")
@@ -362,4 +366,6 @@ def dl_search(shared_state, start_time, request_from, search_string,
     elapsed = time.time() - start_time
     debug(f"Time taken: {elapsed:.2f}s ({hostname})")
 
+    if releases:
+        clear_hostname_issue(hostname)
     return releases

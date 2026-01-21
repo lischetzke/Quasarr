@@ -14,6 +14,7 @@ from urllib.parse import quote_plus
 import requests
 from bs4 import BeautifulSoup
 
+from quasarr.providers.hostname_issues import mark_hostname_issue, clear_hostname_issue
 from quasarr.providers.imdb_metadata import get_localized_title
 from quasarr.providers.log import info, debug
 
@@ -60,8 +61,9 @@ def sl_feed(shared_state, start_time, request_from, mirror=None):
     headers = {'User-Agent': shared_state.values['user_agent']}
 
     try:
-        xml_text = requests.get(url, headers=headers, timeout=10).text
-        root = ET.fromstring(xml_text)
+        r = requests.get(url, headers=headers, timeout=30)
+        r.raise_for_status()
+        root = ET.fromstring(r.text)
 
         for item in root.find('channel').findall('item'):
             try:
@@ -110,13 +112,18 @@ def sl_feed(shared_state, start_time, request_from, mirror=None):
 
             except Exception as e:
                 info(f"Error parsing {hostname.upper()} feed item: {e}")
+                mark_hostname_issue(hostname, "feed", str(e) if "e" in dir() else "Error occurred")
                 continue
 
     except Exception as e:
         info(f"Error loading {hostname.upper()} feed: {e}")
+        mark_hostname_issue(hostname, "feed", str(e) if "e" in dir() else "Error occurred")
 
     elapsed = time.time() - start_time
     debug(f"Time taken: {elapsed:.2f}s ({hostname})")
+
+    if releases:
+        clear_hostname_issue(hostname)
     return releases
 
 
@@ -162,6 +169,7 @@ def sl_search(shared_state, start_time, request_from, search_string, mirror=None
                 return r.text
             except Exception as e:
                 info(f"Error fetching {hostname} url {url}: {e}")
+                mark_hostname_issue(hostname, "search", str(e) if "e" in dir() else "Error occurred")
                 return ''
 
         html_texts = []
@@ -172,6 +180,7 @@ def sl_search(shared_state, start_time, request_from, search_string, mirror=None
                     html_texts.append(future.result())
                 except Exception as e:
                     info(f"Error fetching {hostname} search page: {e}")
+                    mark_hostname_issue(hostname, "search", str(e) if "e" in dir() else "Error occurred")
 
         # Parse each result and collect unique releases (dedupe by source link)
         seen_sources = set()
@@ -233,14 +242,20 @@ def sl_search(shared_state, start_time, request_from, search_string, mirror=None
                         })
                     except Exception as e:
                         info(f"Error parsing {hostname.upper()} search item: {e}")
+                        mark_hostname_issue(hostname, "search", str(e) if "e" in dir() else "Error occurred")
                         continue
             except Exception as e:
                 info(f"Error parsing {hostname.upper()} search HTML: {e}")
+                mark_hostname_issue(hostname, "search", str(e) if "e" in dir() else "Error occurred")
                 continue
 
     except Exception as e:
         info(f"Error loading {hostname.upper()} search page: {e}")
+        mark_hostname_issue(hostname, "search", str(e) if "e" in dir() else "Error occurred")
 
     elapsed = time.time() - start_time
     debug(f"Search time: {elapsed:.2f}s ({hostname})")
+
+    if releases:
+        clear_hostname_issue(hostname)
     return releases

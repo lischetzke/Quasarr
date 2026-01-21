@@ -12,6 +12,7 @@ import requests
 from bs4 import BeautifulSoup
 from requests.exceptions import Timeout, RequestException
 
+from quasarr.providers.hostname_issues import mark_hostname_issue, clear_hostname_issue
 from quasarr.providers.log import info, debug
 from quasarr.providers.utils import is_site_usable, is_flaresolverr_available
 
@@ -36,6 +37,7 @@ def create_and_persist_session(shared_state):
     if not is_flaresolverr_available(shared_state):
         info(f'"{hostname.upper()}" requires FlareSolverr which is not configured. '
              f'Please configure FlareSolverr in the web UI to use this site.')
+        mark_hostname_issue(hostname, "session", "FlareSolverr required but not configured")
         return None
 
     cfg = shared_state.values["config"]("Hostnames")
@@ -63,16 +65,19 @@ def create_and_persist_session(shared_state):
             fs_resp.raise_for_status()
         except Timeout:
             info(f"{hostname}: FlareSolverr request timed out")
+            mark_hostname_issue(hostname, "session", "FlareSolverr request timed out")
             return None
         except RequestException as e:
             # This covers HTTP errors and connection issues *other than* timeout
             info(f"{hostname}: FlareSolverr server error: {e}")
+            mark_hostname_issue(hostname, "session", str(e))
             return None
 
         fs_json = fs_resp.json()
         # Check if FlareSolverr actually solved the challenge
         if fs_json.get("status") != "ok" or "solution" not in fs_json:
             info(f"{hostname}: FlareSolverr did not return a valid solution")
+            mark_hostname_issue(hostname, "session", "FlareSolverr did not return a valid solution")
             return None
 
         solution = fs_json["solution"]
@@ -92,6 +97,7 @@ def create_and_persist_session(shared_state):
 
     except Exception as e:
         debug(f'Could not prime "{hostname}" session via FlareSolverr: {e}')
+        mark_hostname_issue(hostname, "session", str(e))
         return None
 
     if user and pw:
@@ -113,13 +119,16 @@ def create_and_persist_session(shared_state):
 
         if r.status_code != 200 or "invalid" in r.text.lower():
             info(f'Login failed: "{hostname}" - {r.status_code} - {r.text}')
+            mark_hostname_issue(hostname, "session", "Login failed")
             return None
         info(f'Login successful: "{hostname}"')
     else:
         info(f'Missing credentials for: "{hostname}" - skipping login')
+        mark_hostname_issue(hostname, "session", "Missing credentials")
         return None
 
     _persist_session_to_db(shared_state, sess)
+    clear_hostname_issue(hostname)
     return sess
 
 
@@ -130,6 +139,7 @@ def retrieve_and_validate_session(shared_state):
     # AL requires FlareSolverr - check availability
     if not is_flaresolverr_available(shared_state):
         info(f'"{hostname.upper()}" requires FlareSolverr which is not configured')
+        mark_hostname_issue(hostname, "session", "FlareSolverr required")
         return None
 
     db = shared_state.values["database"]("sessions")
@@ -193,7 +203,7 @@ def _persist_session_to_db(shared_state, sess):
 
 def _load_session_cookies_for_flaresolverr(sess):
     """
-    Convert a requests.Session's cookies into FlareSolverr‐style list of dicts.
+    Convert a requests.Session's cookies into FlareSolverr-style list of dicts.
     """
     cookie_list = []
     for ck in sess.cookies:
@@ -235,9 +245,9 @@ def fetch_via_flaresolverr(shared_state,
     Re-persist the updated session to the DB.
     Return a dict with "status_code", "headers", "json" (parsed - if available), "text" and "cookies".
 
-    – method: "GET" or "POST"
-    – post_data: dict of form‐fields if method=="POST"
-    – timeout: seconds (FlareSolverr's internal maxTimeout = timeout*1000 ms)
+    - method: "GET" or "POST"
+    - post_data: dict of form-fields if method=="POST"
+    - timeout: seconds (FlareSolverr's internal maxTimeout = timeout*1000 ms)
     """
     # Check if FlareSolverr is available
     if not is_flaresolverr_available(shared_state):
@@ -289,9 +299,9 @@ def fetch_via_flaresolverr(shared_state,
             json=fs_payload,
             timeout=timeout + 10
         )
-        resp.raise_for_status()
     except requests.exceptions.RequestException as e:
         info(f"Could not reach FlareSolverr: {e}")
+        mark_hostname_issue(hostname, "session", f"FlareSolverr error: {e}")
         return {
             "status_code": None,
             "headers": {},
@@ -302,6 +312,10 @@ def fetch_via_flaresolverr(shared_state,
         }
     except Exception as e:
         raise RuntimeError(f"Could not reach FlareSolverr: {e}")
+
+    if resp.status_code >= 400:
+        mark_hostname_issue(hostname, "session", f"Request failed: {resp.status_code}")
+        raise RuntimeError(f"Request failed: {resp.status_code}")
 
     fs_json = resp.json()
     if fs_json.get("status") != "ok" or "solution" not in fs_json:
@@ -345,9 +359,9 @@ def fetch_via_flaresolverr(shared_state,
 
 def fetch_via_requests_session(shared_state, method: str, target_url: str, post_data: dict = None, timeout: int = 30):
     """
-    – method: "GET" or "POST"
-    – post_data: for POST only (will be sent as form-data unless you explicitly JSON-encode)
-    – timeout: seconds
+    - method: "GET" or "POST"
+    - post_data: for POST only (will be sent as form-data unless you explicitly JSON-encode)
+    - timeout: seconds
     """
     sess = retrieve_and_validate_session(shared_state)
     if not sess:
@@ -355,11 +369,13 @@ def fetch_via_requests_session(shared_state, method: str, target_url: str, post_
 
     # Execute request
     if method.upper() == "GET":
-        resp = sess.get(target_url, timeout=timeout)
+        r = sess.get(target_url, timeout=timeout)
     else:  # POST
-        resp = sess.post(target_url, data=post_data, timeout=timeout)
+        r = sess.post(target_url, data=post_data, timeout=timeout)
+
+    r.raise_for_status()
 
     # Re-persist cookies, since the site might have modified them during the request
     _persist_session_to_db(shared_state, sess)
 
-    return resp
+    return r

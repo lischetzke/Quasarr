@@ -273,7 +273,7 @@ def add_auth_routes(app):
             return _handle_logout()
 
 
-def add_auth_hook(app, whitelist_prefixes=None, whitelist_suffixes=None):
+def add_auth_hook(app, whitelist_prefixes=[], whitelist_suffixes=[]):
     """Add authentication hook to a Bottle app.
 
     Args:

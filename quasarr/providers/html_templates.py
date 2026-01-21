@@ -195,18 +195,7 @@ def render_centered_html(inner_content, footer_content=""):
                 padding: calc(var(--spacing) * 2);
                 text-align: center;
                 width: 100%;
-                max-width: fit-content;
-            }
-            /* No padding on the sides for captcha view on small screens */
-            @media (max-width: 600px) {
-                body:has(iframe) .outer {
-                    padding-left: 0;
-                    padding-right: 0;
-                }
-                body:has(iframe) .inner {
-                    padding-left: 0;
-                    padding-right: 0;
-                }
+                max-width: 600px;
             }
             h2 {
                 margin-top: var(--spacing);
@@ -234,6 +223,13 @@ def render_centered_html(inner_content, footer_content=""):
             }
             .captcha-container {
                 background-color: var(--secondary);
+            }
+            /* Responsive scaling for fixed-width CAPTCHA iframe (370px) */
+            /* PROBLEM: The drag and drop breaks */
+            @media (max-width: 400px) {
+                #puzzle-captcha {
+                    zoom: 0.75;
+                }
             }
             button {
                 padding: 0.5rem 1rem;
@@ -285,6 +281,54 @@ def render_centered_html(inner_content, footer_content=""):
             footer a:hover {
                 color: var(--fg-color);
             }
+            /* Global Modal Styles */
+            .status-modal-overlay {
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                background: rgba(0, 0, 0, 0.5);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                z-index: 9999;
+                visibility: hidden;
+                opacity: 0;
+                transition: visibility 0s, opacity 0.2s;
+            }
+            .status-modal-overlay.active {
+                visibility: visible;
+                opacity: 1;
+            }
+            .status-modal {
+                background: var(--card-bg);
+                border-radius: 0.5rem;
+                padding: 1.5rem;
+                max-width: 400px;
+                width: 90%;
+                box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+                transform: scale(0.9);
+                transition: transform 0.2s;
+            }
+            .status-modal-overlay.active .status-modal {
+                transform: scale(1);
+            }
+            .status-modal h3 {
+                margin: 0 0 1rem 0;
+                display: flex;
+                align-items: center;
+                gap: 0.5rem;
+            }
+            .status-modal p {
+                margin: 0 0 1rem 0;
+                word-break: break-word;
+            }
+            .status-modal .btn-row {
+                display: flex;
+                gap: 0.5rem;
+                justify-content: flex-end;
+            }
         </style>
     </head>'''
 
@@ -294,6 +338,53 @@ def render_centered_html(inner_content, footer_content=""):
         footer_html = f"{footer_content} · {version_text}"
     else:
         footer_html = version_text
+
+    # Global modal script
+    modal_script = '''
+    <script>
+        function showModal(title, content, buttonsHtml) {
+            let overlay = document.getElementById('global-modal-overlay');
+            if (!overlay) {
+                overlay = document.createElement('div');
+                overlay.id = 'global-modal-overlay';
+                overlay.className = 'status-modal-overlay';
+                overlay.innerHTML = `
+                    <div class="status-modal">
+                        <h3 id="global-modal-title"></h3>
+                        <div id="global-modal-content"></div>
+                        <div class="btn-row" id="global-modal-buttons"></div>
+                    </div>
+                `;
+                document.body.appendChild(overlay);
+                
+                overlay.addEventListener('click', function(e) {
+                    if (e.target === overlay) closeModal();
+                });
+            }
+            
+            document.getElementById('global-modal-title').innerHTML = title;
+            document.getElementById('global-modal-content').innerHTML = content;
+            
+            let btns = buttonsHtml || '<button class="btn-secondary" onclick="closeModal()">Close</button>';
+            document.getElementById('global-modal-buttons').innerHTML = btns;
+            
+            // Small timeout to allow CSS transition
+            requestAnimationFrame(() => {
+                overlay.classList.add('active');
+            });
+        }
+        
+        function closeModal() {
+            const overlay = document.getElementById('global-modal-overlay');
+            if (overlay) {
+                overlay.classList.remove('active');
+                setTimeout(() => {
+                    if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+                }, 200);
+            }
+        }
+    </script>
+    '''
 
     body = f'''
     {head}
@@ -306,6 +397,7 @@ def render_centered_html(inner_content, footer_content=""):
         <footer>
             {footer_html}
         </footer>
+        {modal_script}
     </body>
     '''
     return f'<html>{body}</html>'

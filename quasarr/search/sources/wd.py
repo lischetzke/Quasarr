@@ -12,6 +12,7 @@ from urllib.parse import quote, quote_plus
 import requests
 from bs4 import BeautifulSoup
 
+from quasarr.providers.hostname_issues import mark_hostname_issue, clear_hostname_issue
 from quasarr.providers.imdb_metadata import get_localized_title
 from quasarr.providers.log import info, debug
 
@@ -165,13 +166,18 @@ def wd_feed(shared_state, start_time, request_from, mirror=None):
     url = f"https://{wd}/{feed_type}"
     headers = {'User-Agent': shared_state.values["user_agent"]}
     try:
-        response = requests.get(url, headers=headers, timeout=10).content
-        soup = BeautifulSoup(response, "html.parser")
+        r = requests.get(url, headers=headers, timeout=10)
+        r.raise_for_status()
+        soup = BeautifulSoup(r.content, "html.parser")
         releases = _parse_rows(soup, shared_state, wd, password, mirror)
     except Exception as e:
         info(f"Error loading {hostname.upper()} feed: {e}")
+        mark_hostname_issue(hostname, "feed", str(e) if "e" in dir() else "Error occurred")
         releases = []
     debug(f"Time taken: {time.time() - start_time:.2f}s ({hostname})")
+
+    if releases:
+        clear_hostname_issue(hostname)
     return releases
 
 
@@ -193,8 +199,9 @@ def wd_search(shared_state, start_time, request_from, search_string, mirror=None
     headers = {'User-Agent': shared_state.values["user_agent"]}
 
     try:
-        response = requests.get(url, headers=headers, timeout=10).content
-        soup = BeautifulSoup(response, "html.parser")
+        r = requests.get(url, headers=headers, timeout=10)
+        r.raise_for_status()
+        soup = BeautifulSoup(r.content, "html.parser")
         releases = _parse_rows(
             soup, shared_state, wd, password, mirror,
             request_from=request_from,
@@ -203,6 +210,10 @@ def wd_search(shared_state, start_time, request_from, search_string, mirror=None
         )
     except Exception as e:
         info(f"Error loading {hostname.upper()} search: {e}")
+        mark_hostname_issue(hostname, "search", str(e) if "e" in dir() else "Error occurred")
         releases = []
     debug(f"Time taken: {time.time() - start_time:.2f}s ({hostname})")
+
+    if releases:
+        clear_hostname_issue(hostname)
     return releases

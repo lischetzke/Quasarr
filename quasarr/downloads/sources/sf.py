@@ -8,8 +8,11 @@ from datetime import datetime
 import requests
 from bs4 import BeautifulSoup
 
+from quasarr.providers.hostname_issues import mark_hostname_issue
 from quasarr.providers.log import info, debug
 from quasarr.search.sources.sf import parse_mirrors
+
+hostname = "sf"
 
 
 def is_last_section_integer(url):
@@ -22,19 +25,20 @@ def is_last_section_integer(url):
 def resolve_sf_redirect(url, user_agent):
     """Follow redirects and return final URL or None if 404."""
     try:
-        response = requests.get(url, allow_redirects=True, timeout=10,
-                                headers={'User-Agent': user_agent})
-        if response.history:
-            for resp in response.history:
-                debug(f"Redirected from {resp.url} to {response.url}")
-            if "/404.html" in response.url:
-                info(f"SF link redirected to 404 page: {response.url}")
+        r = requests.get(url, allow_redirects=True, timeout=10, headers={'User-Agent': user_agent})
+        r.raise_for_status()
+        if r.history:
+            for resp in r.history:
+                debug(f"Redirected from {resp.url} to {r.url}")
+            if "/404.html" in r.url:
+                info(f"SF link redirected to 404 page: {r.url}")
                 return None
-            return response.url
+            return r.url
         else:
             info(f"SF blocked attempt to resolve {url}. Your IP may be banned. Try again later.")
     except Exception as e:
         info(f"Error fetching redirected URL for {url}: {e}")
+        mark_hostname_issue(hostname, "download", str(e) if "e" in dir() else "Download error")
     return None
 
 
@@ -84,7 +88,9 @@ def get_sf_download_links(shared_state, url, mirror, title, password):
             season = "ALL"
 
         headers = {'User-Agent': user_agent}
-        series_page = requests.get(url, headers=headers, timeout=10).text
+        r = requests.get(url, headers=headers, timeout=10)
+        r.raise_for_status()
+        series_page = r.text
         soup = BeautifulSoup(series_page, "html.parser")
 
         # Extract IMDb id if present
@@ -100,14 +106,16 @@ def get_sf_download_links(shared_state, url, mirror, title, password):
         epoch = str(datetime.now().timestamp()).replace('.', '')[:-3]
         api_url = 'https://' + sf + '/api/v1/' + season_id + f'/season/{season}?lang=ALL&_=' + epoch
 
-        response = requests.get(api_url, headers=headers, timeout=10)
+        r = requests.get(api_url, headers=headers, timeout=10)
+        r.raise_for_status()
         try:
-            data = response.json()["html"]
+            data = r.json()["html"]
         except ValueError:
             epoch = str(datetime.now().timestamp()).replace('.', '')[:-3]
             api_url = 'https://' + sf + '/api/v1/' + season_id + f'/season/ALL?lang=ALL&_=' + epoch
-            response = requests.get(api_url, headers=headers, timeout=10)
-            data = response.json()["html"]
+            r = requests.get(api_url, headers=headers, timeout=10)
+            r.raise_for_status()
+            data = r.json()["html"]
 
         content = BeautifulSoup(data, "html.parser")
         items = content.find_all("h3")

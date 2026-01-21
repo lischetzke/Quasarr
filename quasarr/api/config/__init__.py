@@ -22,6 +22,12 @@ from quasarr.storage.sqlite_database import DataBase
 
 
 def setup_config(app, shared_state):
+    @app.get("/api/hostname-issues")
+    def get_hostname_issues_api():
+        response.content_type = 'application/json'
+        from quasarr.providers.hostname_issues import get_all_hostname_issues
+        return {"issues": get_all_hostname_issues()}
+
     @app.get('/hostnames')
     def hostnames_ui():
         message = """<p>
@@ -167,18 +173,23 @@ def setup_config(app, shared_state):
             return true;
         }}
         function confirmRestart() {{
-            if (confirm('Restart Quasarr now?')) {{
-                fetch('/api/restart', {{ method: 'POST' }})
-                .then(response => response.json())
-                .then(data => {{
-                    if (data.success) {{
-                        showRestartOverlay();
-                    }}
-                }})
-                .catch(error => {{
+            showModal('Restart Quasarr?', 'Are you sure you want to restart Quasarr now?', 
+                `<button class="btn-secondary" onclick="closeModal()">Cancel</button>
+                 <button class="btn-primary" onclick="performRestart()">Restart</button>`
+            );
+        }}
+        function performRestart() {{
+            closeModal();
+            fetch('/api/restart', {{ method: 'POST' }})
+            .then(response => response.json())
+            .then(data => {{
+                if (data.success) {{
                     showRestartOverlay();
-                }});
-            }}
+                }}
+            }})
+            .catch(error => {{
+                showRestartOverlay();
+            }});
         }}
         function showRestartOverlay() {{
             document.body.innerHTML = `

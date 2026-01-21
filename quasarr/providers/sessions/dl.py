@@ -8,6 +8,7 @@ import pickle
 import requests
 from bs4 import BeautifulSoup
 
+from quasarr.providers.hostname_issues import mark_hostname_issue, clear_hostname_issue
 from quasarr.providers.log import info, debug
 from quasarr.providers.utils import is_site_usable
 
@@ -39,6 +40,7 @@ def create_and_persist_session(shared_state):
 
     if not user or not password:
         info(f'Missing credentials for: "{hostname}" - user and password are required')
+        mark_hostname_issue(hostname, "session", "Missing credentials")
         return None
 
     sess = requests.Session()
@@ -50,18 +52,17 @@ def create_and_persist_session(shared_state):
     try:
         # Step 1: Get login page to retrieve CSRF token
         login_page_url = f'https://www.{host}/login/'
-        login_page = sess.get(login_page_url, timeout=30)
+        login_r = sess.get(login_page_url, timeout=30)
 
-        if login_page.status_code != 200:
-            info(f'Failed to load login page for: "{hostname}" - Status {login_page.status_code}')
-            return None
+        login_r.raise_for_status()
 
         # Extract CSRF token from login form
-        soup = BeautifulSoup(login_page.text, 'html.parser')
+        soup = BeautifulSoup(login_r.text, 'html.parser')
         csrf_input = soup.find('input', {'name': '_xfToken'})
 
         if not csrf_input or not csrf_input.get('value'):
             info(f'Could not find CSRF token on login page for: "{hostname}"')
+            mark_hostname_issue(hostname, "session", "Could not find CSRF token")
             return None
 
         csrf_token = csrf_input['value']
@@ -76,19 +77,23 @@ def create_and_persist_session(shared_state):
         }
 
         login_url = f'https://www.{host}/login/login'
-        login_response = sess.post(login_url, data=login_data, timeout=30)
+        submit_r = sess.post(login_url, data=login_data, timeout=30)
+        submit_r.raise_for_status()
 
         # Step 3: Verify login success
         # Check if we're logged in by accessing the main page
-        verify_response = sess.get(f'https://www.{host}/', timeout=30)
+        verify_r = sess.get(f'https://www.{host}/', timeout=30)
+        verify_r.raise_for_status()
 
-        if 'data-logged-in="true"' not in verify_response.text:
+        if 'data-logged-in="true"' not in verify_r.text:
             info(f'Login verification failed for: "{hostname}" - invalid credentials or login failed')
+            mark_hostname_issue(hostname, "session", "Login verification failed")
             return None
 
         info(f'Session successfully created for: "{hostname}" using user/password')
     except Exception as e:
         info(f'Failed to create session for: "{hostname}" - {e}')
+        mark_hostname_issue(hostname, "session", str(e))
         return None
 
     # Persist session to database
@@ -96,6 +101,7 @@ def create_and_persist_session(shared_state):
     token = base64.b64encode(blob).decode("utf-8")
     shared_state.values["database"]("sessions").update_store(hostname, token)
 
+    clear_hostname_issue(hostname)
     return sess
 
 
@@ -176,11 +182,13 @@ def fetch_via_requests_session(shared_state, method: str, target_url: str, post_
 
     # Execute request
     if method.upper() == "GET":
-        resp = sess.get(target_url, params=get_params, timeout=timeout)
+        r = sess.get(target_url, params=get_params, timeout=timeout)
     else:  # POST
-        resp = sess.post(target_url, data=post_data, timeout=timeout)
+        r = sess.post(target_url, data=post_data, timeout=timeout)
+
+    r.raise_for_status()
 
     # Re-persist cookies, since the site might have modified them during the request
     _persist_session_to_db(shared_state, sess)
 
-    return resp
+    return r

@@ -162,7 +162,7 @@ class FlareSolverrResponse:
 
     def raise_for_status(self):
         if 400 <= self.status_code:
-            raise requests.HTTPError(f"{self.status_code} Error for URL: {self.url}")
+            raise requests.HTTPError(f"{self.status_code} Error at {self.url}")
 
 
 def flaresolverr_get(shared_state, url, timeout=60):

@@ -13,6 +13,7 @@ from urllib.parse import quote_plus
 import requests
 from bs4 import BeautifulSoup
 
+from quasarr.providers.hostname_issues import mark_hostname_issue, clear_hostname_issue
 from quasarr.providers.imdb_metadata import get_localized_title
 from quasarr.providers.log import info, debug
 
@@ -75,8 +76,9 @@ def dt_feed(shared_state, start_time, request_from, mirror=None):
     headers = {'User-Agent': shared_state.values["user_agent"]}
 
     try:
-        resp = requests.get(url, headers=headers, timeout=10).content
-        feed = BeautifulSoup(resp, "html.parser")
+        r = requests.get(url, headers=headers, timeout=30)
+        r.raise_for_status()
+        feed = BeautifulSoup(r.content, "html.parser")
 
         for article in feed.find_all('article'):
             try:
@@ -117,6 +119,7 @@ def dt_feed(shared_state, start_time, request_from, mirror=None):
 
             except Exception as e:
                 info(f"Error parsing {hostname.upper()} feed: {e}")
+                mark_hostname_issue(hostname, "feed", str(e) if "e" in dir() else "Error occurred")
                 continue
 
             releases.append({
@@ -135,9 +138,13 @@ def dt_feed(shared_state, start_time, request_from, mirror=None):
 
     except Exception as e:
         info(f"Error loading {hostname.upper()} feed: {e}")
+        mark_hostname_issue(hostname, "feed", str(e) if "e" in dir() else "Error occurred")
 
     elapsed = time.time() - start_time
     debug(f"Time taken: {elapsed:.2f}s ({hostname})")
+
+    if releases:
+        clear_hostname_issue(hostname)
     return releases
 
 
@@ -188,8 +195,9 @@ def dt_search(shared_state, start_time, request_from, search_string, mirror=None
         )
         headers = {"User-Agent": shared_state.values["user_agent"]}
 
-        resp = requests.get(url, headers=headers, timeout=10).content
-        page = BeautifulSoup(resp, "html.parser")
+        r = requests.get(url, headers=headers, timeout=10)
+        r.raise_for_status()
+        page = BeautifulSoup(r.content, "html.parser")
 
         for article in page.find_all("article"):
             try:
@@ -241,6 +249,7 @@ def dt_search(shared_state, start_time, request_from, search_string, mirror=None
 
             except Exception as e:
                 info(f"Error parsing {hostname.upper()} search item: {e}")
+                mark_hostname_issue(hostname, "search", str(e) if "e" in dir() else "Error occurred")
                 continue
 
             releases.append({
@@ -259,7 +268,11 @@ def dt_search(shared_state, start_time, request_from, search_string, mirror=None
 
     except Exception as e:
         info(f"Error loading {hostname.upper()} search page: {e}")
+        mark_hostname_issue(hostname, "search", str(e) if "e" in dir() else "Error occurred")
 
     elapsed = time.time() - start_time
     debug(f"Search time: {elapsed:.2f}s ({hostname})")
+
+    if releases:
+        clear_hostname_issue(hostname)
     return releases

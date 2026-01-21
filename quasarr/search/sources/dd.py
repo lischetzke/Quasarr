@@ -7,6 +7,7 @@ import time
 from base64 import urlsafe_b64encode
 from datetime import datetime, timezone
 
+from quasarr.providers.hostname_issues import mark_hostname_issue, clear_hostname_issue
 from quasarr.providers.imdb_metadata import get_localized_title
 from quasarr.providers.log import info, debug
 from quasarr.providers.sessions.dd import create_and_persist_session, retrieve_and_validate_session
@@ -39,7 +40,12 @@ def dd_search(shared_state, start_time, request_from, search_string="", mirror=N
         debug(f'Skipping {request_from} search on "{hostname.upper()}" (unsupported media type)!')
         return releases
 
-    dd_session = retrieve_and_validate_session(shared_state)
+    try:
+        dd_session = retrieve_and_validate_session(shared_state)
+    except Exception as e:
+        mark_hostname_issue(hostname, "search", str(e))
+        return releases
+
     if not dd_session:
         info(f"Could not retrieve valid session for {dd}")
         return releases
@@ -56,6 +62,13 @@ def dd_search(shared_state, start_time, request_from, search_string="", mirror=N
             info(f"Could not extract title from IMDb-ID {imdb_id}")
             return releases
         search_string = html.unescape(search_string)
+
+    if not search_string:
+        search_type = "feed"
+        timeout = 30
+    else:
+        search_type = "search"
+        timeout = 10
 
     qualities = [
         "disk-480p",
@@ -78,7 +91,9 @@ def dd_search(shared_state, start_time, request_from, search_string="", mirror=N
         for page in range(0, 100, 20):
             url = f'https://{dd}/index/search/keyword/{search_string}/qualities/{','.join(qualities)}/from/{page}/search'
 
-            releases_on_page = dd_session.get(url, headers=headers, timeout=10).json()
+            r = dd_session.get(url, headers=headers, timeout=timeout)
+            r.raise_for_status()
+            releases_on_page = r.json()
             if releases_on_page:
                 release_list.extend(releases_on_page)
 
@@ -125,12 +140,16 @@ def dd_search(shared_state, start_time, request_from, search_string="", mirror=N
                     })
             except Exception as e:
                 info(f"Error parsing {hostname.upper()} feed: {e}")
+                mark_hostname_issue(hostname, "search", str(e) if "e" in dir() else "Error occurred")
                 continue
 
     except Exception as e:
-        info(f"Error loading {hostname.upper()} feed: {e}")
+        info(f"Error loading {hostname.upper()} {search_type}: {e}")
+        mark_hostname_issue(hostname, search_type, str(e) if "e" in dir() else "Error occurred")
 
     elapsed_time = time.time() - start_time
     debug(f"Time taken: {elapsed_time:.2f}s ({hostname})")
 
+    if releases:
+        clear_hostname_issue(hostname)
     return releases

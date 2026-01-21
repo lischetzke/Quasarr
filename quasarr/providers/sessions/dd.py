@@ -7,6 +7,7 @@ import pickle
 
 import requests
 
+from quasarr.providers.hostname_issues import mark_hostname_issue, clear_hostname_issue
 from quasarr.providers.log import info, debug
 from quasarr.providers.utils import is_site_usable
 
@@ -30,24 +31,28 @@ def create_and_persist_session(shared_state):
         'Login': 'true',
     }
 
-    dd_response = dd_session.post(f'https://{dd}/index/index',
+    r = dd_session.post(f'https://{dd}/index/index',
                                   cookies=cookies, headers=headers, data=data, timeout=10)
+    r.raise_for_status()
 
     error = False
-    if dd_response.status_code == 200:
+    if r.status_code == 200:
         try:
-            response_data = dd_response.json()
+            response_data = r.json()
             if not response_data.get('loggedin'):
                 info("DD rejected login.")
+                mark_hostname_issue(hostname, "session", "Login rejected")
                 raise ValueError
-            session_id = dd_response.cookies.get("PHPSESSID")
+            session_id = r.cookies.get("PHPSESSID")
             if session_id:
                 dd_session.cookies.set('PHPSESSID', session_id, domain=dd)
             else:
                 info("Invalid DD response on login.")
+                mark_hostname_issue(hostname, "session", "Invalid login response")
                 error = True
         except ValueError:
             info("Could not parse DD response on login.")
+            mark_hostname_issue(hostname, "session", "Could not parse login response")
             error = True
 
         if error:
@@ -58,9 +63,11 @@ def create_and_persist_session(shared_state):
         serialized_session = pickle.dumps(dd_session)
         session_string = base64.b64encode(serialized_session).decode('utf-8')
         shared_state.values["database"]("sessions").update_store("dd", session_string)
+        clear_hostname_issue(hostname)
         return dd_session
     else:
         info("Could not create DD session")
+        mark_hostname_issue(hostname, "session", f"HTTP {r.status_code}")
         return None
 
 
@@ -80,6 +87,7 @@ def retrieve_and_validate_session(shared_state):
                 raise ValueError("Retrieved object is not a valid requests.Session instance.")
         except Exception as e:
             info(f"Session retrieval failed: {e}")
+            mark_hostname_issue(hostname, "session", str(e))
             dd_session = create_and_persist_session(shared_state)
 
     return dd_session

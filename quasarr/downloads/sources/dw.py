@@ -7,7 +7,10 @@ import re
 import requests
 from bs4 import BeautifulSoup
 
+from quasarr.providers.hostname_issues import mark_hostname_issue, clear_hostname_issue
 from quasarr.providers.log import info, debug
+
+hostname = "dw"
 
 
 def get_dw_download_links(shared_state, url, mirror, title, password):
@@ -27,11 +30,13 @@ def get_dw_download_links(shared_state, url, mirror, title, password):
     session = requests.Session()
 
     try:
-        request = session.get(url, headers=headers, timeout=10)
-        content = BeautifulSoup(request.text, "html.parser")
+        r = session.get(url, headers=headers, timeout=10)
+        r.raise_for_status()
+        content = BeautifulSoup(r.text, "html.parser")
         download_buttons = content.find_all("button", {"class": "show_link"})
-    except:
+    except Exception as e:
         info(f"DW site has been updated. Grabbing download links for {title} not possible!")
+        mark_hostname_issue(hostname, "download", str(e))
         return {"links": []}
 
     download_links = []
@@ -43,19 +48,17 @@ def get_dw_download_links(shared_state, url, mirror, title, password):
                 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
             }
 
-            response = session.post(ajax_url, payload, headers=headers, timeout=10)
-            if response.status_code != 200:
-                info(f"DW site has been updated. Grabbing download links for {title} not possible!")
-                continue
-            else:
-                response = response.json()
-                link = response["data"].split(",")[0]
+            r = session.post(ajax_url, payload, headers=headers, timeout=10)
+            r.raise_for_status()
 
-                if dw in link:
-                    match = re.search(r'https://' + dw + r'/azn/af\.php\?v=([A-Z0-9]+)(#.*)?', link)
-                    if match:
-                        link = (f'https://filecrypt.cc/Container/{match.group(1)}'
-                                f'.html{match.group(2) if match.group(2) else ""}')
+            response = r.json()
+            link = response["data"].split(",")[0]
+
+            if dw in link:
+                match = re.search(r'https://' + dw + r'/azn/af\.php\?v=([A-Z0-9]+)(#.*)?', link)
+                if match:
+                    link = (f'https://filecrypt.cc/Container/{match.group(1)}'
+                            f'.html{match.group(2) if match.group(2) else ""}')
 
                 hoster = button.nextSibling.img["src"].split("/")[-1].replace(".png", "")
                 hoster = f"1fichier" if hoster.startswith("fichier") else hoster  # align with expected mirror name
@@ -64,8 +67,10 @@ def get_dw_download_links(shared_state, url, mirror, title, password):
                     continue
 
                 download_links.append([link, hoster])
-    except:
+    except Exception as e:
         info(f"DW site has been updated. Parsing download links for {title} not possible!")
-        pass
+        mark_hostname_issue(hostname, "download", str(e))
 
+    if download_links:
+        clear_hostname_issue(hostname)
     return {"links": download_links}

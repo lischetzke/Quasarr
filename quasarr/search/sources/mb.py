@@ -12,6 +12,7 @@ from urllib.parse import quote_plus
 import requests
 from bs4 import BeautifulSoup
 
+from quasarr.providers.hostname_issues import mark_hostname_issue, clear_hostname_issue
 from quasarr.providers.imdb_metadata import get_localized_title
 from quasarr.providers.log import info, debug
 
@@ -151,13 +152,18 @@ def mb_feed(shared_state, start_time, request_from, mirror=None):
     url = f"https://{mb}/category/{section}/"
     headers = {'User-Agent': shared_state.values["user_agent"]}
     try:
-        html_doc = requests.get(url, headers=headers, timeout=10).content
-        soup = BeautifulSoup(html_doc, "html.parser")
+        r = requests.get(url, headers=headers, timeout=30)
+        r.raise_for_status()
+        soup = BeautifulSoup(r.content, "html.parser")
         releases = _parse_posts(soup, shared_state, password, mirror_filter=mirror)
     except Exception as e:
         info(f"Error loading {hostname.upper()} feed: {e}")
+        mark_hostname_issue(hostname, "feed", str(e) if "e" in dir() else "Error occurred")
         releases = []
     debug(f"Time taken: {time.time() - start_time:.2f}s ({hostname})")
+
+    if releases:
+        clear_hostname_issue(hostname)
     return releases
 
 
@@ -181,8 +187,9 @@ def mb_search(shared_state, start_time, request_from, search_string, mirror=None
     url = f"https://{mb}/?s={q}&id=20&post_type=post"
     headers = {'User-Agent': shared_state.values["user_agent"]}
     try:
-        html_doc = requests.get(url, headers=headers, timeout=10).content
-        soup = BeautifulSoup(html_doc, "html.parser")
+        r = requests.get(url, headers=headers, timeout=10)
+        r.raise_for_status()
+        soup = BeautifulSoup(r.content, "html.parser")
         releases = _parse_posts(
             soup, shared_state, password, mirror_filter=mirror,
             is_search=True, request_from=request_from,
@@ -190,6 +197,10 @@ def mb_search(shared_state, start_time, request_from, search_string, mirror=None
         )
     except Exception as e:
         info(f"Error loading {hostname.upper()} search: {e}")
+        mark_hostname_issue(hostname, "search", str(e) if "e" in dir() else "Error occurred")
         releases = []
     debug(f"Time taken: {time.time() - start_time:.2f}s ({hostname})")
+
+    if releases:
+        clear_hostname_issue(hostname)
     return releases
