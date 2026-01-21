@@ -309,21 +309,6 @@ def setup_packages_routes(app):
 
             <p>{back_btn}</p>
 
-            <!-- Delete confirmation modal -->
-            <div class="modal" id="deleteModal">
-                <div class="modal-content">
-                    <h3>🗑️ Delete Package?</h3>
-                    <p class="modal-package-name" id="modalPackageName"></p>
-                    <div class="modal-warning">
-                        <strong>⛔ Warning:</strong> This will permanently delete the package AND all associated files from disk. This action cannot be undone!
-                    </div>
-                    <div class="modal-buttons">
-                        <button class="btn-secondary" onclick="closeModal()">Cancel</button>
-                        <button class="btn-danger" id="confirmDeleteBtn">🗑️ Delete Package & Files</button>
-                    </div>
-                </div>
-            </div>
-
             <style>
                 .packages-container {{ max-width: 600px; margin: 0 auto; }}
                 .section {{ margin: 20px 0; }}
@@ -412,14 +397,6 @@ def setup_packages_routes(app):
                     border: 1px solid var(--error-border, #f1aeb5);
                 }}
 
-                /* Modal */
-                .modal {{ display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center; }}
-                .modal.show {{ display: flex; }}
-                .modal-content {{ background: var(--modal-bg, white); padding: 25px; border-radius: 12px; max-width: 400px; width: 90%; text-align: center; }}
-                .modal-content h3 {{ margin: 0 0 15px 0; color: var(--error-msg-color, #c62828); }}
-                .modal-package-name {{ font-weight: 500; word-break: break-word; padding: 10px; background: var(--code-bg, #f5f5f5); border-radius: 6px; margin: 10px 0; }}
-                .modal-warning {{ background: var(--error-msg-bg, #ffebee); color: var(--error-msg-color, #c62828); padding: 12px; border-radius: 6px; margin: 15px 0; font-size: 0.9em; text-align: left; }}
-                .modal-buttons {{ display: flex; gap: 10px; justify-content: center; margin-top: 20px; }}
                 .btn-danger {{ background: var(--btn-danger-bg, #dc3545); color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-weight: 500; }}
                 .btn-danger:hover {{ opacity: 0.9; }}
 
@@ -544,20 +521,35 @@ def setup_packages_routes(app):
                 let deletePackageId = null;
                 function confirmDelete(packageId, packageName) {{
                     deletePackageId = packageId;
-                    document.getElementById('modalPackageName').textContent = packageName;
-                    document.getElementById('deleteModal').classList.add('show');
-                    refreshPaused = true;  // Pause background refresh while modal is open
+                    
+                    const content = `
+                        <p class="modal-package-name" style="font-weight: 500; word-break: break-word; padding: 10px; background: var(--code-bg, #f5f5f5); border-radius: 6px; margin: 10px 0;">${{packageName}}</p>
+                        <div class="modal-warning" style="background: var(--error-msg-bg, #ffebee); color: var(--error-msg-color, #c62828); padding: 12px; border-radius: 6px; margin: 15px 0; font-size: 0.9em; text-align: left;">
+                            <strong>⛔ Warning:</strong> This will permanently delete the package AND all associated files from disk. This action cannot be undone!
+                        </div>
+                    `;
+                    
+                    const buttons = `
+                        <button class="btn-secondary" onclick="closeModal()">Cancel</button>
+                        <button class="btn-danger" onclick="performDelete()">🗑️ Delete Package & Files</button>
+                    `;
+                    
+                    showModal('🗑️ Delete Package?', content, buttons);
+                    refreshPaused = true;
                 }}
-                function closeModal() {{
-                    document.getElementById('deleteModal').classList.remove('show');
-                    deletePackageId = null;
-                    refreshPaused = false;  // Resume background refresh
+                
+                function performDelete() {{
+                    if (deletePackageId) {{
+                        location.href = '/packages/delete/' + encodeURIComponent(deletePackageId);
+                    }}
                 }}
-                document.getElementById('confirmDeleteBtn').onclick = function() {{
-                    if (deletePackageId) location.href = '/packages/delete/' + encodeURIComponent(deletePackageId);
+                
+                // Hook into modal closing to resume refresh
+                const baseCloseModal = window.closeModal;
+                window.closeModal = function() {{
+                    if (baseCloseModal) baseCloseModal();
+                    refreshPaused = false;
                 }};
-                document.getElementById('deleteModal').onclick = function(e) {{ if (e.target === this) closeModal(); }};
-                document.addEventListener('keydown', function(e) {{ if (e.key === 'Escape') closeModal(); }});
             </script>
         '''
 

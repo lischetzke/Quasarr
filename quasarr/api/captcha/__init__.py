@@ -1211,18 +1211,6 @@ def setup_captcha_routes(app):
 
         content = render_centered_html(r'''
             <style>
-                @media (max-width: 600px) {
-                    .package-selector,
-                    #failed-attempts-warning {
-                        margin-left: 0 !important;
-                        margin-right: 0 !important;
-                        padding-left: 8px !important;
-                        padding-right: 8px !important;
-                        border-radius: 0 !important;
-                        border-left: none !important;
-                        border-right: none !important;
-                    }
-                }
                 /* Fix captcha container to shrink-wrap iframe on desktop */
                 .captcha-container {
                     display: inline-block;

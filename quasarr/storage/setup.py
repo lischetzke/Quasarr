@@ -75,7 +75,7 @@ def render_reconnect_success(message, countdown_seconds=3):
     '''
 
     content = f'''<h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
-    <h2>✓ Success</h2>
+    <h2>✅ Success</h2>
     <p>{message}</p>
     {button_html}
     {script}
@@ -157,13 +157,19 @@ def path_config(shared_state):
     return Server(app, listen='0.0.0.0', port=shared_state.values['port']).serve_temporarily()
 
 
+def _escape_js_for_html_attr(s):
+    """Escape a string for use inside a JS string literal within an HTML attribute."""
+    if s is None:
+        return ""
+    return str(s).replace("\\", "\\\\").replace("'", "\\'").replace('"', '&quot;').replace("\n", "\\n").replace("\r", "")
+
+
 def hostname_form_html(shared_state, message, show_restart_button=False, show_skip_management=False):
     hostname_fields = '''
-    <label for="{id}" style="display:inline-flex; align-items:center; gap:4px;">
-        <span class="status-indicator" id="status-{id}" data-status="{status}" data-message="{status_message}" 
-              onclick="showStatusDetail(\'{id}\', \'{label}\', \'{status}\', this.dataset.message)" 
-              style="cursor:pointer; font-size:1rem;" title="{status_title}">{status_emoji}</span>
-        {label}{img_html}
+    <label for="{id}" onclick="showStatusDetail(\'{id}\', \'{label}\', \'{status}\', \'{error_details_for_modal}\', \'{timestamp}\', \'{operation}\', \'{url}\')" 
+           style="cursor:pointer; display:inline-flex; align-items:center; gap:4px;" title="{status_title}">
+        <span class="status-indicator" id="status-{id}" data-status="{status}">{status_emoji}</span>
+        {label}
     </label>
     <input type="text" id="{id}" name="{id}" placeholder="example.com" autocorrect="off" autocomplete="off" value="{value}"><br>
     '''
@@ -183,13 +189,6 @@ def hostname_form_html(shared_state, message, show_restart_button=False, show_sk
 
     for label in shared_state.values["sites"]:
         field_id = label.lower()
-        img_html = ''
-        try:
-            img_data = getattr(images, field_id)
-            if img_data:
-                img_html = f' <img src="{img_data}" width="16" height="16" style="filter: blur(2px);" alt="{label} icon">'
-        except AttributeError:
-            pass
 
         # Get the current value (if any and non-empty)
         current_value = hostnames.get(field_id)
@@ -199,39 +198,44 @@ def hostname_form_html(shared_state, message, show_restart_button=False, show_sk
         # Determine traffic light status
         is_login_skipped = field_id in login_required_sites and skip_login_db.retrieve(field_id)
         issue = hostname_issues.get(field_id)
+        timestamp = ""
+        operation = ""
+        error_details_for_modal = "" # New variable to hold the full error message for the modal
 
         if not current_value:
             status = "unset"
             status_emoji = "⚫️"
             status_title = "Hostname not configured"
-            status_message = "This hostname is not configured."
+            error_details_for_modal = "This hostname is not configured."
         elif is_login_skipped:
             status = "skipped"
             status_emoji = "🟡"
             status_title = "Login was skipped"
-            status_message = "Login was skipped for this site."
+            error_details_for_modal = "Login was skipped for this site."
         elif issue:
             status = "error"
             status_emoji = "🔴"
             operation = issue.get("operation", "unknown")
-            error_msg = issue.get("error", "Unknown error")[:200]
-            status_title = f"Error during {operation}"
-            status_message = f"Error during {operation}: {error_msg}"
+            error_details_for_modal = issue.get("error", "Unknown error") # Get the full error message
+            timestamp = issue.get("timestamp", "")
+            status_title = f"Error in {operation}"
         else:
             status = "ok"
             status_emoji = "🟢"
             status_title = "Working normally"
-            status_message = "Configured and working normally."
+            error_details_for_modal = "Configured and working normally."
 
         field_html.append(hostname_fields.format(
             id=field_id,
-            label=label,
-            img_html=img_html,
+            label=_escape_js_for_html_attr(label),
             value=current_value,
             status=status,
             status_emoji=status_emoji,
             status_title=status_title,
-            status_message=status_message.replace('"', '&quot;').replace("'", "&#39;")
+            error_details_for_modal=_escape_js_for_html_attr(error_details_for_modal),
+            timestamp=timestamp,
+            operation=_escape_js_for_html_attr(operation),
+            url=_escape_js_for_html_attr(current_value)
         ))
 
         # Add skip indicator for login-required sites if skip management is enabled
@@ -298,41 +302,6 @@ def hostname_form_html(shared_state, message, show_restart_button=False, show_sk
     .status-indicator:hover {{
         transform: scale(1.2);
     }}
-    .status-modal-overlay {{
-        position: fixed;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        background: rgba(0, 0, 0, 0.5);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        z-index: 9999;
-    }}
-    .status-modal {{
-        background: var(--card-bg, #fff);
-        border-radius: 0.5rem;
-        padding: 1.5rem;
-        max-width: 400px;
-        width: 90%;
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
-    }}
-    .status-modal h3 {{
-        margin: 0 0 1rem 0;
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-    }}
-    .status-modal p {{
-        margin: 0 0 1rem 0;
-        word-break: break-word;
-    }}
-    .status-modal .btn-row {{
-        display: flex;
-        gap: 0.5rem;
-        justify-content: flex-end;
-    }}
     .btn-subtle {{
         background: transparent;
         color: var(--fg-color, #212529);
@@ -392,7 +361,6 @@ def hostname_form_html(shared_state, message, show_restart_button=False, show_sk
     }}
 
     errorDiv.textContent = 'Please fill in at least one hostname!';
-    inputs[0].focus();
     return false;
   }}
 
@@ -470,33 +438,38 @@ def hostname_form_html(shared_state, message, show_restart_button=False, show_sk
     .then(response => response.json())
     .then(data => {{
       if (data.success) {{
-        // Remove the skip indicator using the button's parent
         var indicator = btnElement.closest('.skip-indicator');
         if (indicator) indicator.remove();
-        alert('Login requirement restored for ' + shorthand.toUpperCase() + '. Restart Quasarr to be prompted for credentials.');
+        showStatusDetail(shorthand, shorthand.toUpperCase(), 'info', 'Login requirement restored. Restart Quasarr to be prompted for credentials.', '', '', '');
       }} else {{
-        alert('Failed to clear skip preference');
+        showStatusDetail(shorthand, shorthand.toUpperCase(), 'error', 'Failed to clear skip preference', '', '', '');
       }}
     }})
     .catch(error => {{
-      alert('Error: ' + error.message);
+      showStatusDetail(shorthand, shorthand.toUpperCase(), 'error', 'Error: ' + error.message, '', '', '');
     }});
   }}
 
   function confirmRestart() {{
-    if (confirm('Restart Quasarr now? Any unsaved changes will be lost.')) {{
-      fetch('/api/restart', {{ method: 'POST' }})
-      .then(response => response.json())
-      .then(data => {{
-        if (data.success) {{
-          showRestartOverlay();
-        }}
-      }})
-      .catch(error => {{
-        // Expected - connection will be lost during restart
+    showModal('Restart Quasarr?', 'Are you sure you want to restart Quasarr now? Any unsaved changes will be lost.', 
+        `<button class="btn-secondary" onclick="closeModal()">Cancel</button>
+         <button class="btn-primary" onclick="performRestart()">Restart</button>`
+    );
+  }}
+
+  function performRestart() {{
+    closeModal();
+    fetch('/api/restart', {{ method: 'POST' }})
+    .then(response => response.json())
+    .then(data => {{
+      if (data.success) {{
         showRestartOverlay();
-      }});
-    }}
+      }}
+    }})
+    .catch(error => {{
+      // Expected - connection will be lost during restart
+      showRestartOverlay();
+    }});
   }}
 
   function showRestartOverlay() {{
@@ -561,52 +534,66 @@ def hostname_form_html(shared_state, message, show_restart_button=False, show_sk
   }}
 </script>
 <script>
-    function showStatusDetail(id, label, status, message) {{
-        if (document.getElementById('status-modal-overlay')) return;
-    
+    function showStatusDetail(id, label, status, error_details, timestamp, operation, url) {{
         var statusTextMap = {{
-            ok: 'Working normally',
+            ok: 'Operational',
             error: 'Error',
             unset: 'Not configured',
-            skipped: 'Login skipped'
+            skipped: 'Login skipped',
+            info: 'Information'
         }};
     
         var emojiMap = {{
             ok: '🟢',
             error: '🔴',
             unset: '⚫️',
-            skipped: '🟡'
+            skipped: '🟡',
+            info: 'ℹ️'
         }};
     
-        var overlay = document.createElement('div');
-        overlay.id = 'status-modal-overlay';
-        overlay.className = 'status-modal-overlay';
-    
-        overlay.innerHTML =
-            '<div class="status-modal">' +
-                '<h3>' +
-                    '<span>' + (emojiMap[status] || 'ℹ️') + '</span>' +
-                    label +
-                '</h3>' +
-                '<p><strong>Status:</strong> ' + (statusTextMap[status] || status) + '</p>' +
-                '<p>' + (message || 'No additional details available.') + '</p>' +
-                '<div class="btn-row">' +
-                    '<button class="btn-secondary" id="statusModalClose">Close</button>' +
-                '</div>' +
-            '</div>';
-    
-        overlay.addEventListener('click', function(e) {{
-            if (e.target === overlay) closeStatusModal();
-        }});
-    
-        document.body.appendChild(overlay);
-    
-        document.getElementById('statusModalClose').addEventListener('click', closeStatusModal);
-    
-        function closeStatusModal() {{
-            var el = document.getElementById('status-modal-overlay');
-            if (el) el.remove();
+        var content_html = '';
+        if (status === 'error') {{
+            content_html += '<p>' + (error_details || 'No details available.') + '</p>';
+        }} else {{
+            content_html += '<p>' + (error_details || 'No additional details available.') + '</p>';
         }}
+
+        var timestamp_html = '';
+        if (timestamp) {{
+            var d = new Date(timestamp);
+            var day = ("0" + d.getDate()).slice(-2);
+            var month = ("0" + (d.getMonth() + 1)).slice(-2);
+            var year = d.getFullYear();
+            var hours = ("0" + d.getHours()).slice(-2);
+            var minutes = ("0" + d.getMinutes()).slice(-2);
+            var seconds = ("0" + d.getSeconds()).slice(-2);
+            var formattedTimestamp = day + "." + month + "." + year + " " + hours + ":" + minutes + ":" + seconds;
+
+            if (operation) {{
+                timestamp_html = '<p><small>Occurred in ' + operation + ' at ' + formattedTimestamp + '</small></p>';
+            }} else {{
+                timestamp_html = '<p><small>Occurred at: ' + formattedTimestamp + '</small></p>';
+            }}
+        }}
+        
+        var content = content_html + timestamp_html;
+        var title = '<span>' + (emojiMap[status] || 'ℹ️') + '</span> ' + label + ' - ' + (statusTextMap[status] || status);
+        
+        var buttons = '';
+        if (url) {{
+            var href = url;
+            if (!href.startsWith('http://') && !href.startsWith('https://')) {{
+                href = 'https://' + href;
+            }}
+            buttons = `
+                <button class="btn-primary" style="margin-right: auto;" onclick="window.open('${{href}}', '_blank')">Check ${{id.toUpperCase()}}</button>
+                <button class="btn-secondary" onclick="closeModal()">Close</button>
+            `;
+        }} else {{
+            buttons = '<button class="btn-secondary" onclick="closeModal()">Close</button>';
+        }}
+        
+        showModal(title, content, buttons);
     }}
 </script>
 """
@@ -847,14 +834,14 @@ def hostname_credentials_config(shared_state, shorthand, domain):
                 if (response.ok) {{
                     window.location.href = '/skip-success';
                 }} else {{
-                    alert('Failed to skip login');
+                    showModal('Error', 'Failed to skip login');
                     formSubmitted = false;
                     if (skipBtn) {{ skipBtn.disabled = false; skipBtn.textContent = 'Skip for now'; }}
                     if (submitBtn) {{ submitBtn.disabled = false; }}
                 }}
             }})
             .catch(error => {{
-                alert('Error: ' + error.message);
+                showModal('Error', 'Error: ' + error.message);
                 formSubmitted = false;
                 if (skipBtn) {{ skipBtn.disabled = false; skipBtn.textContent = 'Skip for now'; }}
                 if (submitBtn) {{ submitBtn.disabled = false; }}
@@ -998,14 +985,14 @@ def flaresolverr_config(shared_state):
                 if (response.ok) {{
                     window.location.href = '/skip-success';
                 }} else {{
-                    alert('Failed to skip FlareSolverr setup');
+                    showModal('Error', 'Failed to skip FlareSolverr setup');
                     formSubmitted = false;
                     if (skipBtn) {{ skipBtn.disabled = false; skipBtn.textContent = 'Skip for now'; }}
                     if (submitBtn) {{ submitBtn.disabled = false; }}
                 }}
             }})
             .catch(error => {{
-                alert('Error: ' + error.message);
+                showModal('Error', 'Error: ' + error.message);
                 formSubmitted = false;
                 if (skipBtn) {{ skipBtn.disabled = false; skipBtn.textContent = 'Skip for now'; }}
                 if (submitBtn) {{ submitBtn.disabled = false; }}
@@ -1138,7 +1125,7 @@ def jdownloader_config(shared_state):
                     document.getElementById("verifyButton").style.display = "none";
                     document.getElementById('deviceForm').style.display = 'block';
                 } else {
-                    alert('Fehler! Bitte die Zugangsdaten überprüfen.');
+                    showModal('Error', 'Fehler! Bitte die Zugangsdaten überprüfen.');
                     verifyInProgress = false;
                     if (btn) { btn.disabled = false; btn.textContent = 'Verify Credentials'; }
                 }

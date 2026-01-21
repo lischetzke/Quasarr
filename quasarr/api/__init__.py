@@ -14,7 +14,7 @@ from quasarr.api.statistics import setup_statistics
 from quasarr.providers import shared_state
 from quasarr.providers.auth import add_auth_routes, add_auth_hook, show_logout_link
 from quasarr.providers.hostname_issues import get_all_hostname_issues
-from quasarr.providers.html_templates import render_button, render_centered_html
+from quasarr.providers.html_templates import render_button, render_centered_html, render_success
 from quasarr.providers.web_server import Server
 from quasarr.storage.config import Config
 from quasarr.storage.sqlite_database import DataBase
@@ -173,7 +173,7 @@ def get_api(shared_state_dict, shared_state_lock):
                     </div>
 
                     <p style="margin-top: 15px;">
-                        {render_button("Regenerate API key", "secondary", {"onclick": "if(confirm('Regenerate API key?')) location.href='/regenerate-api-key';"})}
+                        {render_button("Regenerate API key", "secondary", {"onclick": "confirmRegenerateApiKey()"})}
                     </p>
                 </div>
             </details>
@@ -424,7 +424,7 @@ def get_api(shared_state_dict, shared_state_lock):
                             if (callback) callback();
                         }}, 1500);
                     }} catch (e) {{
-                        alert('Copy failed. Please copy manually.');
+                        showModal('Error', 'Copy failed. Please copy manually.');
                     }}
                     document.body.removeChild(textarea);
                 }}
@@ -457,6 +457,15 @@ def get_api(shared_state_dict, shared_state_lock):
                     }};
                 }}
             }})();
+
+            function confirmRegenerateApiKey() {{
+                showModal(
+                    'Regenerate API key?', 
+                    'Are you sure you want to regenerate the API key? This will invalidate the current key.', 
+                    `<button class="btn-secondary" onclick="closeModal()">Cancel</button>
+                     <button class="btn-primary" onclick="location.href='/regenerate-api-key'">Regenerate</button>`
+                );
+            }}
         </script>
         """
         # Add logout link for form auth
@@ -465,12 +474,6 @@ def get_api(shared_state_dict, shared_state_lock):
 
     @app.get('/regenerate-api-key')
     def regenerate_api_key():
-        api_key = shared_state.generate_api_key()
-        return f"""
-        <script>
-          alert('API key replaced with: {api_key}');
-          window.location.href = '/';
-        </script>
-        """
+        return render_success(f'API key replaced!', 5)
 
     Server(app, listen='0.0.0.0', port=shared_state.values["port"]).serve_forever()

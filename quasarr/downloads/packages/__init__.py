@@ -639,12 +639,12 @@ def get_packages(shared_state, _cache=None):
             debug(
                 f"         -> {item['percentage']}% | {item['timeleft']} | {size_str} | {item['cat']} {archive_indicator}")
         for item in downloads['history']:
-            status_icon = "✓" if item['status'] == 'Completed' else "✗"
+            status_icon = "✅" if item['status'] == 'Completed' else "✗"
             is_archive = item.get('is_archive')
             extraction_ok = item.get('extraction_ok', False)
             # Only show archive status if we know it's an archive
             if is_archive:
-                archive_status = f"[ARCHIVE: {'EXTRACTED ✓' if extraction_ok else 'NOT EXTRACTED'}]"
+                archive_status = f"[ARCHIVE: {'EXTRACTED ✅' if extraction_ok else 'NOT EXTRACTED'}]"
             else:
                 archive_status = ""
             # Format size

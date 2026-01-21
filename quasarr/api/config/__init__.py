@@ -173,18 +173,23 @@ def setup_config(app, shared_state):
             return true;
         }}
         function confirmRestart() {{
-            if (confirm('Restart Quasarr now?')) {{
-                fetch('/api/restart', {{ method: 'POST' }})
-                .then(response => response.json())
-                .then(data => {{
-                    if (data.success) {{
-                        showRestartOverlay();
-                    }}
-                }})
-                .catch(error => {{
+            showModal('Restart Quasarr?', 'Are you sure you want to restart Quasarr now?', 
+                `<button class="btn-secondary" onclick="closeModal()">Cancel</button>
+                 <button class="btn-primary" onclick="performRestart()">Restart</button>`
+            );
+        }}
+        function performRestart() {{
+            closeModal();
+            fetch('/api/restart', {{ method: 'POST' }})
+            .then(response => response.json())
+            .then(data => {{
+                if (data.success) {{
                     showRestartOverlay();
-                }});
-            }}
+                }}
+            }})
+            .catch(error => {{
+                showRestartOverlay();
+            }});
         }}
         function showRestartOverlay() {{
             document.body.innerHTML = `
