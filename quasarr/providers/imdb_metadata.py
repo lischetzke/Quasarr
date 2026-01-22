@@ -195,8 +195,6 @@ def get_imdb_metadata(imdb_id):
             cached_metadata = loads(cached_data)
             # If valid, update TTL and return
             if cached_metadata.get("ttl") and cached_metadata["ttl"] > now:
-                cached_metadata["ttl"] = now + timedelta(days=30).total_seconds()
-                db.update_store(imdb_id, dumps(cached_metadata))
                 return cached_metadata
     except Exception as e:
         debug(f"Error retrieving IMDb metadata from DB for {imdb_id}: {e}")
@@ -223,7 +221,7 @@ def get_imdb_metadata(imdb_id):
     # Process API response
     imdb_metadata["title"] = TitleCleaner.sanitize(response_json.get("primaryTitle", ""))
     imdb_metadata["year"] = response_json.get("startYear")
-    imdb_metadata["ttl"] = now + timedelta(days=30).total_seconds()
+    imdb_metadata["ttl"] = now + timedelta(days=7).total_seconds()
 
     try:
         imdb_metadata["poster_link"] = response_json.get("primaryImage").get("url")
