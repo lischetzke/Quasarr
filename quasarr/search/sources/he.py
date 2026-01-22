@@ -12,7 +12,7 @@ import requests
 from bs4 import BeautifulSoup
 
 from quasarr.providers.hostname_issues import mark_hostname_issue, clear_hostname_issue
-from quasarr.providers.imdb_metadata import get_localized_title
+from quasarr.providers.imdb_metadata import get_localized_title, get_year
 from quasarr.providers.log import info, debug
 
 hostname = "he"
@@ -84,6 +84,9 @@ def he_search(shared_state, start_time, request_from, search_string="", mirror=N
             if not local_title:
                 info(f"{hostname}: no title for IMDb {imdb_id}")
                 return releases
+            year = get_year(imdb_id)
+            if year:
+                local_title += f" {year}"
             source_search = local_title
         else:
             return releases
@@ -173,6 +176,9 @@ def he_search(shared_state, start_time, request_from, search_string="", mirror=N
             try:
                 r = requests.get(source, headers=headers, timeout=10)
                 soup = BeautifulSoup(r.content, 'html.parser')
+            except Exception as e:
+                mark_hostname_issue(hostname, search_type, str(e) if "e" in dir() else "Error occurred")
+            try:
                 imdb_link = soup.find('a', href=re.compile(r"imdb\.com/title/tt\d+", re.IGNORECASE))
                 if imdb_link:
                     release_imdb_id = re.search(r'tt\d+', imdb_link['href']).group()

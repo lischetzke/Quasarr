@@ -5,6 +5,7 @@
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+from quasarr.providers.imdb_metadata import get_imdb_metadata
 from quasarr.providers.log import info, debug
 from quasarr.search.sources.al import al_feed, al_search
 from quasarr.search.sources.by import by_feed, by_search
@@ -30,6 +31,10 @@ def get_search_results(shared_state, request_from, imdb_id="", search_phrase="",
 
     if imdb_id and not imdb_id.startswith('tt'):
         imdb_id = f'tt{imdb_id}'
+
+    # Pre-populate IMDb metadata cache to avoid API hammering by search threads
+    if imdb_id:
+        get_imdb_metadata(imdb_id)
 
     docs_search = "lazylibrarian" in request_from.lower()
 
