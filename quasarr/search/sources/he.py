@@ -176,6 +176,9 @@ def he_search(shared_state, start_time, request_from, search_string="", mirror=N
             try:
                 r = requests.get(source, headers=headers, timeout=10)
                 soup = BeautifulSoup(r.content, 'html.parser')
+            except Exception as e:
+                mark_hostname_issue(hostname, search_type, str(e) if "e" in dir() else "Error occurred")
+            try:
                 imdb_link = soup.find('a', href=re.compile(r"imdb\.com/title/tt\d+", re.IGNORECASE))
                 if imdb_link:
                     release_imdb_id = re.search(r'tt\d+', imdb_link['href']).group()
