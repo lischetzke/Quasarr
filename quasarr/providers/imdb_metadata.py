@@ -5,7 +5,7 @@
 import html
 import re
 from datetime import datetime, timedelta
-from json import loads
+from json import loads, dumps
 from urllib.parse import quote
 
 import requests
@@ -14,7 +14,19 @@ from bs4 import BeautifulSoup
 from quasarr.providers.log import info, debug
 
 
+def _get_db(table_name):
+    """Lazy import to avoid circular dependency."""
+    from quasarr.storage.sqlite_database import DataBase
+    return DataBase(table_name)
+
+
 def get_poster_link(shared_state, imdb_id):
+    imdb_metadata = get_imdb_metadata(imdb_id)
+    if imdb_metadata:
+        poster_link = imdb_metadata.get("poster_link")
+        if poster_link:
+            return poster_link
+
     poster_link = None
     if imdb_id:
         headers = {'User-Agent': shared_state.values["user_agent"]}
@@ -34,8 +46,80 @@ def get_poster_link(shared_state, imdb_id):
 
     return poster_link
 
+def sanitize_title(title):
+    sanitized_title = html.unescape(title)
+    sanitized_title = re.sub(r"[^a-zA-Z0-9äöüÄÖÜß&-']", ' ', sanitized_title).strip()
+    sanitized_title = sanitized_title.replace(" - ", "-")
+    sanitized_title = re.sub(r'\s{2,}', ' ', sanitized_title)
+    return sanitized_title
+
+def get_imdb_metadata(imdb_id):
+    db = _get_db("imdb_metadata")
+    now = datetime.now().timestamp()
+
+    try:
+        imdb_metadata = loads(db.retrieve(imdb_id))
+        if imdb_metadata["ttl"] and imdb_metadata["ttl"] > now:
+            return imdb_metadata.data
+    except:
+        imdb_metadata = {
+            "title": None,
+            "year": None,
+            "poster_link": None,
+            "localized": {},
+            "ttl": 0
+        }
+
+    imdb_metadata["ttl"] = now + timedelta(days=30).total_seconds()
+
+    try:
+        response = requests.get(f"https://api.imdbapi.dev/titles/{imdb_id}", timeout=10)
+        response.raise_for_status()
+        response_json = response.json()
+    except Exception as e:
+        info(f"Error loading imdbapi.dev for {imdb_id}: {e}")
+        return imdb_metadata
+
+    imdb_metadata["title"] = sanitize_title(response_json.get("primaryTitle", ""))
+    imdb_metadata["year"] = response_json.get("startYear")
+
+    try:
+        imdb_metadata["poster_link"] = response_json.get("primaryImage").get("url")
+    except Exception as e:
+        debug(f"Could not find poster link for {imdb_id} from imdbapi.dev: {e}")
+        imdb_metadata["ttl"] = now + timedelta(days=1).total_seconds()
+
+    try:
+        response = requests.get(f"https://api.imdbapi.dev/titles/{imdb_id}/akas", timeout=10)
+        response.raise_for_status()
+        
+        for aka in response.json().get("akas"):
+            if aka.get("language"):
+                continue # skip entries with specific language tags
+            if aka.get("country").get("code").lower() == "de":
+                imdb_metadata["localized"]["de"] = sanitize_title(aka.get("text"))
+                break
+    except Exception as e:
+        info(f"Error loading localized titles from IMDbAPI.dev for {imdb_id}: {e}")
+        imdb_metadata["ttl"] = now + timedelta(days=1).total_seconds()
+    
+    db.update_store(imdb_id, dumps(imdb_metadata))
+    return imdb_metadata
+
+def get_year(imdb_id):
+    imdb_metadata = get_imdb_metadata(imdb_id)
+    if imdb_metadata:
+        return imdb_metadata.get("year")
+    return None
 
 def get_localized_title(shared_state, imdb_id, language='de'):
+    imdb_metadata = get_imdb_metadata(imdb_id)
+    if imdb_metadata:
+        localized_title = imdb_metadata.get("localized").get(language)
+        if localized_title:
+            return localized_title
+        return imdb_metadata.get("title")
+    
     localized_title = None
 
     headers = {
@@ -45,6 +129,7 @@ def get_localized_title(shared_state, imdb_id, language='de'):
 
     try:
         response = requests.get(f"https://www.imdb.com/title/{imdb_id}/", headers=headers, timeout=10)
+        response.raise_for_status()
     except Exception as e:
         info(f"Error loading IMDb metadata for {imdb_id}: {e}")
         return localized_title
@@ -61,12 +146,8 @@ def get_localized_title(shared_state, imdb_id, language='de'):
 
     if not localized_title:
         debug(f"Could not get localized title for {imdb_id} in {language} from IMDb")
-
-    localized_title = html.unescape(localized_title)
-    localized_title = re.sub(r"[^a-zA-Z0-9äöüÄÖÜß&-']", ' ', localized_title).strip()
-    localized_title = localized_title.replace(" - ", "-")
-    localized_title = re.sub(r'\s{2,}', ' ', localized_title)
-
+    else:
+        localized_title = sanitize_title(localized_title)
     return localized_title
 
 
