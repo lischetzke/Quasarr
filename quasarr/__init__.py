@@ -259,10 +259,10 @@ def flaresolverr_checker(shared_state_dict, shared_state_lock):
             info('FlareSolverr setup skipped by user preference')
             info('Some sites (AL) will not work without FlareSolverr. Configure it later in the web UI.')
         elif flaresolverr_url:
-            print(f'Flaresolverr URL: "{flaresolverr_url}"')
+            info(f'Flaresolverr URL: "{flaresolverr_url}"')
             flaresolverr_check = check_flaresolverr(shared_state, flaresolverr_url)
             if flaresolverr_check:
-                print(f'Using same User-Agent as FlareSolverr: "{shared_state.values["user_agent"]}"')
+                info(f'Using same User-Agent as FlareSolverr: "{shared_state.values["user_agent"]}"')
 
     except KeyboardInterrupt:
         pass
