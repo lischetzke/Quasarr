@@ -169,6 +169,14 @@ def run():
                     else:
                         hostname_credentials_config(shared_state, site.upper(), hostname)
 
+        # Check FlareSolverr configuration
+        skip_flaresolverr_db = DataBase("skip_flaresolverr")
+        flaresolverr_skipped = skip_flaresolverr_db.retrieve("skipped")
+        flaresolverr_url = Config('FlareSolverr').get('url')
+
+        if not flaresolverr_url and not flaresolverr_skipped:
+            flaresolverr_config(shared_state)
+
         config = Config('JDownloader')
         user = config.get('user')
         password = config.get('password')
@@ -249,23 +257,33 @@ def flaresolverr_checker(shared_state_dict, shared_state_lock):
         flaresolverr_skipped = skip_flaresolverr_db.retrieve("skipped")
 
         flaresolverr_url = Config('FlareSolverr').get('url')
+        
+        # If FlareSolverr is not configured and not skipped, it means it's the first run
+        # and the user needs to be prompted via the WebUI.
+        # This background process should NOT block or prompt the user.
+        # It should only check and log the status.
         if not flaresolverr_url and not flaresolverr_skipped:
-            flaresolverr_config(shared_state)
-            # Re-check after config - user may have skipped
-            flaresolverr_skipped = skip_flaresolverr_db.retrieve("skipped")
-            flaresolverr_url = Config('FlareSolverr').get('url')
+            info('FlareSolverr URL not configured. Please configure it via the WebUI.')
+            info('Some sites (AL) will not work without FlareSolverr.')
+            return # Exit the checker, it will be re-checked if user configures it later
 
         if flaresolverr_skipped:
             info('FlareSolverr setup skipped by user preference')
             info('Some sites (AL) will not work without FlareSolverr. Configure it later in the web UI.')
         elif flaresolverr_url:
-            info(f'Flaresolverr URL: "{flaresolverr_url}"')
+            info(f'Checking FlareSolverr at URL: "{flaresolverr_url}"')
             flaresolverr_check = check_flaresolverr(shared_state, flaresolverr_url)
             if flaresolverr_check:
-                info(f'Using same User-Agent as FlareSolverr: "{shared_state.values["user_agent"]}"')
+                info(f'FlareSolverr connection successful. Using User-Agent: "{shared_state.values["user_agent"]}"')
+            else:
+                info('FlareSolverr check failed - using fallback user agent')
+                # Fallback user agent is already set in main process, but we log it
+                info(f'User Agent (fallback): "{FALLBACK_USER_AGENT}"')
 
     except KeyboardInterrupt:
         pass
+    except Exception as e:
+        info(f"An unexpected error occurred in FlareSolverr checker: {e}")
 
 
 def update_checker(shared_state_dict, shared_state_lock):
