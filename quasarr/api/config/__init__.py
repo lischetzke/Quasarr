@@ -288,8 +288,8 @@ def setup_config(app, shared_state):
                         "FlareSolverr URL saved successfully! A restart is recommended.")
                 else:
                     return render_fail(f"FlareSolverr returned unexpected status: {json_data.get('status')}")
-        except requests.RequestException as e:
-            return render_fail(f"Could not reach FlareSolverr: {str(e)}")
+        except requests.RequestException:
+            return render_fail(f"Could not reach FlareSolverr!")
 
         return render_fail("Could not reach FlareSolverr at that URL (expected HTTP 200).")
 
