@@ -120,8 +120,8 @@ jobs:
             ${{ env.GHCR_ENDPOINT }}:latest-amd64
             ${{ env.GHCR_ENDPOINT }}:${{ needs.version.outputs.version }}-amd64
           build-args: VS=${{ needs.version.outputs.version }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=amd64
+          cache-to: type=gha,mode=max,scope=amd64
 
   build-docker-arm64:
     name: Build Docker (ARM64)
@@ -155,8 +155,8 @@ jobs:
             ${{ env.GHCR_ENDPOINT }}:latest-arm64
             ${{ env.GHCR_ENDPOINT }}:${{ needs.version.outputs.version }}-arm64
           build-args: VS=${{ needs.version.outputs.version }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=arm64
+          cache-to: type=gha,mode=max,scope=arm64
 
   release:
     name: Create Release
