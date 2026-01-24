@@ -63,16 +63,28 @@ jobs:
     name: Build Exe (Windows)
     runs-on: windows-latest
     needs: version
+    env:
+      TMP: D:\a\temp
+      TEMP: D:\a\temp
     steps:
+      - name: Create Temp Dir
+        run: mkdir D:\a\temp
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Disable Windows Defender
+        shell: powershell
+        run: Set-MpPreference -DisableRealtimeMonitoring $true
       - uses: actions/cache@v4
         with:
-          path: ~\AppData\Local\pip\Cache
-          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}-${{ hashFiles('setup.py') }}
-          restore-keys: ${{ runner.os }}-pip-
+          path: |
+            ~\AppData\Local\pip\Cache
+            ~\AppData\Local\pyinstaller
+          key: ${{ runner.os }}-build-${{ hashFiles('requirements.txt') }}-${{ hashFiles('setup.py') }}
+          restore-keys: |
+            ${{ runner.os }}-build-
+            ${{ runner.os }}-pip-
       - name: Install dependencies
         run: |
           pip install wheel pyinstaller
@@ -80,7 +92,9 @@ jobs:
       - name: Build exe
         run: |
           python quasarr/providers/version.py
-          pyinstaller --onefile -y --version-file "file_version_info.txt" "Quasarr.py" -n "quasarr-${{ needs.version.outputs.version }}-standalone-win64"
+          # Added --clean to ensure we don't use stale cache if something breaks, 
+          # but relies on the restored cache folder for speed.
+          pyinstaller --clean --onefile -y --version-file "file_version_info.txt" "Quasarr.py" -n "quasarr-${{ needs.version.outputs.version }}-standalone-win64"
       - uses: actions/upload-artifact@v4
         with:
           name: exe-amd64
