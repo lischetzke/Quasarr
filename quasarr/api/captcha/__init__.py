@@ -86,6 +86,8 @@ def setup_captcha_routes(app):
             except KeyError:
                 desired_mirror = None
 
+            original_url = data.get("original_url")
+
             # This is required for cutcaptcha
             rapid = [ln for ln in links if "rapidgator" in ln[1].lower()]
             others = [ln for ln in links if "rapidgator" not in ln[1].lower()]
@@ -97,6 +99,7 @@ def setup_captcha_routes(app):
                 "password": password,
                 "mirror": desired_mirror,
                 "links": prioritized_links,
+                "original_url": original_url,
             }
 
             encoded_payload = urlsafe_b64encode(json.dumps(payload).encode()).decode()
@@ -194,28 +197,17 @@ def setup_captcha_routes(app):
 
         return f'''
             <div>
-                <!-- Info section explaining the process -->
-                <div class="info-box">
-                    <h3>ℹ️ How This Works:</h3>
-                    <p style="margin-bottom: 8px;">
-                        1. Click the link below to open {provider_name}
-                    </p>
-                    <p style="margin-top: 0; margin-bottom: 8px;">
-                        2. Solve any CAPTCHAs on their site to reveal the download links
-                    </p>
-                    <p style="margin-top: 0; margin-bottom: 0;">
-                        3. <b>With the userscript installed</b>, links are automatically sent back to Quasarr!
-                    </p>
-                </div>
-
                 <!-- One-time setup section - visually separated -->
                 <div id="setup-instructions" class="setup-box">
                     <h3>📦 First Time Setup:</h3>
                     <p style="margin-bottom: 8px;">
-                        <a href="https://www.tampermonkey.net/" target="_blank" rel="noopener noreferrer">1. Install Tampermonkey</a>
+                        <a href="https://www.tampermonkey.net/" target="_blank" rel="noopener noreferrer">1. On mobile Safari/Firefox or any Desktop Browser install Tampermonkey</a>
+                    </p>
+                    <p style="margin-top: 0; margin-bottom: 8px;">
+                        <a href="{userscript_url}" target="_blank">2. Install the {provider_name} userscript</a>
                     </p>
                     <p style="margin-top: 0; margin-bottom: 12px;">
-                        <a href="{userscript_url}" target="_blank">2. Install the {provider_name} userscript</a>
+                        3. Open link, solve CAPTCHAs, and links are automatically sent back to Quasarr!
                     </p>
                     <p style="margin-top: 0;">
                         <button id="hide-setup-btn" type="button" class="btn-subtle">
@@ -318,12 +310,17 @@ def setup_captcha_routes(app):
         title = payload.get("title")
         password = payload.get("password")
         urls = payload.get("links")
+        original_url = payload.get("original_url")
         url = urls[0][0] if isinstance(urls[0], (list, tuple)) else urls[0]
 
         check_package_exists(package_id)
 
         package_selector = render_package_selector(package_id, title)
         failed_warning = render_failed_attempts_warning(package_id)
+
+        source_button = ""
+        if original_url:
+            source_button = f'<p>{render_button("Source", "secondary", {"onclick": f"window.open(\'{js_single_quoted_string_safe(original_url)}\', \'_blank\')" })}</p>'
 
         return render_centered_html(f"""
         <!DOCTYPE html>
@@ -333,6 +330,7 @@ def setup_captcha_routes(app):
             {package_selector}
             {failed_warning}
                 {render_userscript_section(url, package_id, title, password, "hide")}
+            {source_button}
             <p>
                 {render_button("Delete Package", "secondary", {"onclick": f"location.href='/captcha/delete/{package_id}'"})}
             </p>
@@ -358,12 +356,17 @@ def setup_captcha_routes(app):
         title = payload.get("title")
         password = payload.get("password")
         urls = payload.get("links")
+        original_url = payload.get("original_url")
         url = urls[0][0] if isinstance(urls[0], (list, tuple)) else urls[0]
 
         check_package_exists(package_id)
 
         package_selector = render_package_selector(package_id, title)
         failed_warning = render_failed_attempts_warning(package_id)
+
+        source_button = ""
+        if original_url:
+            source_button = f'<p>{render_button("Source", "secondary", {"onclick": f"window.open(\'{js_single_quoted_string_safe(original_url)}\', \'_blank\')" })}</p>'
 
         return render_centered_html(f"""
         <!DOCTYPE html>
@@ -373,6 +376,7 @@ def setup_captcha_routes(app):
             {package_selector}
             {failed_warning}
                 {render_userscript_section(url, package_id, title, password, "junkies")}
+            {source_button}
             <p>
                 {render_button("Delete Package", "secondary", {"onclick": f"location.href='/captcha/delete/{package_id}'"})}
             </p>
@@ -398,6 +402,7 @@ def setup_captcha_routes(app):
         title = payload.get("title")
         password = payload.get("password")
         urls = payload.get("links")
+        original_url = payload.get("original_url")
 
         check_package_exists(package_id)
 
@@ -405,6 +410,10 @@ def setup_captcha_routes(app):
 
         package_selector = render_package_selector(package_id, title)
         failed_warning = render_failed_attempts_warning(package_id)
+
+        source_button = ""
+        if original_url:
+            source_button = f'<p>{render_button("Source", "secondary", {"onclick": f"window.open(\'{js_single_quoted_string_safe(original_url)}\', \'_blank\')" })}</p>'
 
         return render_centered_html(f"""
         <!DOCTYPE html>
@@ -414,6 +423,7 @@ def setup_captcha_routes(app):
             {package_selector}
             {failed_warning}
                 {render_userscript_section(url, package_id, title, password, "keeplinks")}
+            {source_button}
             <p>
                 {render_button("Delete Package", "secondary", {"onclick": f"location.href='/captcha/delete/{package_id}'"})}
             </p>
@@ -439,6 +449,7 @@ def setup_captcha_routes(app):
         title = payload.get("title")
         password = payload.get("password")
         urls = payload.get("links")
+        original_url = payload.get("original_url")
 
         check_package_exists(package_id)
 
@@ -446,6 +457,10 @@ def setup_captcha_routes(app):
 
         package_selector = render_package_selector(package_id, title)
         failed_warning = render_failed_attempts_warning(package_id)
+
+        source_button = ""
+        if original_url:
+            source_button = f'<p>{render_button("Source", "secondary", {"onclick": f"window.open(\'{js_single_quoted_string_safe(original_url)}\', \'_blank\')" })}</p>'
 
         return render_centered_html(f"""
         <!DOCTYPE html>
@@ -455,6 +470,7 @@ def setup_captcha_routes(app):
             {package_selector}
             {failed_warning}
                 {render_userscript_section(url, package_id, title, password, "tolink")}
+            {source_button}
             <p>
                 {render_button("Delete Package", "secondary", {"onclick": f"location.href='/captcha/delete/{package_id}'"})}
             </p>
@@ -519,28 +535,17 @@ def setup_captcha_routes(app):
                 <details id="bypassDetails">
                 <summary id="bypassSummary">Show CAPTCHA Bypass</summary><br>
 
-                    <!-- Info section explaining the process -->
-                    <div class="info-box">
-                        <h3>ℹ️ How This Works:</h3>
-                        <p style="margin-bottom: 8px;">
-                            1. Click the button below to open FileCrypt directly
-                        </p>
-                        <p style="margin-top: 0; margin-bottom: 8px;">
-                            2. Solve any CAPTCHAs on their site to reveal the download links
-                        </p>
-                        <p style="margin-top: 0; margin-bottom: 0;">
-                            3. <b>With the userscript installed</b>, links are automatically sent back to Quasarr!
-                        </p>
-                    </div>
-
                     <!-- One-time setup section - visually separated -->
                     <div id="setup-instructions" class="setup-box">
                         <h3>📦 First Time Setup:</h3>
                         <p style="margin-bottom: 8px;">
-                            <a href="https://www.tampermonkey.net/" target="_blank" rel="noopener noreferrer">1. Install Tampermonkey</a>
+                            <a href="https://www.tampermonkey.net/" target="_blank" rel="noopener noreferrer">1. On mobile Safari/Firefox or any Desktop Browser install Tampermonkey</a>
+                        </p>
+                        <p style="margin-top: 0; margin-bottom: 8px;">
+                            <a href="/captcha/filecrypt.user.js" target="_blank">2. Install the FileCrypt userscript</a>
                         </p>
                         <p style="margin-top: 0; margin-bottom: 12px;">
-                            <a href="/captcha/filecrypt.user.js" target="_blank">2. Install the FileCrypt userscript</a>
+                            3. Open link, solve CAPTCHAs, and links are automatically sent back to Quasarr!
                         </p>
                         <p style="margin-top: 0;">
                             <button id="hide-setup-btn" type="button" class="btn-subtle">
@@ -682,6 +687,7 @@ def setup_captcha_routes(app):
             links = data.get("links", [])
             password = data.get("password", "")
             mirror = data.get("mirror")
+            original_url = data.get("original_url")
 
             # Prioritize rapidgator links for cutcaptcha
             rapid = [ln for ln in links if "rapidgator" in ln[1].lower()]
@@ -694,6 +700,7 @@ def setup_captcha_routes(app):
                 "password": password,
                 "mirror": mirror,
                 "links": prioritized,
+                "original_url": original_url,
             }
             encoded = urlsafe_b64encode(json.dumps(payload).encode()).decode()
             captcha_type = get_captcha_type_for_links(prioritized)
@@ -818,6 +825,7 @@ def setup_captcha_routes(app):
         title = payload.get("title")
         password = payload.get("password")
         urls = payload.get("links")
+        original_url = payload.get("original_url")
 
         check_package_exists(package_id)
 
@@ -838,6 +846,10 @@ def setup_captcha_routes(app):
         package_selector = render_package_selector(package_id, title)
         failed_warning = render_failed_attempts_warning(package_id)
 
+        source_button = ""
+        if original_url:
+            source_button = f'<p>{render_button("Source", "secondary", {"onclick": f"window.open(\'{js_single_quoted_string_safe(original_url)}\', \'_blank\')" })}</p>'
+
         return render_centered_html(f"""
         <!DOCTYPE html>
         <html>
@@ -847,28 +859,17 @@ def setup_captcha_routes(app):
             {failed_warning}
 
             <div>
-                <!-- Info section explaining the process -->
-                <div class="info-box">
-                    <h3>ℹ️ How This Works:</h3>
-                    <p style="margin-bottom: 8px;">
-                        1. Click the button below to open FileCrypt directly
-                    </p>
-                    <p style="margin-top: 0; margin-bottom: 8px;">
-                        2. Solve any CAPTCHAs on their site to reveal the download links
-                    </p>
-                    <p style="margin-top: 0; margin-bottom: 0;">
-                        3. <b>With the userscript installed</b>, links are automatically sent back to Quasarr!
-                    </p>
-                </div>
-
                 <!-- One-time setup section - visually separated -->
                 <div id="setup-instructions" class="setup-box">
                     <h3>📦 First Time Setup:</h3>
                     <p style="margin-bottom: 8px;">
-                        <a href="https://www.tampermonkey.net/" target="_blank" rel="noopener noreferrer">1. Install Tampermonkey</a>
+                        <a href="https://www.tampermonkey.net/" target="_blank" rel="noopener noreferrer">1. On mobile Safari/Firefox or any Desktop Browser install Tampermonkey</a>
+                    </p>
+                    <p style="margin-top: 0; margin-bottom: 8px;">
+                        <a href="/captcha/filecrypt.user.js" target="_blank">2. Install the FileCrypt userscript</a>
                     </p>
                     <p style="margin-top: 0; margin-bottom: 12px;">
-                        <a href="/captcha/filecrypt.user.js" target="_blank">2. Install the FileCrypt userscript</a>
+                        3. Open link, solve CAPTCHAs, and links are automatically sent back to Quasarr!
                     </p>
                     <p style="margin-top: 0;">
                         <button id="hide-setup-btn" type="button" class="btn-subtle">
@@ -921,6 +922,7 @@ def setup_captcha_routes(app):
                 </div>
             </div>
 
+            {source_button}
             <p>
                 {render_button("Delete Package", "secondary", {"onclick": f"location.href='/captcha/delete/{package_id}'"})}
             </p>
@@ -1142,6 +1144,7 @@ def setup_captcha_routes(app):
         password = payload.get("password")
         desired_mirror = payload.get("mirror")
         prioritized_links = payload.get("links")
+        original_url = payload.get("original_url")
 
         check_package_exists(package_id)
 
@@ -1199,6 +1202,7 @@ def setup_captcha_routes(app):
             "password": password,
             "mirror": desired_mirror,
             "links": prioritized_links,
+            "original_url": original_url,
         }
         fallback_encoded = urlsafe_b64encode(json.dumps(fallback_payload).encode()).decode()
         filecrypt_fallback_url = f"/captcha/filecrypt?data={quote(fallback_encoded)}"
@@ -1208,6 +1212,10 @@ def setup_captcha_routes(app):
 
         # Escape title for safe use in JavaScript string
         escaped_title_js = title.replace('\\', '\\\\').replace('"', '\\"').replace('\n', '\\n').replace('\r', '\\r')
+
+        source_button_html = ""
+        if original_url:
+            source_button_html = f'<p>{render_button("Source", "secondary", {"onclick": f"window.open(\'{js_single_quoted_string_safe(original_url)}\', \'_blank\')" })}</p>'
 
         content = render_centered_html(r'''
             <style>
@@ -1321,6 +1329,7 @@ def setup_captcha_routes(app):
                     </div>
             <br>
             <div id="delete-package-section">
+            ''' + source_button_html + f'''
             <p>
                 {render_button("Delete Package", "secondary", {"onclick": f"location.href='/captcha/delete/{package_id}'"})}
             </p>
