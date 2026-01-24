@@ -53,7 +53,10 @@ def send_discord_message(shared_state, title, case, imdb_id=None, details=None, 
         description = 'CAPTCHA solved by SponsorsHelper!'
         fields = None
     elif case == "failed":
-        description = 'SponsorsHelper failed to solve the CAPTCHA! Package marked es failed.'
+        description = 'SponsorsHelper failed to solve the CAPTCHA! Package marked as failed for deletion.'
+        fields = None
+    elif case == "disabled":
+        description = 'SponsorsHelper failed to solve the CAPTCHA! Please solve it manually to proceed.'
         fields = None
     elif case == "captcha":
         description = 'Download will proceed, once the CAPTCHA has been solved.'
@@ -112,7 +115,7 @@ def send_discord_message(shared_state, title, case, imdb_id=None, details=None, 
         }
 
     # Apply silent mode: suppress notifications for all cases except 'deleted'
-    if silent and case not in ["failed", "quasarr_update"]:
+    if silent and case not in ["failed", "quasarr_update", "disabled"]:
         data['flags'] = SUPPRESS_NOTIFICATIONS
 
     response = requests.post(shared_state.values["discord"], data=json.dumps(data),

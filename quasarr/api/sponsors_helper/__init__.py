@@ -121,6 +121,8 @@ def setup_sponsors_helper_routes(app):
 
             StatsHelper(shared_state).increment_captcha_decryptions_automatic()
 
+            send_discord_message(shared_state, title=title, case="disabled")
+
             return f"Package {title} disabled"
 
         except Exception as e:
