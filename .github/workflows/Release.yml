@@ -181,6 +181,14 @@ jobs:
         uses: metcalfc/changelog-generator@v4.6.2
         with:
           myToken: ${{ secrets.GITHUB_TOKEN }}
+      - name: Add PR Body to Changelog
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_BODY=$(gh pr list --search "${{ github.sha }}" --state merged --json body --jq '.[0].body // empty')
+          if [ -n "$PR_BODY" ]; then
+            echo -e "\n$PR_BODY" >> .github/Changelog.md
+          fi
       - name: Append changelog
         run: echo -e "\n${{ steps.changelog.outputs.changelog }}" >> .github/Changelog.md
       - name: Create Release

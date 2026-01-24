@@ -33,16 +33,16 @@ def setup_sponsors_helper_routes(app):
             if not protected:
                 return abort(404, "No encrypted packages found")
 
-            # Find the first package without a "session" key
+            # Find the first package that hasn't been disabled
             selected_package = None
             for package in protected:
                 data = json.loads(package[1])
-                if "session" not in data:
+                if "disabled" not in data:
                     selected_package = (package[0], data)
                     break
 
             if not selected_package:
-                return abort(404, "No valid packages without session found")
+                return abort(404, "No valid packages found")
 
             package_id, data = selected_package
             title = data["title"]
@@ -67,9 +67,9 @@ def setup_sponsors_helper_routes(app):
         except Exception as e:
             return abort(500, str(e))
 
-    @app.post("/sponsors_helper/api/to_download/")
+    @app.post("/sponsors_helper/api/download/")
     @require_api_key
-    def to_download_api():
+    def download_api():
         try:
             data = request.json
             title = data.get('name')
@@ -97,51 +97,39 @@ def setup_sponsors_helper_routes(app):
         StatsHelper(shared_state).increment_failed_decryptions_automatic()
         return abort(500, "Failed")
 
-    @app.post("/sponsors_helper/api/to_replace/")
+    @app.post("/sponsors_helper/api/disable/")
     @require_api_key
-    def to_replace_api():
+    def disable_api():
         try:
             data = request.json
-            name = data.get('name')
             package_id = data.get('package_id')
-            password = data.get('password')
-            replace_url = data.get('replace_url')
-            mirror = data.get('mirror')
-            session = data.get('session')
 
-            if not all([name, package_id, replace_url, mirror, session]):
-                info("Missing required replacement data")
-                return {"error": "Missing required replacement data"}, 400
+            if not package_id:
+                return {"error": "Missing package_id"}, 400
 
-            if password is None:
-                password = ""
+            StatsHelper(shared_state).increment_failed_decryptions_automatic()
 
-            blob = json.dumps(
-                {
-                    "title": name,
-                    "links": [replace_url, mirror],
-                    "size_mb": 0,
-                    "password": password,
-                    "mirror": mirror,
-                    "session": session
-                })
+            blob = shared_state.get_db("protected").retrieve(package_id)
+            package_data = json.loads(blob)
+            title = package_data.get('title')
 
-            shared_state.get_db("protected").update_store(package_id, blob)
+            package_data["disabled"] = True
 
-            info(f"Another CAPTCHA solution is required for {mirror} link: {replace_url}")
+            shared_state.get_db("protected").update_store(package_id, json.dumps(package_data))
+
+            info(f"Disabled package {title}")
 
             StatsHelper(shared_state).increment_captcha_decryptions_automatic()
 
-            return f"Replacement link stored for {name}"
+            return f"Package {title} disabled"
 
         except Exception as e:
-            StatsHelper(shared_state).increment_failed_decryptions_automatic()
-            info(f"Error handling replacement: {e}")
+            info(f"Error handling disable: {e}")
             return {"error": str(e)}, 500
 
-    @app.delete("/sponsors_helper/api/to_failed/")
+    @app.delete("/sponsors_helper/api/fail/")
     @require_api_key
-    def move_to_failed_api():
+    def fail_api():
         try:
             StatsHelper(shared_state).increment_failed_decryptions_automatic()
 
@@ -165,7 +153,7 @@ def setup_sponsors_helper_routes(app):
 
     @app.put("/sponsors_helper/api/set_sponsor_status/")
     @require_api_key
-    def activate_sponsor_status():
+    def set_sponsor_status_api():
         try:
             data = request.body.read().decode("utf-8")
             payload = json.loads(data)
