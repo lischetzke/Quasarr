@@ -68,7 +68,7 @@ jobs:
       TEMP: D:\a\temp
     steps:
       - name: Create Temp Dir
-        run: mkdir D:\a\temp
+        run: mkdir D:\a\temp -Force
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v5
         with:
