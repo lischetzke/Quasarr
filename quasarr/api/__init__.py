@@ -47,7 +47,7 @@ def get_api(shared_state_dict, shared_state_lock):
         # Get quick status summary
         try:
             device = shared_state.values.get("device")
-            jd_connected = device is not None
+            jd_connected = device is not None and device is not False
         except:
             jd_connected = False
 
@@ -67,8 +67,10 @@ def get_api(shared_state_dict, shared_state_lock):
             # Skip unset hostnames and skipped logins
             if not current_value:
                 continue
-            if shorthand in login_required_sites and skip_login_db.retrieve(shorthand):
-                continue
+            if shorthand in login_required_sites:
+                skip_val = skip_login_db.retrieve(shorthand)
+                if skip_val and str(skip_val).lower() == "true":
+                    continue
 
             # This hostname counts toward total
             total_count += 1
@@ -474,6 +476,7 @@ def get_api(shared_state_dict, shared_state_lock):
 
     @app.get('/regenerate-api-key')
     def regenerate_api_key():
+        shared_state.generate_api_key()
         return render_success(f'API key replaced!', 5)
 
     Server(app, listen='0.0.0.0', port=shared_state.values["port"]).serve_forever()

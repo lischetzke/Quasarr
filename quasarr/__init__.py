@@ -12,6 +12,7 @@ import time
 
 import requests
 
+import quasarr.providers.web_server
 from quasarr.api import get_api
 from quasarr.providers import shared_state, version
 from quasarr.providers.log import info, debug
@@ -157,6 +158,8 @@ def run():
         skip_login_db = DataBase("skip_login")
         login_required_sites = ['al', 'dd', 'dl', 'nx']
 
+        quasarr.providers.web_server.temp_server_success = False
+
         for site in login_required_sites:
             hostname = Config('Hostnames').get(site)
             if hostname:
@@ -164,9 +167,12 @@ def run():
                 user = site_config.get('user')
                 password = site_config.get('password')
                 if not user or not password:
-                    if skip_login_db.retrieve(site):
+                    skip_val = skip_login_db.retrieve(site)
+                    if skip_val and str(skip_val).lower() == "true":
                         info(f'"{site.upper()}" login skipped by user preference')
                     else:
+                        info(f'"{site.upper()}" credentials missing. Launching setup...')
+                        quasarr.providers.web_server.temp_server_success = False
                         hostname_credentials_config(shared_state, site.upper(), hostname)
 
         # Check FlareSolverr configuration
