@@ -48,7 +48,11 @@ def setup_captcha_routes(app):
             device = None
         if not device:
             return render_centered_html(f'''<h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
-            <p>JDownloader connection not established.</p>
+            <div class="status-bar">
+                <span class="status-pill error">
+                    ❌ JDownloader disconnected
+                </span>
+            </div>
             <p>
                 {render_button("Back", "secondary", {"onclick": "location.href='/'"})}
             </p>''')

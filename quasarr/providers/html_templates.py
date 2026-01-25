@@ -12,7 +12,7 @@ def render_centered_html(inner_content, footer_content=""):
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <title>Quasarr</title>
-        <link rel="icon" href="''' + images.logo + '''" type="image/png">
+        <link rel="icon" href="''' + images.favicon + '''" type="image/png">
         <style>
             /* Theme variables */
             :root {
