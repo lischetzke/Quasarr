@@ -127,10 +127,8 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: |
-            ${{ env.ENDPOINT }}:latest
             ${{ env.ENDPOINT }}:latest-amd64
             ${{ env.ENDPOINT }}:${{ needs.version.outputs.version }}-amd64
-            ${{ env.GHCR_ENDPOINT }}:latest
             ${{ env.GHCR_ENDPOINT }}:latest-amd64
             ${{ env.GHCR_ENDPOINT }}:${{ needs.version.outputs.version }}-amd64
           build-args: VS=${{ needs.version.outputs.version }}
@@ -171,6 +169,46 @@ jobs:
           build-args: VS=${{ needs.version.outputs.version }}
           cache-from: type=gha,scope=arm64
           cache-to: type=gha,mode=max,scope=arm64
+
+  merge-docker-manifest:
+    name: Merge Docker Manifests
+    runs-on: ubuntu-latest
+    needs: [ version, build-docker-amd64, build-docker-arm64 ]
+    steps:
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERUSER }}
+          password: ${{ secrets.DOCKERPASS }}
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Create and Push Manifests
+        run: |
+          # 1. Define source tags
+          TAG_AMD64="${{ needs.version.outputs.version }}-amd64"
+          TAG_ARM64="${{ needs.version.outputs.version }}-arm64"
+          
+          # 2. Create manifest for DockerHub :latest
+          docker buildx imagetools create -t ${{ env.ENDPOINT }}:latest \
+            ${{ env.ENDPOINT }}:latest-amd64 \
+            ${{ env.ENDPOINT }}:latest-arm64
+
+          # 3. Create manifest for DockerHub :version
+          docker buildx imagetools create -t ${{ env.ENDPOINT }}:${{ needs.version.outputs.version }} \
+            ${{ env.ENDPOINT }}:${TAG_AMD64} \
+            ${{ env.ENDPOINT }}:${TAG_ARM64}
+            
+          # 4. Create manifest for GHCR :latest
+          docker buildx imagetools create -t ${{ env.GHCR_ENDPOINT }}:latest \
+            ${{ env.GHCR_ENDPOINT }}:latest-amd64 \
+            ${{ env.GHCR_ENDPOINT }}:latest-arm64
+
+          # 5. Create manifest for GHCR :version
+          docker buildx imagetools create -t ${{ env.GHCR_ENDPOINT }}:${{ needs.version.outputs.version }} \
+            ${{ env.GHCR_ENDPOINT }}:${TAG_AMD64} \
+            ${{ env.GHCR_ENDPOINT }}:${TAG_ARM64}
 
   release:
     name: Create Release
