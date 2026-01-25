@@ -72,6 +72,26 @@ def setup_statistics(app, shared_state):
                     <div class="stat-value">{stats['failed_decryptions_manual']:,}</div>
                 </div>
             </div>
+
+            <h3>🎬 IMDb Cache</h3>
+            <div class="stats-grid compact">
+                <div class="stat-card">
+                    <h3>💾 Total Cached IDs</h3>
+                    <div class="stat-value">{stats['imdb_total_cached']:,}</div>
+                </div>
+                <div class="stat-card">
+                    <h3>🏷️ With Title</h3>
+                    <div class="stat-value">{stats['imdb_with_title']:,}</div>
+                </div>
+                <div class="stat-card">
+                    <h3>🖼️ With Poster</h3>
+                    <div class="stat-value">{stats['imdb_with_poster']:,}</div>
+                </div>
+                <div class="stat-card">
+                    <h3>🌍 With Localized Title</h3>
+                    <div class="stat-value">{stats['imdb_with_localized']:,}</div>
+                </div>
+            </div>
         </div>
 
         <p>

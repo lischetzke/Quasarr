@@ -42,6 +42,7 @@ class Server:
             self.server.handle_request()  # handle the last request
         except Exception:
             self.server.server_close()
+            temp_server_success = False
             return False
         time.sleep(1)
         self.server.server_close()

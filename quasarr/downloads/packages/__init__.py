@@ -463,10 +463,12 @@ def get_packages(shared_state, _cache=None):
 
         if package["location"] == "queue":
             time_left = "23:59:59"
+            storage = ""
 
             if package["type"] == "linkgrabber":
                 details = package["details"]
                 name = f"[Linkgrabber] {details.get('name', 'unknown')}"
+                storage = details.get("saveTo", "")
                 try:
                     bytes_total = int(details.get("bytesTotal", 0))
                     mb = mb_left = bytes_total / (1024 * 1024)
@@ -481,6 +483,7 @@ def get_packages(shared_state, _cache=None):
             elif package["type"] == "downloader":
                 details = package["details"]
                 status = "Downloading"
+                storage = details.get("saveTo", "")
                 pkg_eta = details.get("eta")
                 bytes_total = int(details.get("bytesTotal", 0))
                 bytes_loaded = int(details.get("bytesLoaded", 0))
@@ -536,7 +539,8 @@ def get_packages(shared_state, _cache=None):
                     "timeleft": time_left,
                     "type": package_type,
                     "uuid": package_uuid,
-                    "is_archive": package.get("is_archive", False)
+                    "is_archive": package.get("is_archive", False),
+                    "storage": storage
                 })
                 queue_index += 1
             else:
@@ -577,7 +581,8 @@ def get_packages(shared_state, _cache=None):
                 "type": "downloader",
                 "uuid": package.get("uuid"),
                 "is_archive": package.get("is_archive", False),
-                "extraction_ok": package.get("extraction_ok", False)
+                "extraction_ok": package.get("extraction_ok", False),
+                "extraction_status": "SUCCESSFUL" if package.get("extraction_ok", False) else "RUNNING" if package.get("is_archive", False) else ""
             })
             history_index += 1
         else:

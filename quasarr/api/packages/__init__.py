@@ -41,24 +41,30 @@ def _render_queue_item(item):
     cat = item.get('cat', 'not_quasarr')
     is_archive = item.get('is_archive', False)
     nzo_id = item.get('nzo_id', '')
+    storage = item.get('storage', '')
 
     is_captcha = '[CAPTCHA' in filename
+    status_text = 'Downloading'
     if is_captcha:
         status_emoji = '🔒'
+        status_text = 'Waiting for CAPTCHA Solution!'
     elif '[Extracting]' in filename:
         status_emoji = '📦'
+        status_text = 'Extracting'
     elif '[Paused]' in filename:
         status_emoji = '⏸️'
+        status_text = 'Paused'
     elif '[Linkgrabber]' in filename:
         status_emoji = '🔗'
+        status_text = 'Linkgrabber'
     else:
-        status_emoji = '⬇️'
+        status_emoji = '▶️'
 
     display_name = filename
     for prefix in ['[Downloading] ', '[Extracting] ', '[Paused] ', '[Linkgrabber] ', '[CAPTCHA not solved!] ']:
         display_name = display_name.replace(prefix, '')
 
-    archive_badge = '<span class="badge archive">📁</span>' if is_archive else ''
+    archive_badge = '📦' if is_archive else ''
     cat_emoji = _get_category_emoji(cat)
     size_str = _format_size(bytes_val=bytes_val) if bytes_val else _format_size(mb=mb)
 
@@ -68,23 +74,38 @@ def _render_queue_item(item):
     else:
         progress_html = f'<div class="progress-track"><div class="progress-fill" style="width: {percentage}%"></div></div>'
 
-    # Action buttons - CAPTCHA left, delete right
+    # Interactive info
+    info_onclick = f"showPackageDetails('{nzo_id}', '{_escape_js(display_name)}', '{cat}', '{'Yes' if is_archive else 'No'}', '', '{timeleft}', '{size_str}', '{percentage}', '{status_text}', '{_escape_js(storage)}', {str(is_captcha).lower()})"
+    info_btn = f'<button class="btn-small info" onclick="{info_onclick}">ℹ️</button>'
+
+    # Action buttons - Info left, CAPTCHA/Delete right
     if is_captcha and nzo_id:
         actions = f'''
             <div class="package-actions">
-                <button class="btn-small primary" onclick="location.href='/captcha?package_id={nzo_id}'">🔓 Solve CAPTCHA</button>
+                {info_btn}
+                <button class="btn-small primary-thin" onclick="location.href='/captcha?package_id={nzo_id}'">🔓 Solve CAPTCHA</button>
                 <span class="spacer"></span>
                 <button class="btn-small danger" onclick="confirmDelete('{nzo_id}', '{_escape_js(display_name)}')">🗑️</button>
             </div>
         '''
     elif nzo_id:
         actions = f'''
-            <div class="package-actions right-only">
+            <div class="package-actions">
+                {info_btn}
+                <span class="spacer"></span>
                 <button class="btn-small danger" onclick="confirmDelete('{nzo_id}', '{_escape_js(display_name)}')">🗑️</button>
             </div>
         '''
     else:
-        actions = ''
+        actions = f'''
+            <div class="package-actions">
+                {info_btn}
+                <span class="spacer"></span>
+            </div>
+        '''
+
+    cat_html = f'<span title="Category: {cat}">{cat_emoji}</span>'
+    archive_html = f'<span title="Archive: {is_archive}">{archive_badge}</span>' if is_archive else ''
 
     return f'''
         <div class="package-card">
@@ -99,8 +120,8 @@ def _render_queue_item(item):
             <div class="package-details">
                 <span>⏱️ {timeleft}</span>
                 <span>💾 {size_str}</span>
-                <span>{cat_emoji}</span>
-                {archive_badge}
+                {cat_html}
+                {archive_html}
             </div>
             {actions}
         </div>
@@ -116,6 +137,7 @@ def _render_history_item(item):
     extraction_status = item.get('extraction_status', '')
     fail_message = item.get('fail_message', '')
     nzo_id = item.get('nzo_id', '')
+    storage = item.get('storage', '')
 
     is_error = status.lower() in ['failed', 'error'] or fail_message
     card_class = 'package-card error' if is_error else 'package-card'
@@ -123,27 +145,41 @@ def _render_history_item(item):
     cat_emoji = _get_category_emoji(category)
     size_str = _format_size(bytes_val=bytes_val)
 
-    archive_badge = ''
+    archive_emoji = ''
     if is_archive:
         if extraction_status == 'SUCCESSFUL':
-            archive_badge = '<span class="badge extracted">✅</span>'
+            archive_emoji = '✅'
         elif extraction_status == 'RUNNING':
-            archive_badge = '<span class="badge pending">⏳</span>'
+            archive_emoji = '⏳'
         else:
-            archive_badge = '<span class="badge archive">📁</span>'
+            archive_emoji = '📦'
 
     status_emoji = '❌' if is_error else '✅'
     error_html = f'<div class="package-error">⚠️ {fail_message}</div>' if fail_message else ''
 
+    # Interactive info
+    info_onclick = f"showPackageDetails('{nzo_id}', '{_escape_js(name)}', '{category}', '{'Yes' if is_archive else 'No'}', '{extraction_status}', '', '{size_str}', '', '{status}', '{_escape_js(storage)}', false)"
+    info_btn = f'<button class="btn-small info" onclick="{info_onclick}">ℹ️</button>'
+
     # Delete button for history items
     if nzo_id:
         actions = f'''
-            <div class="package-actions right-only">
+            <div class="package-actions">
+                {info_btn}
+                <span class="spacer"></span>
                 <button class="btn-small danger" onclick="confirmDelete('{nzo_id}', '{_escape_js(name)}')">🗑️</button>
             </div>
         '''
     else:
-        actions = ''
+        actions = f'''
+            <div class="package-actions">
+                {info_btn}
+                <span class="spacer"></span>
+            </div>
+        '''
+
+    cat_html = f'<span title="Category: {category}">{cat_emoji}</span>'
+    archive_html = f'<span title="Archive Status: {extraction_status}">{archive_emoji}</span>' if is_archive else ''
 
     return f'''
         <div class="{card_class}">
@@ -153,8 +189,8 @@ def _render_history_item(item):
             </div>
             <div class="package-details">
                 <span>💾 {size_str}</span>
-                <span>{cat_emoji}</span>
-                {archive_badge}
+                {cat_html}
+                {archive_html}
             </div>
             {error_html}
             {actions}
@@ -261,7 +297,13 @@ def setup_packages_routes(app):
             device = None
 
         if not device:
-            return '<p class="empty-message">JDownloader connection not established.</p>'
+            return '''
+                <div class="status-bar">
+                    <span class="status-pill error">
+                        ❌ JDownloader disconnected
+                    </span>
+                </div>
+            '''
 
         return _render_packages_content()
 
@@ -278,7 +320,11 @@ def setup_packages_routes(app):
             back_btn = render_button("Back", "secondary", {"onclick": "location.href='/'"})
             return render_centered_html(f'''
                 <h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
-                <p>JDownloader connection not established.</p>
+                <div class="status-bar">
+                    <span class="status-pill error">
+                        ❌ JDownloader disconnected
+                    </span>
+                </div>
                 <p>{back_btn}</p>
             ''')
 
@@ -328,12 +374,6 @@ def setup_packages_routes(app):
                 .package-header {{ display: flex; align-items: flex-start; gap: 8px; margin-bottom: 8px; }}
                 .status-emoji {{ font-size: 1.2em; flex-shrink: 0; }}
                 .package-name {{ flex: 1; font-weight: 500; word-break: break-word; line-height: 1.3; }}
-
-                .badge {{ font-size: 0.75em; padding: 2px 6px; border-radius: 4px; white-space: nowrap; flex-shrink: 0; }}
-                .badge.archive {{ background: var(--badge-archive-bg, #e3f2fd); color: var(--badge-archive-color, #1565c0); }}
-                .badge.extracted {{ background: var(--badge-success-bg, #e8f5e9); color: var(--badge-success-color, #2e7d32); }}
-                .badge.pending {{ background: var(--badge-warning-bg, #fff3e0); color: var(--badge-warning-color, #e65100); }}
-
                 .package-progress {{ display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }}
                 .progress-track {{ flex: 1; height: 8px; background: var(--progress-track, #e0e0e0); border-radius: 4px; overflow: hidden; }}
                 .progress-fill {{ height: 100%; background: var(--progress-fill, #4caf50); border-radius: 4px; min-width: 4px; }}
@@ -346,11 +386,15 @@ def setup_packages_routes(app):
                 .package-actions {{ margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border-color, #eee); display: flex; gap: 8px; align-items: center; }}
                 .package-actions .spacer {{ flex: 1; }}
                 .package-actions.right-only {{ justify-content: flex-end; }}
-                .btn-small {{ padding: 5px 12px; font-size: 0.8em; border-radius: 4px; cursor: pointer; transition: all 0.2s; }}
+                .btn-small {{ line-height:1; padding: 5px 12px; font-size: 0.8em; border-radius: 4px; cursor: pointer; transition: all 0.2s; }}
                 .btn-small.primary {{ background: var(--btn-primary-bg, #007bff); color: white; border: none; }}
                 .btn-small.primary:hover {{ background: var(--btn-primary-hover, #0056b3); }}
                 .btn-small.danger {{ background: transparent; color: var(--btn-danger-text, #dc3545); border: 1px solid var(--btn-danger-border, #dc3545); }}
                 .btn-small.danger:hover {{ background: var(--btn-danger-hover-bg, #dc3545); color: white; }}
+                .btn-small.info {{ background: transparent; color: var(--btn-info-bg, #17a2b8); border: 1px solid var(--btn-info-bg, #17a2b8); }}
+                .btn-small.info:hover {{ background: var(--btn-info-bg, #17a2b8); color: white; }}
+                .btn-small.primary-thin {{ background: transparent; color: var(--btn-primary-bg, #007bff); border: 1px solid var(--btn-primary-bg, #007bff); }}
+                .btn-small.primary-thin:hover {{ background: var(--btn-primary-bg, #007bff); color: white; }}
 
                 .empty-message {{ color: var(--text-muted, #888); font-style: italic; text-align: center; padding: 20px; }}
 
@@ -397,8 +441,8 @@ def setup_packages_routes(app):
                     border: 1px solid var(--error-border, #f1aeb5);
                 }}
 
-                .btn-danger {{ background: var(--btn-danger-bg, #dc3545); color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-weight: 500; }}
-                .btn-danger:hover {{ opacity: 0.9; }}
+                .btn-danger {{ background: transparent; color: var(--btn-danger-bg, #dc3545); border: 1px solid var(--btn-danger-bg, #dc3545); padding: 10px 20px; border-radius: 6px; cursor: pointer; font-weight: 500; }}
+                .btn-danger:hover {{ background: var(--btn-danger-bg, #dc3545); color: white; }}
 
                 /* Dark mode */
                 @media (prefers-color-scheme: dark) {{
@@ -407,13 +451,11 @@ def setup_packages_routes(app):
                         --border-color: #4a5568; --text-muted: #a0aec0;
                         --progress-track: #4a5568; --progress-fill: #68d391;
                         --error-border: #fc8181; --error-bg: #3d2d2d; --error-msg-bg: #3d2d2d; --error-msg-color: #fc8181;
-                        --badge-archive-bg: #1a365d; --badge-archive-color: #63b3ed;
-                        --badge-success-bg: #1c4532; --badge-success-color: #68d391;
-                        --badge-warning-bg: #3d2d1a; --badge-warning-color: #f6ad55;
                         --link-color: #63b3ed; --modal-bg: #2d3748; --code-bg: #1a202c;
                         --btn-primary-bg: #3182ce; --btn-primary-hover: #2c5282;
                         --btn-danger-text: #fc8181; --btn-danger-border: #fc8181; --btn-danger-hover-bg: #e53e3e;
                         --success-bg: #1c4532; --success-color: #68d391; --success-border: #276749;
+                        --btn-info-bg: #38b2ac; --btn-info-hover: #319795;
                     }}
                 }}
             </style>
@@ -422,10 +464,14 @@ def setup_packages_routes(app):
                 // Background refresh - fetches content via AJAX, waits 5s between refresh cycles
                 let refreshPaused = false;
                 let slowConnection = false;
+                let refreshTimer = null;
+                let isFetching = false;
 
                 async function refreshContent() {{
                     if (refreshPaused) return;
+                    if (isFetching) return;
 
+                    isFetching = true;
                     const startTime = Date.now();
                     const warningEl = document.getElementById('slow-warning');
 
@@ -465,8 +511,15 @@ def setup_packages_routes(app):
                         }}
                     }} catch (e) {{
                         clearTimeout(slowTimer);
+                    }} finally {{
+                        isFetching = false;
                     }}
-                    setTimeout(refreshContent, 5000);
+                    
+                    // Only schedule next refresh if not paused
+                    if (!refreshPaused) {{
+                        if (refreshTimer) clearTimeout(refreshTimer);
+                        refreshTimer = setTimeout(refreshContent, 5000);
+                    }}
                 }}
 
                 function restoreCollapseState() {{
@@ -520,6 +573,10 @@ def setup_packages_routes(app):
                 // Delete modal
                 let deletePackageId = null;
                 function confirmDelete(packageId, packageName) {{
+                    // Stop any pending refresh
+                    if (refreshTimer) clearTimeout(refreshTimer);
+                    refreshPaused = true;
+                    
                     deletePackageId = packageId;
                     
                     const content = `
@@ -530,12 +587,11 @@ def setup_packages_routes(app):
                     `;
                     
                     const buttons = `
-                        <button class="btn-secondary" onclick="closeModal()">Cancel</button>
+                        <button class="btn-secondary" onclick="closeModal()">Back</button>
                         <button class="btn-danger" onclick="performDelete()">🗑️ Delete Package & Files</button>
                     `;
                     
                     showModal('🗑️ Delete Package?', content, buttons);
-                    refreshPaused = true;
                 }}
                 
                 function performDelete() {{
@@ -544,12 +600,53 @@ def setup_packages_routes(app):
                     }}
                 }}
                 
+                // Show package details modal
+                function showPackageDetails(id, name, category, isArchive, extractionStatus, eta, size, percentage, status, storage, isCaptcha) {{
+                    // Stop any pending refresh
+                    if (refreshTimer) clearTimeout(refreshTimer);
+                    refreshPaused = true;
+                    
+                    let captchaBtn = '';
+                    if (isCaptcha) {{
+                        captchaBtn = `<button class="btn-small primary-thin" onclick="location.href='/captcha?package_id=${{id}}'">🔓 Solve CAPTCHA</button>`;
+                    }}
+                    
+                    const content = `
+                        <div style="text-align: left; padding: 10px;">
+                            <p style="margin-bottom: 8px;"><strong>Name:</strong></p><p style="font-family: monospace; text-align: center; background: var(--code-bg, #eee); padding: 4px; border-radius: 4px; word-break: break-word;">${{name}}</p>
+                            ${{storage ? `<p style="margin-bottom: 4px;"><strong>Storage:</strong></p><p style="margin-bottom: 8px; font-family: monospace; text-align: center; background: var(--code-bg, #eee); padding: 4px; border-radius: 4px; word-break: break-all;">${{storage}}</p>` : ''}}
+                            <p style="margin-bottom: 4px;"><strong>ID:</strong></p><p style="margin-bottom: 8px; font-family: monospace; text-align: center; background: var(--code-bg, #eee); padding: 4px; border-radius: 4px;">${{id}}</p>
+                            <p style="margin-bottom: 8px;"><strong>Status:</strong> ${{status}}</p>
+                            ${{percentage ? `<p style="margin-bottom: 8px;"><strong>Percentage:</strong> ${{percentage}}%</p>` : ''}}
+                            ${{size ? `<p style="margin-bottom: 8px;"><strong>Size:</strong> ${{size}}</p>` : ''}}
+                            ${{eta ? `<p style="margin-bottom: 8px;"><strong>ETA:</strong> ${{eta}}</p>` : ''}}
+                            <p style="margin-bottom: 8px;"><strong>Category:</strong> ${{category}}</p>
+                            <p style="margin-bottom: 8px;"><strong>Archive:</strong> ${{isArchive}}</p>
+                            ${{extractionStatus ? `<p style="margin-bottom: 8px;"><strong>Extraction Status:</strong> ${{extractionStatus}}</p>` : ''}}
+                        </div>
+                    `;
+                    
+                    const buttons = `
+                        <button class="btn-secondary" onclick="closeModal()">Back</button>
+                        ${{captchaBtn}}
+                    `;
+                    
+                    showModal('ℹ️ Package Details', content, buttons);
+                }}
+                
                 // Hook into modal closing to resume refresh
-                const baseCloseModal = window.closeModal;
-                window.closeModal = function() {{
-                    if (baseCloseModal) baseCloseModal();
-                    refreshPaused = false;
-                }};
+                document.addEventListener('DOMContentLoaded', function() {{
+                    const baseCloseModal = window.closeModal;
+                    window.closeModal = function() {{
+                        if (baseCloseModal) baseCloseModal();
+                        
+                        // Clear any existing timer to prevent duplicates
+                        if (refreshTimer) clearTimeout(refreshTimer);
+                        
+                        refreshPaused = false;
+                        refreshContent();
+                    }};
+                }});
             </script>
         '''
 
