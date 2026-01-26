@@ -8,6 +8,7 @@ on:
 
 env:
   GHCR_ENDPOINT: "ghcr.io/rix1337/quasarr"
+  DESCRIPTION: "Quasarr connects JDownloader with Radarr, Sonarr and LazyLibrarian. It also decrypts links protected by CAPTCHAs."
 
 jobs:
   version:
@@ -20,11 +21,16 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          # Fixed: Added glob to silence warning since you might not have uv.lock
+          enable-cache: true
+          cache-dependency-glob: "pyproject.toml"
       - name: Get Version
         id: version
         run: |
-          pip install requests
-          echo "version=$(python quasarr/providers/version.py)" >> $GITHUB_OUTPUT
+          echo "version=$(uv run python quasarr/providers/version.py)" >> $GITHUB_OUTPUT
 
   build-wheel:
     name: Build Wheel
@@ -34,21 +40,56 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - uses: actions/cache@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
         with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}-${{ hashFiles('setup.py') }}
-          restore-keys: ${{ runner.os }}-pip-
-      - name: Install dependencies
-        run: |
-          pip install wheel pyinstaller
-          pip install -r requirements.txt
+          enable-cache: true
+          cache-dependency-glob: "pyproject.toml"
       - name: Build wheel
-        run: python setup.py sdist bdist_wheel
+        run: uv build
       - uses: actions/upload-artifact@v4
         with:
           name: wheel
           path: ./dist/*
+
+  build-exe:
+    name: Build Exe (Windows)
+    runs-on: windows-latest
+    needs: version
+    env:
+      TMP: D:\a\temp
+      TEMP: D:\a\temp
+    steps:
+      - name: Create Temp Dir
+        run: mkdir D:\a\temp -Force
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: "pyproject.toml"
+      - uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\pyinstaller
+          key: ${{ runner.os }}-pyinstaller-${{ hashFiles('pyproject.toml') }}
+          restore-keys: ${{ runner.os }}-pyinstaller-
+      - name: Disable Windows Defender
+        shell: powershell
+        run: Set-MpPreference -DisableRealtimeMonitoring $true
+      - name: Install dependencies
+        run: |
+          uv sync --group build
+      - name: Build exe
+        run: |
+          uv run python quasarr/providers/version.py --create-version-file
+          uv run pyinstaller --clean --onefile -y --version-file "file_version_info.txt" "Quasarr.py" -n "quasarr-${{ needs.version.outputs.version }}-standalone-win64"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: exe-amd64
+          path: ./dist/*.exe
 
   build-docker-amd64:
     name: Build Docker (AMD64) :beta
@@ -56,30 +97,95 @@ jobs:
     needs: [ version, build-wheel ]
     steps:
       - uses: actions/checkout@v6
-
       - uses: actions/download-artifact@v4
         with:
           name: wheel
           path: ./docker/dist
-
       - uses: docker/setup-buildx-action@v3
-
       - uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and Push (:beta, amd64)
+      - name: Build and Push
         uses: docker/build-push-action@v6
         with:
           context: ./docker
           platforms: linux/amd64
           push: true
+          provenance: false
+          sbom: false
+          annotations: |
+            org.opencontainers.image.description=${{ env.DESCRIPTION }}
           tags: |
-            ${{ env.GHCR_ENDPOINT }}:beta
             ${{ env.GHCR_ENDPOINT }}:beta-amd64
             ${{ env.GHCR_ENDPOINT }}:${{ needs.version.outputs.version }}-beta-amd64
           build-args: VS=${{ needs.version.outputs.version }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=beta-amd64
+          cache-to: type=gha,mode=max,scope=beta-amd64
+
+  build-docker-arm64:
+    name: Build Docker (ARM64) :beta
+    runs-on: ubuntu-24.04-arm
+    needs: [ version, build-wheel ]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v4
+        with:
+          name: wheel
+          path: ./docker/dist
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and Push
+        uses: docker/build-push-action@v6
+        with:
+          context: ./docker
+          platforms: linux/arm64
+          push: true
+          provenance: false
+          sbom: false
+          annotations: |
+            org.opencontainers.image.description=${{ env.DESCRIPTION }}
+          tags: |
+            ${{ env.GHCR_ENDPOINT }}:beta-arm64
+            ${{ env.GHCR_ENDPOINT }}:${{ needs.version.outputs.version }}-beta-arm64
+          build-args: VS=${{ needs.version.outputs.version }}
+          cache-from: type=gha,scope=beta-arm64
+          cache-to: type=gha,mode=max,scope=beta-arm64
+
+  merge-docker-manifest:
+    name: Merge Docker Manifests
+    runs-on: ubuntu-latest
+    needs: [ version, build-docker-amd64, build-docker-arm64 ]
+    steps:
+      # Fixed: Added setup-buildx-action to ensure 'imagetools' supports annotations correctly
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Create and Push Manifests
+        run: |
+          # 1. Define source tags
+          TAG_AMD64="${{ needs.version.outputs.version }}-beta-amd64"
+          TAG_ARM64="${{ needs.version.outputs.version }}-beta-arm64"
+          
+          # Fixed: Use shell variable directly and 'index:' prefix to strictly target the manifest list
+          ANNOTATION="index:org.opencontainers.image.description=$DESCRIPTION"
+          
+          # 2. Create manifest for GHCR :beta
+          docker buildx imagetools create -t ${{ env.GHCR_ENDPOINT }}:beta \
+            --annotation "$ANNOTATION" \
+            ${{ env.GHCR_ENDPOINT }}:beta-amd64 \
+            ${{ env.GHCR_ENDPOINT }}:beta-arm64
+
+          # 3. Create manifest for GHCR :version-beta
+          docker buildx imagetools create -t ${{ env.GHCR_ENDPOINT }}:${{ needs.version.outputs.version }}-beta \
+            --annotation "$ANNOTATION" \
+            ${{ env.GHCR_ENDPOINT }}:${TAG_AMD64} \
+            ${{ env.GHCR_ENDPOINT }}:${TAG_ARM64}

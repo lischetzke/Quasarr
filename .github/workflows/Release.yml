@@ -17,6 +17,7 @@ on:
 env:
   ENDPOINT: "rix1337/docker-quasarr"
   GHCR_ENDPOINT: "ghcr.io/rix1337/quasarr"
+  DESCRIPTION: "Quasarr connects JDownloader with Radarr, Sonarr and LazyLibrarian. It also decrypts links protected by CAPTCHAs."
 
 jobs:
   version:
@@ -29,11 +30,16 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          # Fixed: Added glob to silence warning
+          enable-cache: true
+          cache-dependency-glob: "pyproject.toml"
       - name: Get Version
         id: version
         run: |
-          pip install requests
-          echo "version=$(python quasarr/providers/version.py)" >> $GITHUB_OUTPUT
+          echo "version=$(uv run python quasarr/providers/version.py)" >> $GITHUB_OUTPUT
 
   build-wheel:
     name: Build Wheel
@@ -43,17 +49,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - uses: actions/cache@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
         with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}-${{ hashFiles('setup.py') }}
-          restore-keys: ${{ runner.os }}-pip-
-      - name: Install dependencies
-        run: |
-          pip install wheel pyinstaller
-          pip install -r requirements.txt
+          enable-cache: true
+          cache-dependency-glob: "pyproject.toml"
       - name: Build wheel
-        run: python setup.py sdist bdist_wheel
+        run: uv build
       - uses: actions/upload-artifact@v4
         with:
           name: wheel
@@ -73,28 +75,26 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: "pyproject.toml"
+      - uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\pyinstaller
+          key: ${{ runner.os }}-pyinstaller-${{ hashFiles('pyproject.toml') }}
+          restore-keys: ${{ runner.os }}-pyinstaller-
       - name: Disable Windows Defender
         shell: powershell
         run: Set-MpPreference -DisableRealtimeMonitoring $true
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ~\AppData\Local\pip\Cache
-            ~\AppData\Local\pyinstaller
-          key: ${{ runner.os }}-build-${{ hashFiles('requirements.txt') }}-${{ hashFiles('setup.py') }}
-          restore-keys: |
-            ${{ runner.os }}-build-
-            ${{ runner.os }}-pip-
       - name: Install dependencies
         run: |
-          pip install wheel pyinstaller
-          pip install -r requirements.txt
+          uv sync --group build
       - name: Build exe
         run: |
-          python quasarr/providers/version.py
-          # Added --clean to ensure we don't use stale cache if something breaks, 
-          # but relies on the restored cache folder for speed.
-          pyinstaller --clean --onefile -y --version-file "file_version_info.txt" "Quasarr.py" -n "quasarr-${{ needs.version.outputs.version }}-standalone-win64"
+          uv run python quasarr/providers/version.py --create-version-file
+          uv run pyinstaller --clean --onefile -y --version-file "file_version_info.txt" "Quasarr.py" -n "quasarr-${{ needs.version.outputs.version }}-standalone-win64"
       - uses: actions/upload-artifact@v4
         with:
           name: exe-amd64
@@ -126,6 +126,10 @@ jobs:
           context: ./docker
           platforms: linux/amd64
           push: true
+          provenance: false
+          sbom: false
+          annotations: |
+            org.opencontainers.image.description=${{ env.DESCRIPTION }}
           tags: |
             ${{ env.ENDPOINT }}:latest-amd64
             ${{ env.ENDPOINT }}:${{ needs.version.outputs.version }}-amd64
@@ -161,6 +165,10 @@ jobs:
           context: ./docker
           platforms: linux/arm64
           push: true
+          provenance: false
+          sbom: false
+          annotations: |
+            org.opencontainers.image.description=${{ env.DESCRIPTION }}
           tags: |
             ${{ env.ENDPOINT }}:latest-arm64
             ${{ env.ENDPOINT }}:${{ needs.version.outputs.version }}-arm64
@@ -175,6 +183,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: [ version, build-docker-amd64, build-docker-arm64 ]
     steps:
+      # Fixed: Added setup-buildx-action
+      - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERUSER }}
@@ -189,6 +199,8 @@ jobs:
           # 1. Define source tags
           TAG_AMD64="${{ needs.version.outputs.version }}-amd64"
           TAG_ARM64="${{ needs.version.outputs.version }}-arm64"
+          # Fixed: Added index: prefix and using shell variable
+          ANNOTATION="index:org.opencontainers.image.description=$DESCRIPTION"
           
           # 2. Create manifest for DockerHub :latest
           docker buildx imagetools create -t ${{ env.ENDPOINT }}:latest \
@@ -199,14 +211,16 @@ jobs:
           docker buildx imagetools create -t ${{ env.ENDPOINT }}:${{ needs.version.outputs.version }} \
             ${{ env.ENDPOINT }}:${TAG_AMD64} \
             ${{ env.ENDPOINT }}:${TAG_ARM64}
-            
+
           # 4. Create manifest for GHCR :latest
           docker buildx imagetools create -t ${{ env.GHCR_ENDPOINT }}:latest \
+            --annotation "$ANNOTATION" \
             ${{ env.GHCR_ENDPOINT }}:latest-amd64 \
             ${{ env.GHCR_ENDPOINT }}:latest-arm64
 
           # 5. Create manifest for GHCR :version
           docker buildx imagetools create -t ${{ env.GHCR_ENDPOINT }}:${{ needs.version.outputs.version }} \
+            --annotation "$ANNOTATION" \
             ${{ env.GHCR_ENDPOINT }}:${TAG_AMD64} \
             ${{ env.GHCR_ENDPOINT }}:${TAG_ARM64}
 
@@ -250,8 +264,9 @@ jobs:
           artifactErrorsFailBuild: true
           bodyFile: ".github/Changelog.md"
           tag: v.${{ needs.version.outputs.version }}
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
       - name: Upload to PyPI
         if: ${{ !inputs.skip_pypi }}
         run: |
-          pip install -U twine packaging
-          python -m twine upload ./wheel/* -u __token__ -p ${{ secrets.PYPI_TOKEN }}
+          uv run --with twine --with packaging python -m twine upload ./wheel/* -u __token__ -p ${{ secrets.PYPI_TOKEN }}

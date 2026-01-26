@@ -179,8 +179,7 @@ docker run -d \
 | `EXTERNAL_ADDRESS` | Optional. External URL (e.g. reverse proxy). Always protect external access with authentication.                                                                                                                                            |
 | `DISCORD`          | Optional. Discord webhook URL for notifications.                                                                                                                                                                                            |
 | `HOSTNAMES`        | Optional. URL to a hostname list to skip manual setup. Must be a publicly accessible `HTTP`/`HTTPS` link, point to a raw `.ini` or plain text file (not HTML or JSON), and contain at least one hostname per line in the format `ab = xyz`. |
-| `USER`             | Username to protect the web UI.                                                                                                                                                                                                             |
-| `PASS`             | Password to protect the web UI.                                                                                                                                                                                                             |
+| `USER` / `PASS`    | Optional, but recommended! Username / Password to protect the web UI.                                                                                                                                                                       |
 | `AUTH`             | Authentication mode. Supported values: `form` or `basic`.                                                                                                                                                                                   |
 | `SILENT`           | Optional. If `True`, silences all Discord notifications except SponsorHelper error messages.                                                                                                                                                |
 | `DEBUG`            | Optional. If `True`, enables debug logging.                                                                                                                                                                                                 |
@@ -190,7 +189,7 @@ docker run -d \
 
 Use this only in case you can't run the docker image.
 
-`pip install quasarr`
+`uv tool install quasarr`
 
 * Requires Python 3.12 or later
 
