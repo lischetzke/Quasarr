@@ -2,8 +2,8 @@
 # Quasarr
 # Project by https://github.com/rix1337
 
-from typing import Dict, Any
 from json import loads
+from typing import Dict, Any
 
 
 class StatsHelper:
@@ -110,29 +110,29 @@ class StatsHelper:
         try:
             db = self.shared_state.values["database"]("imdb_metadata")
             all_entries = db.retrieve_all_titles()
-            
+
             total_cached = 0
             with_title = 0
             with_poster = 0
             with_localized = 0
-            
+
             for _, data_str in all_entries:
                 try:
                     data = loads(data_str)
                     total_cached += 1
-                    
+
                     if data.get("title"):
                         with_title += 1
-                    
+
                     if data.get("poster_link"):
                         with_poster += 1
-                        
+
                     if data.get("localized") and isinstance(data["localized"], dict) and len(data["localized"]) > 0:
                         with_localized += 1
-                        
+
                 except (ValueError, TypeError):
                     continue
-                    
+
             return {
                 "imdb_total_cached": total_cached,
                 "imdb_with_title": with_title,

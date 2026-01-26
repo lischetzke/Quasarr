@@ -582,7 +582,8 @@ def get_packages(shared_state, _cache=None):
                 "uuid": package.get("uuid"),
                 "is_archive": package.get("is_archive", False),
                 "extraction_ok": package.get("extraction_ok", False),
-                "extraction_status": "SUCCESSFUL" if package.get("extraction_ok", False) else "RUNNING" if package.get("is_archive", False) else ""
+                "extraction_status": "SUCCESSFUL" if package.get("extraction_ok", False) else "RUNNING" if package.get(
+                    "is_archive", False) else ""
             })
             history_index += 1
         else:

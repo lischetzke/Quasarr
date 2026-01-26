@@ -84,7 +84,7 @@ def he_search(shared_state, start_time, request_from, search_string="", mirror=N
             if not local_title:
                 info(f"{hostname}: no title for IMDb {imdb_id}")
                 return releases
-            if not season: 
+            if not season:
                 year = get_year(imdb_id)
                 if year:
                     local_title += f" {year}"
@@ -97,7 +97,7 @@ def he_search(shared_state, start_time, request_from, search_string="", mirror=N
 
     if not source_search:
         search_type = "feed"
-        timeout=30
+        timeout = 30
     else:
         search_type = "search"
         timeout = 10

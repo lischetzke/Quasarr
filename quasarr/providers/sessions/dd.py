@@ -32,7 +32,7 @@ def create_and_persist_session(shared_state):
     }
 
     r = dd_session.post(f'https://{dd}/index/index',
-                                  cookies=cookies, headers=headers, data=data, timeout=10)
+                        cookies=cookies, headers=headers, data=data, timeout=10)
     r.raise_for_status()
 
     error = False

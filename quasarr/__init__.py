@@ -263,7 +263,7 @@ def flaresolverr_checker(shared_state_dict, shared_state_lock):
         flaresolverr_skipped = skip_flaresolverr_db.retrieve("skipped")
 
         flaresolverr_url = Config('FlareSolverr').get('url')
-        
+
         # If FlareSolverr is not configured and not skipped, it means it's the first run
         # and the user needs to be prompted via the WebUI.
         # This background process should NOT block or prompt the user.
@@ -271,7 +271,7 @@ def flaresolverr_checker(shared_state_dict, shared_state_lock):
         if not flaresolverr_url and not flaresolverr_skipped:
             info('FlareSolverr URL not configured. Please configure it via the WebUI.')
             info('Some sites (AL) will not work without FlareSolverr.')
-            return # Exit the checker, it will be re-checked if user configures it later
+            return  # Exit the checker, it will be re-checked if user configures it later
 
         if flaresolverr_skipped:
             info('FlareSolverr setup skipped by user preference')
