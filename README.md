@@ -263,7 +263,7 @@ Image access is limited to [active monthly GitHub sponsors](https://github.com/u
 3. Copy the **API Key** value
 4. Use this value for the `QUASARR_API_KEY` environment variable
 
-> **Note:** The API key is required for SponsorsHelper to communicate securely with Quasarr. Without it, all requests
+> **Note:** The API Key is required for SponsorsHelper to communicate securely with Quasarr. Without it, all requests
 > will be rejected with a 401/403 error.
 
 ---
@@ -302,7 +302,7 @@ docker run -d \
 | Parameter                       | Description                                                                           |
 |---------------------------------|---------------------------------------------------------------------------------------|
 | `QUASARR_URL`                   | Local URL of Quasarr (e.g., `http://192.168.0.1:8080`)                                |
-| `QUASARR_API_KEY`               | Your Quasarr API key (found in Quasarr web UI under "API Settings")                   |
+| `QUASARR_API_KEY`               | Your Quasarr API Key (found in Quasarr web UI under "API Settings")                   |
 | `DEATHBYCAPTCHA_TOKEN`          | [DeathByCaptcha](https://deathbycaptcha.com/register?refid=6184288242b) account token |
 | `GITHUB_TOKEN`                  | Classic GitHub PAT with the scopes listed above                                       |
 | `FLARESOLVERR_URL`              | Local URL of [FlareSolverr](https://github.com/FlareSolverr/FlareSolverr)             |

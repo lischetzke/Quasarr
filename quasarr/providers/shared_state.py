@@ -75,7 +75,7 @@ def set_files(config_path):
 def generate_api_key():
     api_key = os.urandom(32).hex()
     Config('API').save("key", api_key)
-    info(f'API key replaced with: "{api_key}!"')
+    info(f'API Key replaced with: "{api_key}!"')
     return api_key
 
 

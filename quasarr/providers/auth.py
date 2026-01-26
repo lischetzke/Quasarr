@@ -319,9 +319,9 @@ def require_api_key(func):
     def decorated(*args, **kwargs):
         api_key = Config('API').get('key')
         if not request.query.apikey:
-            return abort(401, "Missing API key")
+            return abort(401, "Missing API Key")
         if request.query.apikey != api_key:
-            return abort(403, "Invalid API key")
+            return abort(403, "Invalid API Key")
         return func(*args, **kwargs)
 
     return decorated

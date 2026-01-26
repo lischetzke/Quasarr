@@ -175,7 +175,7 @@ def get_api(shared_state_dict, shared_state_lock):
                     </div>
 
                     <p style="margin-top: 15px;">
-                        {render_button("Regenerate API key", "secondary", {"onclick": "confirmRegenerateApiKey()"})}
+                        {render_button("Regenerate API Key", "secondary", {"onclick": "confirmRegenerateApiKey()"})}
                     </p>
                 </div>
             </details>
@@ -440,7 +440,7 @@ def get_api(shared_state_dict, shared_state_lock):
                 if (copyKeyBtn) {{
                     copyKeyBtn.onclick = function() {{
                         copyToClipboard(apiInput.value, copyKeyBtn, function() {{
-                            // Re-hide the API key after copying
+                            // Re-hide the API Key after copying
                             apiInput.type = 'password';
                             toggleBtn.innerText = 'Show';
                         }});
@@ -462,8 +462,8 @@ def get_api(shared_state_dict, shared_state_lock):
 
             function confirmRegenerateApiKey() {{
                 showModal(
-                    'Regenerate API key?', 
-                    'Are you sure you want to regenerate the API key? This will invalidate the current key.', 
+                    'Regenerate API Key?', 
+                    'Are you sure you want to regenerate the API Key? This will invalidate the current key.', 
                     `<button class="btn-secondary" onclick="closeModal()">Cancel</button>
                      <button class="btn-primary" onclick="location.href='/regenerate-api-key'">Regenerate</button>`
                 );
@@ -477,6 +477,6 @@ def get_api(shared_state_dict, shared_state_lock):
     @app.get('/regenerate-api-key')
     def regenerate_api_key():
         shared_state.generate_api_key()
-        return render_success(f'API key replaced!', 5)
+        return render_success(f'API Key replaced!', 5)
 
     Server(app, listen='0.0.0.0', port=shared_state.values["port"]).serve_forever()
