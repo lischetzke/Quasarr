@@ -43,6 +43,8 @@ jobs:
   build-wheel:
     name: Build Wheel
     runs-on: ubuntu-latest
+    outputs:
+      attestation-id: ${{ steps.attest.outputs.attestation-id }}
     permissions:
       contents: read
       id-token: write
@@ -60,6 +62,7 @@ jobs:
       - name: Build wheel
         run: uv build
       - name: Generate artifact attestation
+        id: attest
         uses: actions/attest-build-provenance@v2
         with:
           subject-path: "dist/*.whl"
@@ -268,15 +271,24 @@ jobs:
           if [ -n "$PR_BODY" ]; then
             echo -e "\n$PR_BODY" >> .github/Changelog.md
           fi
-      - name: Append changelog
+      - name: Create Release Body
         run: |
-          echo -e "\n${{ steps.changelog.outputs.changelog }}" >> .github/Changelog.md
-          echo -e "\n[Attestation](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}/attestations)" >> .github/Changelog.md
+          echo "### Install / Update:" > release_body.md
+          echo "" >> release_body.md
+          echo "\`uv tool upgrade quasarr\`" >> release_body.md
+          echo "" >> release_body.md
+          echo "### Changelog:" >> release_body.md
+          echo "" >> release_body.md
+          echo "${{ steps.changelog.outputs.changelog }}" >> release_body.md
+          echo "" >> release_body.md
+          echo "[Attestation](https://github.com/${{ github.repository }}/attestations/${{ needs.build-wheel.outputs.attestation-id }})" >> release_body.md
+          echo "" >> release_body.md
+          echo "\`docker pull ${{ env.GHCR_ENDPOINT }}:latest\`" >> release_body.md
 
       - name: Create Release
         uses: ncipollo/release-action@v1
         with:
           artifacts: "./wheel/*.whl,./exe-amd64/*.exe"
           artifactErrorsFailBuild: true
-          bodyFile: ".github/Changelog.md"
+          bodyFile: "release_body.md"
           tag: v.${{ needs.version.outputs.version }}
