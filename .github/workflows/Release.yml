@@ -33,7 +33,6 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v5
         with:
-          # Fixed: Added glob to silence warning
           enable-cache: true
           cache-dependency-glob: "pyproject.toml"
       - name: Get Version
@@ -44,6 +43,10 @@ jobs:
   build-wheel:
     name: Build Wheel
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v5
@@ -56,6 +59,10 @@ jobs:
           cache-dependency-glob: "pyproject.toml"
       - name: Build wheel
         run: uv build
+      - name: Generate artifact attestation
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: "dist/*.whl"
       - uses: actions/upload-artifact@v4
         with:
           name: wheel
@@ -75,26 +82,26 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+
       - name: Install uv
         uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
           cache-dependency-glob: "pyproject.toml"
-      - uses: actions/cache@v4
-        with:
-          path: ~\AppData\Local\pyinstaller
-          key: ${{ runner.os }}-pyinstaller-${{ hashFiles('pyproject.toml') }}
-          restore-keys: ${{ runner.os }}-pyinstaller-
+
       - name: Disable Windows Defender
         shell: powershell
         run: Set-MpPreference -DisableRealtimeMonitoring $true
+
       - name: Install dependencies
         run: |
           uv sync --group build
+
       - name: Build exe
         run: |
           uv run python quasarr/providers/version.py --create-version-file
           uv run pyinstaller --clean --onefile -y --version-file "file_version_info.txt" "Quasarr.py" -n "quasarr-${{ needs.version.outputs.version }}-standalone-win64"
+
       - uses: actions/upload-artifact@v4
         with:
           name: exe-amd64
@@ -183,7 +190,6 @@ jobs:
     runs-on: ubuntu-latest
     needs: [ version, build-docker-amd64, build-docker-arm64 ]
     steps:
-      # Fixed: Added setup-buildx-action
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         with:
@@ -196,29 +202,23 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Create and Push Manifests
         run: |
-          # 1. Define source tags
           TAG_AMD64="${{ needs.version.outputs.version }}-amd64"
           TAG_ARM64="${{ needs.version.outputs.version }}-arm64"
-          # Fixed: Added index: prefix and using shell variable
           ANNOTATION="index:org.opencontainers.image.description=$DESCRIPTION"
           
-          # 2. Create manifest for DockerHub :latest
           docker buildx imagetools create -t ${{ env.ENDPOINT }}:latest \
             ${{ env.ENDPOINT }}:latest-amd64 \
             ${{ env.ENDPOINT }}:latest-arm64
 
-          # 3. Create manifest for DockerHub :version
           docker buildx imagetools create -t ${{ env.ENDPOINT }}:${{ needs.version.outputs.version }} \
             ${{ env.ENDPOINT }}:${TAG_AMD64} \
             ${{ env.ENDPOINT }}:${TAG_ARM64}
 
-          # 4. Create manifest for GHCR :latest
           docker buildx imagetools create -t ${{ env.GHCR_ENDPOINT }}:latest \
             --annotation "$ANNOTATION" \
             ${{ env.GHCR_ENDPOINT }}:latest-amd64 \
             ${{ env.GHCR_ENDPOINT }}:latest-arm64
 
-          # 5. Create manifest for GHCR :version
           docker buildx imagetools create -t ${{ env.GHCR_ENDPOINT }}:${{ needs.version.outputs.version }} \
             --annotation "$ANNOTATION" \
             ${{ env.GHCR_ENDPOINT }}:${TAG_AMD64} \
@@ -234,6 +234,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+
       - uses: actions/download-artifact@v4
         with:
           name: wheel
@@ -242,6 +243,14 @@ jobs:
         with:
           name: exe-amd64
           path: ./exe-amd64
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Publish to PyPI
+        if: ${{ !inputs.skip_pypi }}
+        run: uv publish ./wheel/* --token ${{ secrets.PYPI_TOKEN }}
+
       - name: Generate changelog
         id: changelog
         uses: metcalfc/changelog-generator@v4.6.2
@@ -257,6 +266,7 @@ jobs:
           fi
       - name: Append changelog
         run: echo -e "\n${{ steps.changelog.outputs.changelog }}" >> .github/Changelog.md
+
       - name: Create Release
         uses: ncipollo/release-action@v1
         with:
@@ -264,9 +274,3 @@ jobs:
           artifactErrorsFailBuild: true
           bodyFile: ".github/Changelog.md"
           tag: v.${{ needs.version.outputs.version }}
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-      - name: Upload to PyPI
-        if: ${{ !inputs.skip_pypi }}
-        run: |
-          uv run --with twine --with packaging python -m twine upload ./wheel/* -u __token__ -p ${{ secrets.PYPI_TOKEN }}

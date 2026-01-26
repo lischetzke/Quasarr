@@ -7,9 +7,10 @@ import os
 import re
 import time
 import traceback
-import unicodedata
 from datetime import datetime, timedelta, date
 from urllib import parse
+
+import unicodedata
 
 import quasarr
 from quasarr.providers.log import info, debug
