@@ -13,7 +13,7 @@ dependencies = [
     "requests>=2.32.5",
 ]
 authors = [
-    { name = "rix1337", email = "" }
+    { name = "rix1337", email = "rix1337@users.noreply.github.com" }
 ]
 classifiers = [
     "Programming Language :: Python :: 3",

@@ -187,13 +187,14 @@ docker run -d \
 
 # Manual setup
 
-Use this only in case you can't run the docker image.
+> Use this only in case you can't run the docker image.
+
+> ⚠️ Requires Python 3.12 (or later) and [uv](https://docs.astral.sh/uv/#installation)!
 
 `uv tool install quasarr`
 
-* Requires Python 3.12 or later
-
 ```
+quasarr
   --port=8080
   --discord=https://discord.com/api/webhooks/1234567890/ABCDEFGHIJKLMN
   --external_address=https://foo.bar/

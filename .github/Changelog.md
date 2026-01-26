@@ -1,5 +1,5 @@
 ### Install / Update:
 
-`uv tool install quasarr`
+`uv tool upgrade quasarr`
 
 ### Changelog:

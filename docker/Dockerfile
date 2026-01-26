@@ -1,6 +1,6 @@
 FROM ghcr.io/astral-sh/uv:latest AS uv
 
-FROM alpine:latest
+FROM python:3.12-slim-bookworm
 MAINTAINER rix1337
 
 LABEL org.opencontainers.image.description="Quasarr connects JDownloader with Radarr, Sonarr and LazyLibrarian. It also decrypts links protected by CAPTCHAs."
@@ -9,8 +9,6 @@ LABEL org.opencontainers.image.description="Quasarr connects JDownloader with Ra
 ARG PACKAGE_NAME=quasarr
 
 COPY --from=uv /uv /usr/local/bin/uv
-
-RUN apk add --no-cache python3
 
 # install local package
 COPY dist/*.whl /tmp/
