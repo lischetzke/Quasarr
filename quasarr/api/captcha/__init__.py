@@ -324,7 +324,7 @@ def setup_captcha_routes(app):
 
         source_button = ""
         if original_url:
-            source_button = f'<p>{render_button("Source", "secondary", {"onclick": f"window.open(\'{js_single_quoted_string_safe(original_url)}\', \'_blank\')" })}</p>'
+            source_button = f'<p>{render_button("Source", "secondary", {"onclick": f"window.open(\'{js_single_quoted_string_safe(original_url)}\', \'_blank\')"})}</p>'
 
         return render_centered_html(f"""
         <!DOCTYPE html>
@@ -370,7 +370,7 @@ def setup_captcha_routes(app):
 
         source_button = ""
         if original_url:
-            source_button = f'<p>{render_button("Source", "secondary", {"onclick": f"window.open(\'{js_single_quoted_string_safe(original_url)}\', \'_blank\')" })}</p>'
+            source_button = f'<p>{render_button("Source", "secondary", {"onclick": f"window.open(\'{js_single_quoted_string_safe(original_url)}\', \'_blank\')"})}</p>'
 
         return render_centered_html(f"""
         <!DOCTYPE html>
@@ -417,7 +417,7 @@ def setup_captcha_routes(app):
 
         source_button = ""
         if original_url:
-            source_button = f'<p>{render_button("Source", "secondary", {"onclick": f"window.open(\'{js_single_quoted_string_safe(original_url)}\', \'_blank\')" })}</p>'
+            source_button = f'<p>{render_button("Source", "secondary", {"onclick": f"window.open(\'{js_single_quoted_string_safe(original_url)}\', \'_blank\')"})}</p>'
 
         return render_centered_html(f"""
         <!DOCTYPE html>
@@ -464,7 +464,7 @@ def setup_captcha_routes(app):
 
         source_button = ""
         if original_url:
-            source_button = f'<p>{render_button("Source", "secondary", {"onclick": f"window.open(\'{js_single_quoted_string_safe(original_url)}\', \'_blank\')" })}</p>'
+            source_button = f'<p>{render_button("Source", "secondary", {"onclick": f"window.open(\'{js_single_quoted_string_safe(original_url)}\', \'_blank\')"})}</p>'
 
         return render_centered_html(f"""
         <!DOCTYPE html>
@@ -852,7 +852,7 @@ def setup_captcha_routes(app):
 
         source_button = ""
         if original_url:
-            source_button = f'<p>{render_button("Source", "secondary", {"onclick": f"window.open(\'{js_single_quoted_string_safe(original_url)}\', \'_blank\')" })}</p>'
+            source_button = f'<p>{render_button("Source", "secondary", {"onclick": f"window.open(\'{js_single_quoted_string_safe(original_url)}\', \'_blank\')"})}</p>'
 
         return render_centered_html(f"""
         <!DOCTYPE html>
@@ -1219,7 +1219,7 @@ def setup_captcha_routes(app):
 
         source_button_html = ""
         if original_url:
-            source_button_html = f'<p>{render_button("Source", "secondary", {"onclick": f"window.open(\'{js_single_quoted_string_safe(original_url)}\', \'_blank\')" })}</p>'
+            source_button_html = f'<p>{render_button("Source", "secondary", {"onclick": f"window.open(\'{js_single_quoted_string_safe(original_url)}\', \'_blank\')"})}</p>'
 
         content = render_centered_html(r'''
             <style>

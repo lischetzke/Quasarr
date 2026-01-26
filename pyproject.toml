@@ -1,0 +1,40 @@
+[project]
+name = "quasarr"
+version = "0.0.0"
+description = "Quasarr connects JDownloader with Radarr, Sonarr and LazyLibrarian. It also decrypts links protected by CAPTCHAs."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "beautifulsoup4>=4.14.3",
+    "bottle>=0.13.4",
+    "dukpy>=0.5.0",
+    "pillow>=12.0.0",
+    "pycryptodomex>=3.23.0",
+    "requests>=2.32.5",
+]
+authors = [
+    { name = "rix1337", email = "" }
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+
+[project.scripts]
+quasarr = "quasarr:run"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "quasarr/providers/version.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["quasarr"]
+
+[dependency-groups]
+build = [
+    "pyinstaller>=6.0.0",
+]

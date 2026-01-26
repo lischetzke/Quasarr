@@ -1,22 +1,23 @@
+FROM ghcr.io/astral-sh/uv:latest AS uv
+
 FROM alpine:latest
 MAINTAINER rix1337
+
+LABEL org.opencontainers.image.description="Quasarr connects JDownloader with Radarr, Sonarr and LazyLibrarian. It also decrypts links protected by CAPTCHAs."
 
 # Define package name
 ARG PACKAGE_NAME=quasarr
 
-RUN apk add --no-cache build-base \
-    python3-dev \
-    py3-pip
+COPY --from=uv /uv /usr/local/bin/uv
 
-# setup
-RUN mkdir -p ~/.config/pip && echo -e "[global]\nbreak-system-packages = true" > ~/.config/pip/pip.conf \
-  && pip3 install --upgrade pip \
-  && pip3 install wheel
+RUN apk add --no-cache python3
 
 # install local package
 COPY dist/*.whl /tmp/
-RUN pip install /tmp/*.whl && rm /tmp/*.whl && \
-    apk del build-base
+RUN uv tool install /tmp/*.whl --force && rm /tmp/*.whl
+
+# Ensure the binary is in the PATH
+ENV PATH="/root/.local/bin:$PATH"
 
 # volumes and ports
 VOLUME /config

@@ -456,7 +456,7 @@ def get_imdb_metadata(imdb_id):
     if response_json:
         imdb_metadata["title"] = TitleCleaner.sanitize(response_json.get("primaryTitle", ""))
         imdb_metadata["year"] = response_json.get("startYear")
-        
+
         days = 7 if imdb_metadata.get("title") and imdb_metadata.get("year") else 1
         imdb_metadata["ttl"] = now + timedelta(days=days).total_seconds()
 

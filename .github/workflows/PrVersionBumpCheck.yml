@@ -50,9 +50,14 @@ jobs:
 
           def load_version_from_path(path: Path):
               content = path.read_text()
-              match = re.search(r'def get_version\(\):\s*return\s*["\']([^"\']+)["\']', content)
+              # Updated regex to match the new __version__ variable assignment
+              match = re.search(r'__version__\s*=\s*["\']([^"\']+)["\']', content)
               if not match:
-                  raise ValueError(f"Could not find get_version() in {path}")
+                  # Fallback to old pattern just in case
+                  match = re.search(r'def get_version\(\):\s*return\s*["\']([^"\']+)["\']', content)
+          
+              if not match:
+                  raise ValueError(f"Could not find version string in {path}")
               return match.group(1)
 
           def parse(v):

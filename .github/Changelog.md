@@ -1,5 +1,5 @@
 ### Install / Update:
 
-`pip install -U quasarr`
+`uv tool install quasarr`
 
 ### Changelog:

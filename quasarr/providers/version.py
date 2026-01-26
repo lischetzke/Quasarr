@@ -3,12 +3,13 @@
 # Project by https://github.com/rix1337
 
 import re
+import sys
 
-import requests
+__version__ = "2.4.3"
 
 
 def get_version():
-    return "2.4.2"
+    return __version__
 
 
 def get_latest_version():
@@ -17,6 +18,11 @@ def get_latest_version():
     Returns the tag name string (e.g. "1.5.0" or "1.4.2a1").
     Raises RuntimeError on HTTP errors.
     """
+    try:
+        import requests
+    except ImportError:
+        return __version__
+
     api_url = "https://api.github.com/repos/rix1337/Quasarr/releases/latest"
     resp = requests.get(api_url, headers={"Accept": "application/vnd.github.v3+json"})
     if resp.status_code != 200:
@@ -114,5 +120,7 @@ def create_version_file():
 
 
 if __name__ == '__main__':
-    print(get_version())
-    create_version_file()
+    if len(sys.argv) > 1 and sys.argv[1] == '--create-version-file':
+        create_version_file()
+    else:
+        print(get_version())
