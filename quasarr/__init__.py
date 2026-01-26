@@ -212,7 +212,7 @@ def run():
 
         print('Setup instructions: "https://github.com/rix1337/Quasarr?tab=readme-ov-file#instructions"')
         print(f'URL: "{shared_state.values['internal_address']}"')
-        print(f'API key: "{api_key}" (without quotes)')
+        print(f'API Key: "{api_key}" (without quotes)')
 
         if external_address != internal_address:
             print(f'External URL: "{shared_state.values["external_address"]}"')
