@@ -12,7 +12,10 @@ COPY --from=uv /uv /usr/local/bin/uv
 
 # install local package
 COPY dist/*.whl /tmp/
-RUN uv tool install /tmp/*.whl --force && rm /tmp/*.whl
+
+# Updated: Added cache mount for uv to speed up installation
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv tool install /tmp/*.whl --force && rm /tmp/*.whl
 
 # Ensure the binary is in the PATH
 ENV PATH="/root/.local/bin:$PATH"
