@@ -171,7 +171,7 @@ jobs:
           echo "### Docker:" > release_body.md
           echo "\`docker pull ${{ env.GHCR_ENDPOINT }}:beta\`" >> release_body.md
           echo "### Python:" >> release_body.md
-          echo "\`uv tool upgrade quasarr\`" >> release_body.md
+          echo "\`uv tool install https://github.com/rix1337/Quasarr/releases/download/beta/quasarr-${{ needs.version.outputs.version }}-py3-none-any.whl\`" >> release_body.md
           echo "### Changelog:" >> release_body.md
           echo "${{ steps.changelog.outputs.changelog }}" >> release_body.md
           echo "[Attestation](https://github.com/${{ github.repository }}/attestations/${{ needs.build-wheel.outputs.attestation-id }})" >> release_body.md
@@ -297,7 +297,7 @@ jobs:
           echo "📢 Notifying stakeholders..."
           RELEASE_BODY=$(gh release view beta --json body --jq .body)
           if [ -n "$DISCORD_WEBHOOK" ]; then
-            jq -n --arg title "🚀 New Beta Build: $VERSION" --arg desc "$RELEASE_BODY" --arg url "https://github.com/$REPO/releases/tag/beta" '{content: null, embeds: [{title: $title, description: $desc, url: $url, color: 5814783}]}' > discord_payload.json
+            jq -n --arg title "🚀 New Beta Build: $VERSION" --arg url "https://github.com/$REPO/releases/tag/beta" '{content: null, flags: 4096, embeds: [{title: $title, url: $url, color: 5814783}]}' > discord_payload.json
             curl -H "Content-Type: application/json" -d @discord_payload.json "$DISCORD_WEBHOOK"
           fi
           PR_NUMBER=$(gh pr list --search "${{ github.sha }}" --state merged --json number --jq '.[0].number')

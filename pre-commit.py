@@ -128,11 +128,15 @@ def task_version_bump():
             base = "origin/main"
 
         # Read Main Version
-        run(["git", "checkout", base, "--", str(VERSION_FILE)], capture=True)
-        main_v = get_ver(VERSION_FILE.read_text())
+        try:
+            main_v_content = subprocess.check_output(
+                ["git", "show", f"{base}:{VERSION_FILE.as_posix()}"], text=True
+            )
+            main_v = get_ver(main_v_content)
+        except Exception:
+            main_v = None
 
-        # Reset file and read Current Version
-        run(["git", "checkout", "HEAD", "--", str(VERSION_FILE)], capture=True)
+        # Read Current Version
         curr_v = get_ver(VERSION_FILE.read_text())
 
         print(f"📊 Main: {main_v} | Current: {curr_v}")
