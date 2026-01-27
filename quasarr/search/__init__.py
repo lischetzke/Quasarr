@@ -185,12 +185,15 @@ class SearchExecutor:
         results = []
         futures = []
         cache_keys = []
+        cache_used = False
 
         with ThreadPoolExecutor() as executor:
             for key, func, use_cache in self.searches:
                 if use_cache:
                     cached_result = search_cache.get(key)
                     if cached_result is not None:
+                        debug(f"Using cached result for {key}")
+                        cache_used = True
                         results.extend(cached_result)
                         continue
 
@@ -206,6 +209,9 @@ class SearchExecutor:
                     search_cache.set(cache_keys[index], result)
             except Exception as e:
                 info(f"An error occurred: {e}")
+
+        if cache_used:
+            info("Presenting cached results instead of searching online.")
 
         return results
 
