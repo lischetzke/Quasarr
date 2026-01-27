@@ -57,6 +57,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
+      epoch: ${{ steps.version.outputs.epoch }}
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v5
@@ -68,8 +69,10 @@ jobs:
       - id: version
         run: |
           VERSION=$(uv run python quasarr/providers/version.py)
+          EPOCH=$(date +%s)
           echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "🏷️ Detected version: $VERSION"
+          echo "epoch=$EPOCH" >> $GITHUB_OUTPUT
+          echo "🏷️ Detected version: $VERSION ($EPOCH)"
 
   build-wheel:
     needs: [ quality-check, version ]
@@ -168,10 +171,12 @@ jobs:
       - name: Create Release Body
         run: |
           echo "📝 Generating Release Body..."
-          echo "### Docker:" > release_body.md
+          echo "# ${{ needs.version.outputs.version }} (${{ needs.version.outputs.epoch }})" > release_body.md
+          echo "" >> release_body.md
+          echo "### Docker:" >> release_body.md
           echo "\`docker pull ${{ env.GHCR_ENDPOINT }}:beta\`" >> release_body.md
           echo "### Python:" >> release_body.md
-          echo "\`uv tool upgrade quasarr\`" >> release_body.md
+          echo "\`uv tool install https://github.com/rix1337/Quasarr/releases/download/beta/quasarr-${{ needs.version.outputs.version }}-py3-none-any.whl\`" >> release_body.md
           echo "### Changelog:" >> release_body.md
           echo "${{ steps.changelog.outputs.changelog }}" >> release_body.md
           echo "[Attestation](https://github.com/${{ github.repository }}/attestations/${{ needs.build-wheel.outputs.attestation-id }})" >> release_body.md
@@ -182,7 +187,7 @@ jobs:
           removeArtifacts: true
           replacesArtifacts: true
           tag: beta
-          name: Beta Build
+          name: "${{ needs.version.outputs.version }} (${{ needs.version.outputs.epoch }})"
           bodyFile: "release_body.md"
           prerelease: true
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -292,12 +297,13 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
           VERSION: ${{ needs.version.outputs.version }}
+          EPOCH: ${{ needs.version.outputs.epoch }}
           REPO: ${{ github.repository }}
         run: |
           echo "📢 Notifying stakeholders..."
           RELEASE_BODY=$(gh release view beta --json body --jq .body)
           if [ -n "$DISCORD_WEBHOOK" ]; then
-            jq -n --arg title "🚀 New Beta Build: $VERSION" --arg desc "$RELEASE_BODY" --arg url "https://github.com/$REPO/releases/tag/beta" '{content: null, embeds: [{title: $title, description: $desc, url: $url, color: 5814783}]}' > discord_payload.json
+            jq -n --arg title "🚀 New Beta Build: $VERSION ($EPOCH)" --arg url "https://github.com/$REPO/releases/tag/beta" '{content: null, flags: 4096, embeds: [{title: $title, url: $url, color: 5814783}]}' > discord_payload.json
             curl -H "Content-Type: application/json" -d @discord_payload.json "$DISCORD_WEBHOOK"
           fi
           PR_NUMBER=$(gh pr list --search "${{ github.sha }}" --state merged --json number --jq '.[0].number')
@@ -338,4 +344,5 @@ jobs:
           echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
           echo "| --- | --- |" >> $GITHUB_STEP_SUMMARY
           echo "| **Version** | \`${{ needs.version.outputs.version || 'N/A' }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Epoch** | \`${{ needs.version.outputs.epoch || 'N/A' }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| **Release Job** | ${{ needs.beta-release.result || 'Skipped' }} |" >> $GITHUB_STEP_SUMMARY
