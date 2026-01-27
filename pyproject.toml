@@ -44,8 +44,10 @@ build = [
 ]
 
 [tool.ruff]
-lint.select = ["I"]
-lint.fixable = ["I"]
+# This covers syntax and logic (F) + import sorting (I)
+lint.select = ["F", "I"]
+lint.fixable = ["F", "I"]
+lint.ignore = ["E"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["quasarr"]
