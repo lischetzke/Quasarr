@@ -47,8 +47,8 @@ jobs:
           GITHUB_REPO: ${{ github.repository }}
           WORKFLOW_NAME: ${{ github.workflow }}
         run: |
-          echo "🛠️ Running maintenance.py..."
-          uv run maintenance.py --ci
+          echo "🛠️ Running pre-commit.py..."
+          uv run pre-commit.py --ci
           echo "✨ Maintenance complete."
 
   version:

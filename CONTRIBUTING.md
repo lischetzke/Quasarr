@@ -10,6 +10,12 @@ Ensure you have the development tools (like `ruff`) installed and your environme
 uv sync --group dev
 ```
 
+Install the pre-commit hook that ensures linting, formatting and version upgrades through pre-commit.py
+
+```bash
+uv run pre-commit install
+```
+
 **2. Run Quasarr with the `--internal_address` parameter**
 
 ```bash
@@ -33,10 +39,10 @@ The `CONFIG_VOLUMES` environment variable is **mandatory**.
 ### Code Quality & Maintenance
 
 The CI pipeline enforces strict code styling and import optimization. Please run this commands before pushing your
-changes:
+changes. Alternatively, you should just set up the pre-commit hook as described above.
 
-**Format code AND upgrade dependencies:**
+**Format code AND upgrade dependencie manually:**
 
 ```bash
-uv run maintenance.py --upgrade
+uv run pre-commit.py --upgrade
 ```
