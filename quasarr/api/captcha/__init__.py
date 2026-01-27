@@ -165,7 +165,7 @@ def setup_captcha_routes(app):
                 debug("Redirecting to ToLink CAPTCHA")
                 redirect(f"/captcha/tolink?data={quote(encoded_payload)}")
             else:
-                debug(f"Redirecting to cutcaptcha")
+                debug("Redirecting to cutcaptcha")
                 redirect(f"/captcha/cutcaptcha?data={quote(encoded_payload)}")
 
             return render_centered_html(f'''<h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>

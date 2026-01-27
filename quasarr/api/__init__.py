@@ -486,6 +486,6 @@ def get_api(shared_state_dict, shared_state_lock):
     @app.get("/regenerate-api-key")
     def regenerate_api_key():
         shared_state.generate_api_key()
-        return render_success(f"API Key replaced!", 5)
+        return render_success("API Key replaced!", 5)
 
     Server(app, listen="0.0.0.0", port=shared_state.values["port"]).serve_forever()

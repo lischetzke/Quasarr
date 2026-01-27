@@ -28,7 +28,6 @@ def parse_posted_ago(txt):
             return ""
         value = int(m.group(1))
         unit = m.group(2).lower()
-        now = datetime.utcnow()
         if unit.startswith("sec"):
             delta = timedelta(seconds=value)
         elif unit.startswith("min"):
@@ -210,7 +209,7 @@ def he_search(
                         continue
                 else:
                     debug(f"{hostname}: imdb link not found for title {title}")
-            except Exception as e:
+            except Exception:
                 debug(f"{hostname}: failed to determine imdb_id for title {title}")
                 continue
 

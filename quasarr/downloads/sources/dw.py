@@ -70,7 +70,7 @@ def get_dw_download_links(shared_state, url, mirror, title, password):
                     button.nextSibling.img["src"].split("/")[-1].replace(".png", "")
                 )
                 hoster = (
-                    f"1fichier" if hoster.startswith("fichier") else hoster
+                    "1fichier" if hoster.startswith("fichier") else hoster
                 )  # align with expected mirror name
                 if mirror and mirror.lower() not in hoster.lower():
                     debug(

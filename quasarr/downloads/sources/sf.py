@@ -130,7 +130,7 @@ def get_sf_download_links(shared_state, url, mirror, title, password):
                 + sf
                 + "/api/v1/"
                 + season_id
-                + f"/season/ALL?lang=ALL&_="
+                + "/season/ALL?lang=ALL&_="
                 + epoch
             )
             r = requests.get(api_url, headers=headers, timeout=10)

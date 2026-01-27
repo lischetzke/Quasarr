@@ -197,7 +197,7 @@ def get_links_status(package, all_links, is_archive=False):
             break
 
     if has_extraction_activity:
-        debug(f"get_links_status: Package has extraction activity detected")
+        debug("get_links_status: Package has extraction activity detected")
 
     # Second pass: check each link's status
     for link in links_in_package:
@@ -856,7 +856,7 @@ def delete_package(shared_state, package_id):
                                 )
                         else:
                             debug(
-                                f"delete_package: No link IDs found for linkgrabber package"
+                                "delete_package: No link IDs found for linkgrabber package"
                             )
 
                     elif package_type == "downloader":
@@ -879,7 +879,7 @@ def delete_package(shared_state, package_id):
                                 debug(f"delete_package: Downloads cleanup failed: {e}")
                         else:
                             debug(
-                                f"delete_package: No link IDs found for downloader package"
+                                "delete_package: No link IDs found for downloader package"
                             )
 
                     # Always clean up database entries (no state check - just clean whatever exists)
@@ -889,7 +889,7 @@ def delete_package(shared_state, package_id):
                     try:
                         shared_state.get_db("failed").delete(package_id)
                         debug(
-                            f"delete_package: Deleted from failed DB (or was not present)"
+                            "delete_package: Deleted from failed DB (or was not present)"
                         )
                     except Exception as e:
                         debug(
@@ -898,7 +898,7 @@ def delete_package(shared_state, package_id):
                     try:
                         shared_state.get_db("protected").delete(package_id)
                         debug(
-                            f"delete_package: Deleted from protected DB (or was not present)"
+                            "delete_package: Deleted from protected DB (or was not present)"
                         )
                     except Exception as e:
                         debug(

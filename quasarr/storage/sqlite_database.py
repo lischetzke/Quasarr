@@ -21,7 +21,7 @@ class DataBase(object):
             ).fetchall():
                 self._conn.execute(f"CREATE TABLE {self._table} (key, value)")
                 self._conn.commit()
-        except sqlite3.OperationalError as e:
+        except sqlite3.OperationalError:
             try:
                 time.sleep(5)
                 self._conn = sqlite3.connect(
