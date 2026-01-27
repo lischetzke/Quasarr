@@ -15,6 +15,7 @@ from quasarr.search.sources.dl import dl_feed, dl_search
 from quasarr.search.sources.dt import dt_feed, dt_search
 from quasarr.search.sources.dw import dw_feed, dw_search
 from quasarr.search.sources.fx import fx_feed, fx_search
+from quasarr.search.sources.hd import hd_feed, hd_search
 from quasarr.search.sources.he import he_feed, he_search
 from quasarr.search.sources.mb import mb_feed, mb_search
 from quasarr.search.sources.nk import nk_feed, nk_search
@@ -54,6 +55,7 @@ def get_search_results(
     dj = shared_state.values["config"]("Hostnames").get("dj")
     dw = shared_state.values["config"]("Hostnames").get("dw")
     fx = shared_state.values["config"]("Hostnames").get("fx")
+    hd = shared_state.values["config"]("Hostnames").get("hd")
     he = shared_state.values["config"]("Hostnames").get("he")
     mb = shared_state.values["config"]("Hostnames").get("mb")
     nk = shared_state.values["config"]("Hostnames").get("nk")
@@ -78,6 +80,7 @@ def get_search_results(
         (dj, dj_search),
         (dw, dw_search),
         (fx, fx_search),
+        (hd, hd_search),
         (he, he_search),
         (mb, mb_search),
         (nk, nk_search),
@@ -109,6 +112,7 @@ def get_search_results(
         (dt, dt_feed),
         (dw, dw_feed),
         (fx, fx_feed),
+        (hd, hd_feed),
         (he, he_feed),
         (mb, mb_feed),
         (nk, nk_feed),

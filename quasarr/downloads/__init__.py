@@ -15,6 +15,7 @@ from quasarr.downloads.sources.dj import get_dj_download_links
 from quasarr.downloads.sources.dl import get_dl_download_links
 from quasarr.downloads.sources.dt import get_dt_download_links
 from quasarr.downloads.sources.dw import get_dw_download_links
+from quasarr.downloads.sources.hd import get_hd_download_links
 from quasarr.downloads.sources.he import get_he_download_links
 from quasarr.downloads.sources.mb import get_mb_download_links
 from quasarr.downloads.sources.nk import get_nk_download_links
@@ -56,6 +57,7 @@ SOURCE_GETTERS = {
     "dl": get_dl_download_links,
     "dt": get_dt_download_links,
     "dw": get_dw_download_links,
+    "hd": get_hd_download_links,
     "he": get_he_download_links,
     "mb": get_mb_download_links,
     "nk": get_nk_download_links,
