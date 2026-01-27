@@ -37,7 +37,9 @@ jobs:
       - name: Get Version
         id: version
         run: |
-          echo "version=$(uv run python quasarr/providers/version.py)" >> $GITHUB_OUTPUT
+          VERSION=$(uv run python quasarr/providers/version.py)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "🏷️ Version: $VERSION"
 
   build-wheel:
     name: Build Wheel
@@ -58,7 +60,9 @@ jobs:
         with:
           enable-cache: true
       - name: Build wheel
-        run: uv build
+        run: |
+          echo "📦 Starting Wheel build..."
+          uv build
       - name: Generate artifact attestation
         id: attest
         uses: actions/attest-build-provenance@v2
@@ -74,26 +78,20 @@ jobs:
     runs-on: windows-latest
     needs: version
     env:
-      # We define a consistent build path to make caching reliable
       BUILD_PATH: "build"
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-
-      # 1. Install uv with its own persistent cache
       - name: Install uv
         uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
           cache-suffix: "win-build"
-
-      # 2. PyInstaller Caching
-      # We cache the local 'build' folder AND the global PyInstaller cache.
-      # The key invalidates if 'uv.lock' changes, forcing a re-analysis only when deps update.
       - name: Cache PyInstaller Analysis
         uses: actions/cache@v4
+        id: pyinstaller-cache
         with:
           path: |
             build
@@ -101,25 +99,20 @@ jobs:
           key: pyinstaller-analysis-${{ runner.os }}-${{ hashFiles('uv.lock') }}
           restore-keys: |
             pyinstaller-analysis-${{ runner.os }}-
-
       - name: Disable Windows Defender
         shell: powershell
         run: Set-MpPreference -DisableRealtimeMonitoring $true
-
       - name: Install dependencies
         run: |
+          echo "📥 Installing build dependencies..."
           uv sync --group build
-
       - name: Build exe
-        # CHANGES:
-        # 1. Removed '--clean' (Critical for speed)
-        # 2. Added '--workpath' to point to our cached folder
-        # 3. Added '--distpath' explicitly
         run: |
+          echo "🪟 Building Windows Binary..."
           uv run python -c "from PIL import Image; Image.open('Quasarr.png').save('Quasarr.ico')"
           uv run python quasarr/providers/version.py --create-version-file
           uv run pyinstaller --onefile -y --version-file "file_version_info.txt" --workpath "build" --distpath "dist" --icon "Quasarr.ico" "Quasarr.py" -n "quasarr-${{ needs.version.outputs.version }}-standalone-win64"
-
+          echo "✨ Windows binary created."
       - uses: actions/upload-artifact@v4
         with:
           name: exe-amd64
@@ -220,27 +213,14 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Create and Push Manifests
         run: |
+          echo "🔗 Linking Multi-arch images..."
           TAG_AMD64="${{ needs.version.outputs.version }}-amd64"
           TAG_ARM64="${{ needs.version.outputs.version }}-arm64"
           ANNOTATION="index:org.opencontainers.image.description=$DESCRIPTION"
-          
-          docker buildx imagetools create -t ${{ env.ENDPOINT }}:latest \
-            ${{ env.ENDPOINT }}:latest-amd64 \
-            ${{ env.ENDPOINT }}:latest-arm64
-
-          docker buildx imagetools create -t ${{ env.ENDPOINT }}:${{ needs.version.outputs.version }} \
-            ${{ env.ENDPOINT }}:${TAG_AMD64} \
-            ${{ env.ENDPOINT }}:${TAG_ARM64}
-
-          docker buildx imagetools create -t ${{ env.GHCR_ENDPOINT }}:latest \
-            --annotation "$ANNOTATION" \
-            ${{ env.GHCR_ENDPOINT }}:latest-amd64 \
-            ${{ env.GHCR_ENDPOINT }}:latest-arm64
-
-          docker buildx imagetools create -t ${{ env.GHCR_ENDPOINT }}:${{ needs.version.outputs.version }} \
-            --annotation "$ANNOTATION" \
-            ${{ env.GHCR_ENDPOINT }}:${TAG_AMD64} \
-            ${{ env.GHCR_ENDPOINT }}:${TAG_ARM64}
+          docker buildx imagetools create -t ${{ env.ENDPOINT }}:latest ${{ env.ENDPOINT }}:latest-amd64 ${{ env.ENDPOINT }}:latest-arm64
+          docker buildx imagetools create -t ${{ env.ENDPOINT }}:${{ needs.version.outputs.version }} ${{ env.ENDPOINT }}:${TAG_AMD64} ${{ env.ENDPOINT }}:${TAG_ARM64}
+          docker buildx imagetools create -t ${{ env.GHCR_ENDPOINT }}:latest --annotation "$ANNOTATION" ${{ env.GHCR_ENDPOINT }}:latest-amd64 ${{ env.GHCR_ENDPOINT }}:latest-arm64
+          docker buildx imagetools create -t ${{ env.GHCR_ENDPOINT }}:${{ needs.version.outputs.version }} --annotation "$ANNOTATION" ${{ env.GHCR_ENDPOINT }}:${TAG_AMD64} ${{ env.GHCR_ENDPOINT }}:${TAG_ARM64}
 
   release:
     name: Create Release
@@ -252,7 +232,6 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-
       - uses: actions/download-artifact@v4
         with:
           name: wheel
@@ -261,16 +240,15 @@ jobs:
         with:
           name: exe-amd64
           path: ./exe-amd64
-
       - name: Install uv
         uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
-
       - name: Publish to PyPI
         if: ${{ !inputs.skip_pypi }}
-        run: uv publish ./wheel/* --token ${{ secrets.PYPI_TOKEN }}
-
+        run: |
+          echo "🚀 Publishing to PyPI..."
+          uv publish ./wheel/* --token ${{ secrets.PYPI_TOKEN }}
       - name: Generate changelog
         id: changelog
         uses: metcalfc/changelog-generator@v4.6.2
@@ -281,25 +259,16 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           PR_BODY=$(gh pr list --search "${{ github.sha }}" --state merged --json body --jq '.[0].body // empty')
-          if [ -n "$PR_BODY" ]; then
-            echo -e "\n$PR_BODY" >> .github/Changelog.md
-          fi
+          if [ -n "$PR_BODY" ]; then echo -e "\n$PR_BODY" >> .github/Changelog.md; fi
       - name: Create Release Body
         run: |
           echo "### Docker:" > release_body.md
-          echo "" >> release_body.md
           echo "\`docker pull ${{ env.GHCR_ENDPOINT }}:latest\`" >> release_body.md
-          echo "" >> release_body.md
           echo "### Python:" >> release_body.md
-          echo "" >> release_body.md
           echo "\`uv tool upgrade quasarr\`" >> release_body.md
-          echo "" >> release_body.md
           echo "### Changelog:" >> release_body.md
-          echo "" >> release_body.md
           echo "${{ steps.changelog.outputs.changelog }}" >> release_body.md
-          echo "" >> release_body.md
           echo "[Attestation](https://github.com/${{ github.repository }}/attestations/${{ needs.build-wheel.outputs.attestation-id }})" >> release_body.md
-
       - name: Create Release
         uses: ncipollo/release-action@v1
         with:
@@ -315,7 +284,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-
       - name: Send Discord Webhook
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -323,28 +291,31 @@ jobs:
           VERSION: ${{ needs.version.outputs.version }}
           REPO: ${{ github.repository }}
         run: |
-          # Use the exact tag format defined in the release job (v.X.X.X)
           TAG="v.$VERSION"
-          echo "Fetching release details for $TAG..."
-          
-          # Fetch the body from the release we just created
           RELEASE_BODY=$(gh release view "$TAG" --json body --jq .body)
-          
           if [ -n "$DISCORD_WEBHOOK" ]; then
-            echo "Sending notification..."
-          
-            # Construct JSON payload using jq
-            # Color 5763719 is 'Green'
-            jq -n \
-              --arg title "🚀 New Release: $TAG" \
-              --arg desc "$RELEASE_BODY" \
-              --arg url "https://github.com/$REPO/releases/tag/$TAG" \
-              '{content: null, embeds: [{title: $title, description: $desc, url: $url, color: 5763719}]}' \
-              > discord_payload.json
-
-            curl -H "Content-Type: application/json" \
-                 -d @discord_payload.json \
-                 "$DISCORD_WEBHOOK"
-          else
-            echo "::warning::Skipping Discord notification (DISCORD_WEBHOOK secret not set)"
+            jq -n --arg title "🚀 New Release: $TAG" --arg desc "$RELEASE_BODY" --arg url "https://github.com/$REPO/releases/tag/$TAG" '{content: null, embeds: [{title: $title, description: $desc, url: $url, color: 5763719}]}' > discord_payload.json
+            curl -H "Content-Type: application/json" -d @discord_payload.json "$DISCORD_WEBHOOK"
           fi
+
+  job-summary:
+    name: 📈 Build Report
+    runs-on: ubuntu-latest
+    needs: [ version, build-wheel, build-exe, build-docker-amd64, build-docker-arm64, release ]
+    if: always()
+    steps:
+      - name: Generate Job Summary
+        run: |
+          echo "## 📊 Release Production Report" >> $GITHUB_STEP_SUMMARY
+          echo "| Artifact | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "| --- | --- |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Python Wheel** | ${{ needs.build-wheel.result == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Windows Standalone** | ${{ needs.build-exe.result == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Docker AMD64** | ${{ needs.build-docker-amd64.result == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Docker ARM64** | ${{ needs.build-docker-arm64.result == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **GitHub Release** | ${{ needs.release.result == 'success' && '🚀 Published' || '⚠️ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          
+          echo "### ⚡ Cache Performance" >> $GITHUB_STEP_SUMMARY
+          # This assumes you use the default GITHUB_TOKEN permissions to read cache API if you wanted complex stats, 
+          # but for simplicity we report on the PyInstaller cache key match.
+          echo "* **PyInstaller Cache:** ${{ needs.build-exe.outputs.cache-hit == 'true' && 'Hit (Fast 🚀)' || 'Miss (Full Build 🐢)' }}" >> $GITHUB_STEP_SUMMARY
