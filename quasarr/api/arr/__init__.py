@@ -352,10 +352,10 @@ def setup_arr_routes(app):
                                     mirror=mirror,
                                 )
                             else:
-                                info(
+                                # sonarr expects this but we will not support non-imdbid searches
+                                debug(
                                     f"Ignoring search request from {request_from} - only imdbid searches are supported"
                                 )
-                                releases = []  # sonarr expects this but we will not support non-imdbid searches
 
                     items = ""
                     for release in releases:
