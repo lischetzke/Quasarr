@@ -225,11 +225,12 @@ Most feature requests can be satisfied by:
   [here](https://github.com/rix1337/Quasarr/pulls).
 - **Pull requests are welcome!** Especially for popular hostnames.
     - A short guide to set up required dev services is found
-      in [/docker/dev-setup.md](https://github.com/rix1337/Quasarr/blob/main/docker/dev-setup.md)
+      [here](https://github.com/rix1337/Quasarr/blob/main/CONTRIBUTING.md).
     - Always reach out on Discord before starting work on a new feature to prevent waste of time.
     - Please follow the existing code style and project structure.
     - Anti-bot measures must be circumvented fully by Quasarr. Thus, you will need to provide a working solution for new
       CAPTCHA types by integrating it in the Quasarr Web UI.
+      The simplest CAPTCHA bypass involves creating a Tampermonkey user script.
     - Please provide proof of functionality (screenshots/examples) when submitting your pull request.
 
 # SponsorsHelper

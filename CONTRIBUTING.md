@@ -32,24 +32,11 @@ The `CONFIG_VOLUMES` environment variable is **mandatory**.
 
 ### Code Quality & Maintenance
 
-The CI pipeline enforces strict code styling and import optimization. Please run these commands before pushing your
+The CI pipeline enforces strict code styling and import optimization. Please run this commands before pushing your
 changes:
 
-**Optimize Imports and Fix Linting:**
+**Format code AND upgrade dependencies:**
 
 ```bash
-uv run ruff check --fix .
-```
-
-**Format Code Layout:**
-
-```bash
-uv run ruff format .
-```
-
-**Update Dependencies:**
-To update the project lockfile to the latest versions of all packages without manually editing `pyproject.toml`:
-
-```bash
-uv lock --upgrade
+uv run maintenance.py --upgrade
 ```
