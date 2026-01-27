@@ -50,7 +50,7 @@ jobs:
 
   version:
     needs: [ quality-check ]
-    if: needs.quality-check.outputs.changes_pushed != 'true' && github.ref == 'refs/heads/dev'
+    if: needs.quality-check.outputs.changes_pushed != 'true' && (github.head_ref || github.ref_name) == 'dev'
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
@@ -67,7 +67,7 @@ jobs:
 
   build-wheel:
     needs: [ quality-check, version ]
-    if: needs.quality-check.outputs.changes_pushed != 'true' && github.ref == 'refs/heads/dev'
+    if: needs.quality-check.outputs.changes_pushed != 'true' && (github.head_ref || github.ref_name) == 'dev'
     runs-on: ubuntu-latest
     outputs:
       attestation-id: ${{ steps.attest.outputs.attestation-id }}
@@ -95,7 +95,7 @@ jobs:
 
   build-exe:
     needs: [ quality-check, version ]
-    if: needs.quality-check.outputs.changes_pushed != 'true' && github.ref == 'refs/heads/dev'
+    if: needs.quality-check.outputs.changes_pushed != 'true' && (github.head_ref || github.ref_name) == 'dev'
     runs-on: windows-latest
     env:
       TMP: "D:\\a\\temp"
@@ -106,16 +106,38 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
+          cache-suffix: "win-build" # Isolate this cache from Linux builds if you share keys
+
+      # --- CACHE ---
+      - name: Cache PyInstaller Analysis
+        uses: actions/cache@v4
+        with:
+          path: |
+            build
+            ~\AppData\Local\pyinstaller
+          # Invalidates cache only if dependencies (uv.lock) change
+          key: pyinstaller-analysis-${{ runner.os }}-${{ hashFiles('uv.lock') }}
+          restore-keys: |
+            pyinstaller-analysis-${{ runner.os }}-
+
       - shell: powershell
         run: Set-MpPreference -DisableRealtimeMonitoring $true
+
       - run: uv sync --group build
+
+      # --- BUILD COMMAND ---
       - run: |
           uv run python -c "from PIL import Image; Image.open('Quasarr.png').save('Quasarr.ico')"
           uv run python quasarr/providers/version.py --create-version-file
-          uv run pyinstaller --clean --onefile -y --version-file "file_version_info.txt" --icon "Quasarr.ico" "Quasarr.py" -n "quasarr-${{ needs.version.outputs.version }}-standalone-win64"
+          # 1. Removed '--clean'
+          # 2. Added '--workpath "build"' (Matches the cached path above)
+          # 3. Added '--distpath "dist"' (Explicit output folder)
+          uv run pyinstaller --onefile -y --version-file "file_version_info.txt" --workpath "build" --distpath "dist" --icon "Quasarr.ico" "Quasarr.py" -n "quasarr-${{ needs.version.outputs.version }}-standalone-win64"
+
       - uses: actions/upload-artifact@v4
         with:
           name: exe-amd64
@@ -164,7 +186,7 @@ jobs:
 
   build-docker-amd64:
     needs: [ quality-check, version, build-wheel ]
-    if: needs.quality-check.outputs.changes_pushed != 'true' && github.ref == 'refs/heads/dev'
+    if: needs.quality-check.outputs.changes_pushed != 'true' && (github.head_ref || github.ref_name) == 'dev'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -195,7 +217,7 @@ jobs:
 
   build-docker-arm64:
     needs: [ quality-check, version, build-wheel ]
-    if: needs.quality-check.outputs.changes_pushed != 'true' && github.ref == 'refs/heads/dev'
+    if: needs.quality-check.outputs.changes_pushed != 'true' && (github.head_ref || github.ref_name) == 'dev'
     runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v6
