@@ -3,6 +3,7 @@
 # Project by https://github.com/rix1337
 
 import os
+import re
 import sys
 from urllib.parse import urlparse
 
@@ -28,6 +29,7 @@ from quasarr.providers.log import info
 from quasarr.providers.shared_state import extract_valid_hostname
 from quasarr.providers.utils import (
     FALLBACK_USER_AGENT,
+    check_flaresolverr,
     extract_allowed_keys,
     extract_kv_pairs,
 )
@@ -189,11 +191,9 @@ def _escape_js_for_html_attr(s):
     )
 
 
-def hostname_form_html(
-    shared_state, message, show_restart_button=False, show_skip_management=False
-):
+def hostname_form_html(shared_state, message, show_skip_management=False):
     hostname_fields = """
-    <label for="{id}" onclick="showStatusDetail(\'{id}\', \'{label}\', \'{status}\', \'{error_details_for_modal}\', \'{timestamp}\', \'{operation}\', \'{url}\')" 
+    <label for="{id}" onclick="showStatusDetail(\'{id}\', \'{label}\', \'{status}\', \'{error_details_for_modal}\', \'{timestamp}\', \'{operation}\', \'{url}\', \'{user}\', \'{password}\', {supports_login})" 
            style="cursor:pointer; display:inline-flex; align-items:center; gap:4px;" title="{status_title}">
         <span class="status-indicator" id="status-{id}" data-status="{status}">{status_emoji}</span>
         {label}
@@ -203,8 +203,7 @@ def hostname_form_html(
 
     skip_indicator = """
     <div class="skip-indicator" id="skip-indicator-{id}" style="margin-top:-0.5rem; margin-bottom:0.75rem; padding:0.5rem; background:var(--code-bg, #f8f9fa); border-radius:0.25rem; font-size:0.875rem;">
-        <span style="color:#dc3545;">⚠️ Login skipped</span>
-        <button type="button" class="btn-subtle" style="margin-left:0.5rem; padding:0.25rem 0.5rem; font-size:0.75rem;" onclick="clearSkipLogin('{id}', this)">Clear &amp; require login</button>
+        <span style="color:#dc3545;">⚠️ Login skipped. Please click header to enable!</span>
     </div>
     """
 
@@ -258,6 +257,16 @@ def hostname_form_html(
             status_title = "Working normally"
             error_details_for_modal = "Configured and working normally."
 
+        # Get credentials
+        user = ""
+        password = ""
+        supports_login = "false"
+        if field_id in login_required_sites:
+            supports_login = "true"
+            site_config = Config(field_id.upper())
+            user = site_config.get("user") or ""
+            password = site_config.get("password") or ""
+
         field_html.append(
             hostname_fields.format(
                 id=field_id,
@@ -272,6 +281,9 @@ def hostname_form_html(
                 timestamp=timestamp,
                 operation=_escape_js_for_html_attr(operation),
                 url=_escape_js_for_html_attr(current_value),
+                user=_escape_js_for_html_attr(user),
+                password=_escape_js_for_html_attr(password),
+                supports_login=supports_login,
             )
         )
 
@@ -288,15 +300,9 @@ def hostname_form_html(
     # Get stored hostnames URL if available
     stored_url = Config("Settings").get("hostnames_url") or ""
 
-    # Build restart button HTML if needed
-    restart_section = ""
-    if show_restart_button:
-        restart_section = f"""
-        <div class="section-divider" style="margin-top:1.5rem; padding-top:1rem; border-top:1px solid var(--divider-color, #dee2e6);">
-            <p style="font-size:0.875rem; color:var(--secondary, #6c757d);">Restart required after changing login-required hostnames (AL, DD, DL, NX)</p>
-            {render_button("Restart Quasarr", "secondary", {"type": "button", "onclick": "confirmRestart()"})}
-        </div>
-        """
+    # Check if FlareSolverr is skipped
+    skip_flaresolverr_db = DataBase("skip_flaresolverr")
+    is_flaresolverr_skipped = bool(skip_flaresolverr_db.retrieve("skipped"))
 
     template = """
 <style>
@@ -376,10 +382,9 @@ def hostname_form_html(
     {button}
 </form>
 
-{restart_section}
-
 <script>
   var formSubmitted = false;
+  var isFlaresolverrSkipped = {is_flaresolverr_skipped};
 
   function validateHostnames(form) {{
     if (formSubmitted) return false;
@@ -468,23 +473,6 @@ def hostname_form_html(
     }});
   }}
 
-  function clearSkipLogin(shorthand, btnElement) {{
-    fetch('/api/skip-login/' + shorthand, {{ method: 'DELETE' }})
-    .then(response => response.json())
-    .then(data => {{
-      if (data.success) {{
-        var indicator = btnElement.closest('.skip-indicator');
-        if (indicator) indicator.remove();
-        showStatusDetail(shorthand, shorthand.toUpperCase(), 'info', 'Login requirement restored. Restart Quasarr to be prompted for credentials.', '', '', '');
-      }} else {{
-        showStatusDetail(shorthand, shorthand.toUpperCase(), 'error', 'Failed to clear skip preference', '', '', '');
-      }}
-    }})
-    .catch(error => {{
-      showStatusDetail(shorthand, shorthand.toUpperCase(), 'error', 'Error: ' + error.message, '', '', '');
-    }});
-  }}
-
   function confirmRestart() {{
     showModal('Restart Quasarr?', 'Are you sure you want to restart Quasarr now? Any unsaved changes will be lost.', 
         `<button class="btn-secondary" onclick="closeModal()">Cancel</button>
@@ -569,7 +557,7 @@ def hostname_form_html(
   }}
 </script>
 <script>
-    function showStatusDetail(id, label, status, error_details, timestamp, operation, url) {{
+    function showStatusDetail(id, label, status, error_details, timestamp, operation, url, user, password, supports_login) {{
         var statusTextMap = {{
             ok: 'Operational',
             error: 'Error',
@@ -611,7 +599,41 @@ def hostname_form_html(
             }}
         }}
         
-        var content = content_html + timestamp_html;
+        var credentials_html = '';
+        if (url && supports_login) {{
+             var flaresolverrWarning = '';
+             if (id === 'al' && isFlaresolverrSkipped) {{
+                flaresolverrWarning = `
+                    <div style="margin-bottom: 1rem; padding: 0.75rem; background: #fff3cd; border: 1px solid #ffeeba; border-radius: 0.25rem; color: #856404; font-size: 0.875rem;">
+                        <strong>⚠️ FlareSolverr Required</strong><br>
+                        This site requires FlareSolverr, but it was skipped. You must configure it first.
+                        <div style="margin-top: 0.5rem;">
+                            <button class="btn-secondary" style="font-size: 0.75rem; padding: 0.25rem 0.5rem;" onclick="window.location.href='/flaresolverr'">Configure FlareSolverr</button>
+                        </div>
+                    </div>
+                `;
+             }}
+
+             credentials_html = `
+                <div style="margin-top: 1rem; border-top: 1px solid var(--divider-color, #dee2e6); padding-top: 1rem;">
+                    <h4 style="margin-top:0; font-size:1rem;">Credentials</h4>
+                    ${{flaresolverrWarning}}
+                    <div style="margin-bottom: 0.5rem;">
+                        <label style="display:block; font-size: 0.875rem;">Username</label>
+                        <input type="text" id="cred-user-${{id}}" value="${{user}}" style="width: 100%; padding: 0.375rem 0.75rem; border: 1px solid #ced4da; border-radius: 0.25rem;">
+                    </div>
+                    <div style="margin-bottom: 0.5rem;">
+                        <label style="display:block; font-size: 0.875rem;">Password</label>
+                        <input type="password" id="cred-pass-${{id}}" value="${{password}}" style="width: 100%; padding: 0.375rem 0.75rem; border: 1px solid #ced4da; border-radius: 0.25rem;">
+                    </div>
+                    <div id="cred-status-${{id}}" style="margin-bottom: 0.5rem; font-size: 0.875rem; min-height: 1.25em;"></div>
+                    <button class="btn-primary" onclick="saveAndCheckCredentials('${{id}}')">Check & Save Session</button>
+                    <div style="margin-top: 1rem; border-bottom: 1px solid var(--divider-color, #dee2e6);"></div>
+                </div>
+            `;
+        }}
+        
+        var content = content_html + timestamp_html + credentials_html;
         var title = '<span>' + (emojiMap[status] || 'ℹ️') + '</span> ' + label + ' - ' + (statusTextMap[status] || status);
         
         var buttons = '';
@@ -621,7 +643,7 @@ def hostname_form_html(
                 href = 'https://' + href;
             }}
             buttons = `
-                <button class="btn-primary" style="margin-right: auto;" onclick="window.open('${{href}}', '_blank')">Check ${{id.toUpperCase()}}</button>
+                <button class="btn-primary" style="margin-right: auto;" onclick="window.open('${{href}}', '_blank')">Open ${{id.toUpperCase()}}</button>
                 <button class="btn-secondary" onclick="closeModal()">Close</button>
             `;
         }} else {{
@@ -630,6 +652,46 @@ def hostname_form_html(
         
         showModal(title, content, buttons);
     }}
+    
+    function saveAndCheckCredentials(id) {{
+        var user = document.getElementById('cred-user-' + id).value;
+        var pass = document.getElementById('cred-pass-' + id).value;
+        var statusDiv = document.getElementById('cred-status-' + id);
+        
+        statusDiv.innerHTML = 'Checking...';
+        statusDiv.style.color = 'var(--secondary, #6c757d)';
+        
+        fetch('/api/hostnames/check-credentials/' + id, {{
+            method: 'POST',
+            headers: {{ 'Content-Type': 'application/json' }},
+            body: JSON.stringify({{ user: user, password: pass }})
+        }})
+        .then(response => response.json())
+        .then(data => {{
+            if (data.success) {{
+                statusDiv.innerHTML = '✅ ' + data.message;
+                statusDiv.style.color = '#198754';
+                // Update the status indicator in the main list
+                var indicator = document.getElementById('status-' + id);
+                if (indicator) {{
+                    indicator.textContent = '🟢';
+                    indicator.setAttribute('data-status', 'ok');
+                }}
+                // Remove skip indicator if present
+                var skipIndicator = document.getElementById('skip-indicator-' + id);
+                if (skipIndicator) {{
+                    skipIndicator.remove();
+                }}
+            }} else {{
+                statusDiv.innerHTML = '❌ ' + data.message;
+                statusDiv.style.color = '#dc3545';
+            }}
+        }})
+        .catch(error => {{
+            statusDiv.innerHTML = '❌ Error: ' + error.message;
+            statusDiv.style.color = '#dc3545';
+        }});
+    }}
 </script>
 """
     return template.format(
@@ -637,7 +699,7 @@ def hostname_form_html(
         hostname_form_content=hostname_form_content,
         button=button_html,
         stored_url=stored_url,
-        restart_section=restart_section,
+        is_flaresolverr_skipped="true" if is_flaresolverr_skipped else "false",
     )
 
 
@@ -707,14 +769,364 @@ def save_hostnames(shared_state, timeout=5, first_run=True):
     else:
         optional_text = "All provided hostnames are valid.<br>"
 
-    if not first_run:
-        # Append restart notice for specific sites that actually changed
-        for site in changed_sites:
-            if site.lower() in {"al", "dd", "dl", "nx"}:
-                optional_text += f"{site.upper()}: You must restart Quasarr and follow additional steps to start using this site.<br>"
-
     full_message = f"{success_msg}<br><small>{optional_text}</small>"
     return render_reconnect_success(full_message)
+
+
+def check_credentials(shared_state, shorthand):
+    response.content_type = "application/json"
+    try:
+        data = request.json
+        user = data.get("user")
+        password = data.get("password")
+
+        config = Config(shorthand.upper())
+        # Store old credentials to revert if check fails
+        old_user = config.get("user")
+        old_password = config.get("password")
+
+        # Temporarily save new credentials for the check
+        config.save("user", user)
+        config.save("password", password)
+
+        success = False
+        message = "Session check failed"
+
+        sh_lower = shorthand.lower()
+
+        # Clear skip login if set (temporarily, will be restored if check fails?)
+        # Actually, if user is trying to set credentials, they probably intend to stop skipping.
+        # But if check fails, we might want to keep the skip status?
+        # For now, let's assume if they try to check credentials, they want to use them.
+
+        if sh_lower == "al":
+            if quasarr.providers.sessions.al.create_and_persist_session(shared_state):
+                success = True
+                message = "Session valid!"
+            else:
+                message = "Session check failed (check logs)"
+        elif sh_lower == "dd":
+            if quasarr.providers.sessions.dd.create_and_persist_session(shared_state):
+                success = True
+                message = "Session valid!"
+            else:
+                message = "Session check failed (check logs)"
+        elif sh_lower == "dl":
+            if quasarr.providers.sessions.dl.create_and_persist_session(shared_state):
+                success = True
+                message = "Session valid!"
+            else:
+                message = "Session check failed (check logs)"
+        elif sh_lower == "nx":
+            if quasarr.providers.sessions.nx.create_and_persist_session(shared_state):
+                success = True
+                message = "Session valid!"
+            else:
+                message = "Session check failed (check logs)"
+        else:
+            success = True
+            message = "Credentials saved"
+
+        if success:
+            # If successful, ensure skip login is removed
+            DataBase("skip_login").delete(shorthand.lower())
+        else:
+            # If failed, revert credentials
+            config.save("user", old_user)
+            config.save("password", old_password)
+
+        return {"success": success, "message": message}
+
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+
+def import_hostnames_from_url():
+    """Fetch URL and parse hostnames, return JSON for JS to populate fields."""
+    response.content_type = "application/json"
+    try:
+        data = request.json
+        url = data.get("url", "").strip()
+
+        if not url:
+            return {"success": False, "error": "No URL provided"}
+
+        # Validate URL
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https") or not parsed.netloc:
+            return {"success": False, "error": "Invalid URL format"}
+
+        # Fetch content
+        try:
+            resp = requests.get(url, timeout=15)
+            resp.raise_for_status()
+            content = resp.text
+        except requests.RequestException as e:
+            info(f"Failed to fetch hostnames URL: {e}")
+            return {
+                "success": False,
+                "error": "Failed to fetch URL. Check the console log for details.",
+            }
+
+        # Parse hostnames
+        allowed_keys = extract_allowed_keys(Config._DEFAULT_CONFIG, "Hostnames")
+        results = extract_kv_pairs(content, allowed_keys)
+
+        if not results:
+            return {
+                "success": False,
+                "error": "No hostnames found in the provided URL",
+            }
+
+        # Validate each hostname
+        valid_hostnames = {}
+        invalid_hostnames = {}
+        for shorthand, hostname in results.items():
+            domain_check = extract_valid_hostname(hostname, shorthand)
+            domain = domain_check.get("domain")
+            if domain:
+                valid_hostnames[shorthand] = domain
+            else:
+                invalid_hostnames[shorthand] = domain_check.get("message", "Invalid")
+
+        if not valid_hostnames:
+            return {
+                "success": False,
+                "error": "No valid hostnames found in the provided URL",
+            }
+
+        return {
+            "success": True,
+            "hostnames": valid_hostnames,
+            "errors": invalid_hostnames,
+        }
+
+    except Exception as e:
+        return {"success": False, "error": f"Error: {str(e)}"}
+
+
+def get_skip_login():
+    """Return list of hostnames with skipped login."""
+    response.content_type = "application/json"
+    skip_db = DataBase("skip_login")
+    login_required_sites = ["al", "dd", "dl", "nx"]
+    skipped = []
+    for site in login_required_sites:
+        if skip_db.retrieve(site):
+            skipped.append(site)
+    return {"skipped": skipped}
+
+
+def clear_skip_login(shorthand):
+    """Clear skip login preference for a hostname."""
+    response.content_type = "application/json"
+    shorthand = shorthand.lower()
+    login_required_sites = ["al", "dd", "dl", "nx"]
+    if shorthand not in login_required_sites:
+        return {"success": False, "error": f"Invalid shorthand: {shorthand}"}
+
+    skip_db = DataBase("skip_login")
+    skip_db.delete(shorthand)
+    info(f'Skip login preference cleared for "{shorthand.upper()}"')
+    return {"success": True}
+
+
+def save_flaresolverr_url(shared_state, is_setup=False):
+    """Save FlareSolverr URL from web UI."""
+    url = request.forms.get("url", "").strip()
+    config = Config("FlareSolverr")
+
+    if not url:
+        # If URL is empty, treat it as skipping FlareSolverr
+        config.save("url", "")
+        DataBase("skip_flaresolverr").update_store("skipped", "true")
+        # Set fallback user agent
+        shared_state.update("user_agent", FALLBACK_USER_AGENT)
+        info("FlareSolverr URL cleared and setup skipped")
+
+        if is_setup:
+            quasarr.providers.web_server.temp_server_success = True
+
+        return render_reconnect_success("FlareSolverr URL cleared (setup skipped).")
+
+    if not url.startswith("http://") and not url.startswith("https://"):
+        url = "http://" + url
+
+    # Validate URL format
+    if not re.search(r"/v\d+$", url):
+        return render_fail(
+            "FlareSolverr URL must end with /v1 (or similar version path)."
+        )
+
+    try:
+        headers = {"Content-Type": "application/json"}
+        data = {
+            "cmd": "request.get",
+            "url": "http://www.google.com/",
+            "maxTimeout": 30000,
+        }
+        resp = requests.post(url, headers=headers, json=data, timeout=30)
+        if resp.status_code == 200:
+            json_data = resp.json()
+            if json_data.get("status") == "ok":
+                config.save("url", url)
+                # Clear skip preference since we now have a working URL
+                DataBase("skip_flaresolverr").delete("skipped")
+
+                # Update user agent from FlareSolverr response
+                solution = json_data.get("solution", {})
+                solution_ua = solution.get("userAgent")
+                if solution_ua:
+                    shared_state.update("user_agent", solution_ua)
+
+                info(f'FlareSolverr URL configured: "{url}"')
+
+                if is_setup:
+                    quasarr.providers.web_server.temp_server_success = True
+
+                return render_reconnect_success("FlareSolverr URL saved successfully!")
+            else:
+                return render_fail(
+                    f"FlareSolverr returned unexpected status: {json_data.get('status')}"
+                )
+    except requests.RequestException:
+        return render_fail("Could not reach FlareSolverr!")
+
+    return render_fail("Could not reach FlareSolverr at that URL (expected HTTP 200).")
+
+
+def get_flaresolverr_status_data(shared_state):
+    """Return FlareSolverr configuration status."""
+    response.content_type = "application/json"
+    skip_db = DataBase("skip_flaresolverr")
+    is_skipped = bool(skip_db.retrieve("skipped"))
+    current_url = Config("FlareSolverr").get("url") or ""
+
+    # Test connection if URL is set
+    is_working = False
+    if current_url and not is_skipped:
+        is_working = check_flaresolverr(shared_state, current_url)
+
+    return {"skipped": is_skipped, "url": current_url, "working": is_working}
+
+
+def delete_skip_flaresolverr_preference():
+    """Clear skip FlareSolverr preference."""
+    response.content_type = "application/json"
+    skip_db = DataBase("skip_flaresolverr")
+    skip_db.delete("skipped")
+    info("Skip FlareSolverr preference cleared")
+    return {"success": True}
+
+
+def flaresolverr_form_html(shared_state, is_setup=False):
+    skip_db = DataBase("skip_flaresolverr")
+    is_skipped = skip_db.retrieve("skipped")
+    current_url = Config("FlareSolverr").get("url") or ""
+
+    skip_indicator = ""
+    if is_skipped and not is_setup:
+        skip_indicator = """
+        <div class="skip-indicator" style="margin-bottom:1rem; padding:0.75rem; background:var(--code-bg, #f8f9fa); border-radius:0.25rem; font-size:0.875rem;">
+            <span style="color:#dc3545;">⚠️ FlareSolverr setup was skipped</span>
+            <p style="margin:0.5rem 0 0 0; font-size:0.75rem; color:var(--secondary, #6c757d);">
+                Some sites (like AL) won't work until FlareSolverr is configured.
+            </p>
+        </div>
+        """
+
+    form_content = f'''
+    {skip_indicator}
+    <span><a href="https://github.com/FlareSolverr/FlareSolverr?tab=readme-ov-file#installation" target="_blank">FlareSolverr</a>
+    must be running and reachable to Quasarr for some sites to work.</span><br><br>
+    <label for="url">FlareSolverr URL</label>
+    <input type="text" id="url" name="url" placeholder="http://192.168.0.1:8191/v1" value="{current_url}"><br>
+    '''
+
+    buttons = render_button("Save", "primary", {"type": "submit", "id": "submitBtn"})
+
+    extra_js = ""
+
+    if is_setup:
+        buttons += ' <button type="button" class="btn-warning" id="skipBtn" onclick="skipFlaresolverr()">Skip for now</button>'
+        extra_js = """
+        function skipFlaresolverr() {
+            if (formSubmitted) return;
+            formSubmitted = true;
+            var skipBtn = document.getElementById('skipBtn');
+            var submitBtn = document.getElementById('submitBtn');
+            if (skipBtn) { skipBtn.disabled = true; skipBtn.textContent = 'Skipping...'; }
+            if (submitBtn) { submitBtn.disabled = true; }
+
+            fetch('/api/flaresolverr/skip', { method: 'POST' })
+            .then(response => {
+                if (response.ok) {
+                    window.location.href = '/skip-success';
+                } else {
+                    showModal('Error', 'Failed to skip FlareSolverr setup');
+                    formSubmitted = false;
+                    if (skipBtn) { skipBtn.disabled = false; skipBtn.textContent = 'Skip for now'; }
+                    if (submitBtn) { submitBtn.disabled = false; }
+                }
+            })
+            .catch(error => {
+                showModal('Error', 'Error: ' + error.message);
+                formSubmitted = false;
+                if (skipBtn) { skipBtn.disabled = false; skipBtn.textContent = 'Skip for now'; }
+                if (submitBtn) { submitBtn.disabled = false; }
+            });
+        }
+        """
+
+    form_html = f"""
+    <style>
+        .button-row {{
+            display: flex;
+            gap: 0.75rem;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin-top: 1rem;
+        }}
+        .btn-warning {{
+            background-color: #ffc107;
+            color: #212529;
+            border: 1.5px solid #d39e00;
+            padding: 0.5rem 1rem;
+            font-size: 1rem;
+            border-radius: 0.5rem;
+            font-weight: 500;
+            cursor: pointer;
+        }}
+        .btn-warning:hover {{
+            background-color: #e0a800;
+            border-color: #c69500;
+        }}
+    </style>
+    <form action="/api/flaresolverr" method="post" onsubmit="return handleSubmit(this)">
+        {form_content}
+        <div class="button-row">
+            {buttons}
+        </div>
+    </form>
+    <script>
+    var formSubmitted = false;
+    function handleSubmit(form) {{
+        if (formSubmitted) return false;
+        formSubmitted = true;
+        var btn = document.getElementById('submitBtn');
+        if (btn) {{ btn.disabled = true; btn.textContent = 'Saving...'; }}
+        var skipBtn = document.getElementById('skipBtn');
+        if (skipBtn) {{ skipBtn.disabled = true; }}
+        return true;
+    }}
+    {extra_js}
+    </script>
+    """
+
+    if not is_setup:
+        form_html += f"""<p>{render_button("Back", "secondary", {"onclick": "location.href='/'"})}</p>"""
+
+    return form_html
 
 
 def hostnames_config(shared_state):
@@ -739,87 +1151,20 @@ def hostnames_config(shared_state):
         return save_hostnames(shared_state)
 
     @app.post("/api/hostnames/import-url")
-    def import_hostnames_from_url():
-        """Fetch URL and parse hostnames, return JSON for JS to populate fields."""
-        response.content_type = "application/json"
-        try:
-            data = request.json
-            url = data.get("url", "").strip()
-
-            if not url:
-                return {"success": False, "error": "No URL provided"}
-
-            # Validate URL
-            parsed = urlparse(url)
-            if parsed.scheme not in ("http", "https") or not parsed.netloc:
-                return {"success": False, "error": "Invalid URL format"}
-
-            # Fetch content
-            try:
-                resp = requests.get(url, timeout=15)
-                resp.raise_for_status()
-                content = resp.text
-            except requests.RequestException as e:
-                info(f"Failed to fetch hostnames URL: {e}")
-                return {
-                    "success": False,
-                    "error": "Failed to fetch URL. Check the console log for details.",
-                }
-
-            # Parse hostnames
-            allowed_keys = extract_allowed_keys(Config._DEFAULT_CONFIG, "Hostnames")
-            results = extract_kv_pairs(content, allowed_keys)
-
-            if not results:
-                return {
-                    "success": False,
-                    "error": "No hostnames found in the provided URL",
-                }
-
-            # Validate each hostname
-            valid_hostnames = {}
-            invalid_hostnames = {}
-            for shorthand, hostname in results.items():
-                domain_check = extract_valid_hostname(hostname, shorthand)
-                domain = domain_check.get("domain")
-                if domain:
-                    valid_hostnames[shorthand] = domain
-                else:
-                    invalid_hostnames[shorthand] = domain_check.get(
-                        "message", "Invalid"
-                    )
-
-            if not valid_hostnames:
-                return {
-                    "success": False,
-                    "error": "No valid hostnames found in the provided URL",
-                }
-
-            return {
-                "success": True,
-                "hostnames": valid_hostnames,
-                "errors": invalid_hostnames,
-            }
-
-        except Exception as e:
-            return {"success": False, "error": f"Error: {str(e)}"}
+    def import_hostnames_route():
+        return import_hostnames_from_url()
 
     @app.get("/api/skip-login")
-    def get_skip_login():
-        """Return list of hostnames with skipped login."""
-        response.content_type = "application/json"
-        skip_db = DataBase("skip_login")
-        login_required_sites = ["al", "dd", "dl", "nx"]
-        skipped = []
-        for site in login_required_sites:
-            if skip_db.retrieve(site):
-                skipped.append(site)
-        return {"skipped": skipped}
+    def get_skip_login_route():
+        return get_skip_login()
 
     @app.delete("/api/skip-login/<shorthand>")
-    def clear_skip_login(shorthand):
-        DataBase("skip_login").delete(shorthand)
-        return {"success": True}
+    def clear_skip_login_route(shorthand):
+        return clear_skip_login(shorthand)
+
+    @app.post("/api/hostnames/check-credentials/<shorthand>")
+    def check_credentials_route(shorthand):
+        return check_credentials(shared_state, shorthand)
 
     info(
         f'Hostnames not set. Starting web server for config at: "{shared_state.values["internal_address"]}".'
@@ -838,15 +1183,50 @@ def hostname_credentials_config(shared_state, shorthand, domain):
 
     shorthand = shorthand.upper()
 
+    @app.post("/api/flaresolverr_inline")
+    def set_flaresolverr_inline():
+        return save_flaresolverr_url(shared_state, is_setup=False)
+
     @app.get("/")
     def credentials_form():
-        form_content = f"""
+        flaresolverr_url = Config("FlareSolverr").get("url")
+
+        is_al_missing_flaresolverr = shorthand == "AL" and not flaresolverr_url
+
+        flaresolverr_section = ""
+
+        if is_al_missing_flaresolverr:
+            flaresolverr_section = """
+             <div style="margin-bottom: 1.5rem; padding: 1rem; background: #fff3cd; border: 1px solid #ffeeba; border-radius: 0.5rem;">
+                <h4 style="margin-top:0; font-size:1rem; color:#856404;">⚠️ FlareSolverr Required</h4>
+                <p style="font-size:0.875rem; margin-bottom:0.5rem; color:#856404;">
+                    This site requires FlareSolverr. Please configure it below before checking credentials.
+                </p>
+                <form action="/api/flaresolverr_inline" method="post" onsubmit="return handleFlareSolverrSubmit(this)">
+                    <div style="display:flex; gap:0.5rem;">
+                        <input type="text" name="url" placeholder="http://192.168.0.1:8191/v1" style="flex:1; margin-bottom:0;">
+                        <button type="submit" class="btn-secondary" id="fsSubmitBtn" style="margin-top:0;">Save URL</button>
+                    </div>
+                </form>
+             </div>
+             <script>
+             function handleFlareSolverrSubmit(form) {{
+                 var btn = document.getElementById('fsSubmitBtn');
+                 if (btn) {{ btn.disabled = true; btn.textContent = 'Saving...'; }}
+                 return true;
+             }}
+             </script>
+             """
+
+        disabled_attr = "disabled" if is_al_missing_flaresolverr else ""
+
+        credentials_inputs = f"""
         <span>If required register account at: <a href="https://{domain}">{domain}</a>!</span><br><br>
         <label for="user">Username</label>
-        <input type="text" id="user" name="user" placeholder="User" autocorrect="off"><br>
+        <input type="text" id="user" name="user" placeholder="User" autocorrect="off" {disabled_attr}><br>
 
         <label for="password">Password</label>
-        <input type="password" id="password" name="password" placeholder="Password"><br>
+        <input type="password" id="password" name="password" placeholder="Password" {disabled_attr}><br>
         """
 
         form_html = f"""
@@ -873,8 +1253,9 @@ def hostname_credentials_config(shared_state, shorthand, domain):
                 border-color: #c69500;
             }}
         </style>
+        {flaresolverr_section}
         <form id="credentialsForm" action="/api/credentials/{shorthand}" method="post" onsubmit="return handleSubmit(this)">
-            {form_content}
+            {credentials_inputs}
             <div class="button-row">
                 {render_button("Save", "primary", {"type": "submit", "id": "submitBtn"})}
                 <button type="button" class="btn-warning" id="skipBtn" onclick="skipLogin()">Skip for now</button>
@@ -885,7 +1266,14 @@ def hostname_credentials_config(shared_state, shorthand, domain):
         </p>
         <script>
         var formSubmitted = false;
+        var isAlMissingFlaresolverr = {"true" if is_al_missing_flaresolverr else "false"};
+
         function handleSubmit(form) {{
+            if (isAlMissingFlaresolverr) {{
+                showModal('FlareSolverr Required', 'You must configure FlareSolverr below or skip login for this site.');
+                return false;
+            }}
+
             if (formSubmitted) return false;
             formSubmitted = true;
             var btn = document.getElementById('submitBtn');
@@ -1023,85 +1411,9 @@ def flaresolverr_config(shared_state):
 
     @app.get("/")
     def url_form():
-        form_content = """
-        <span><a href="https://github.com/FlareSolverr/FlareSolverr?tab=readme-ov-file#installation">A local instance</a>
-        must be running and reachable to Quasarr!</span><br><br>
-        <label for="url">FlareSolverr URL</label>
-        <input type="text" id="url" name="url" placeholder="http://192.168.0.1:8191/v1"><br>
-        """
-        form_html = f"""
-        <style>
-            .button-row {{
-                display: flex;
-                gap: 0.75rem;
-                justify-content: center;
-                flex-wrap: wrap;
-                margin-top: 1rem;
-            }}
-            .btn-warning {{
-                background-color: #ffc107;
-                color: #212529;
-                border: 1.5px solid #d39e00;
-                padding: 0.5rem 1rem;
-                font-size: 1rem;
-                border-radius: 0.5rem;
-                font-weight: 500;
-                cursor: pointer;
-            }}
-            .btn-warning:hover {{
-                background-color: #e0a800;
-                border-color: #c69500;
-            }}
-        </style>
-        <form action="/api/flaresolverr" method="post" onsubmit="return handleSubmit(this)">
-            {form_content}
-            <div class="button-row">
-                {render_button("Save", "primary", {"type": "submit", "id": "submitBtn"})}
-                <button type="button" class="btn-warning" id="skipBtn" onclick="skipFlaresolverr()">Skip for now</button>
-            </div>
-        </form>
-        <p style="font-size:0.875rem; color:var(--secondary, #6c757d); margin-top:1rem;">
-            Skipping will allow Quasarr to start, but some sites (like AL) won't work without FlareSolverr.
-        </p>
-        <script>
-        var formSubmitted = false;
-        function handleSubmit(form) {{
-            if (formSubmitted) return false;
-            formSubmitted = true;
-            var btn = document.getElementById('submitBtn');
-            if (btn) {{ btn.disabled = true; btn.textContent = 'Saving...'; }}
-            document.getElementById('skipBtn').disabled = true;
-            return true;
-        }}
-        function skipFlaresolverr() {{
-            if (formSubmitted) return;
-            formSubmitted = true;
-            var skipBtn = document.getElementById('skipBtn');
-            var submitBtn = document.getElementById('submitBtn');
-            if (skipBtn) {{ skipBtn.disabled = true; skipBtn.textContent = 'Skipping...'; }}
-            if (submitBtn) {{ submitBtn.disabled = true; }}
-
-            fetch('/api/flaresolverr/skip', {{ method: 'POST' }})
-            .then(response => {{
-                if (response.ok) {{
-                    window.location.href = '/skip-success';
-                }} else {{
-                    showModal('Error', 'Failed to skip FlareSolverr setup');
-                    formSubmitted = false;
-                    if (skipBtn) {{ skipBtn.disabled = false; skipBtn.textContent = 'Skip for now'; }}
-                    if (submitBtn) {{ submitBtn.disabled = false; }}
-                }}
-            }})
-            .catch(error => {{
-                showModal('Error', 'Error: ' + error.message);
-                formSubmitted = false;
-                if (skipBtn) {{ skipBtn.disabled = false; skipBtn.textContent = 'Skip for now'; }}
-                if (submitBtn) {{ submitBtn.disabled = false; }}
-            }});
-        }}
-        </script>
-        """
-        return render_form("Set FlareSolverr URL", form_html)
+        return render_form(
+            "Set FlareSolverr URL", flaresolverr_form_html(shared_state, is_setup=True)
+        )
 
     @app.get("/skip-success")
     def skip_success():
@@ -1121,38 +1433,7 @@ def flaresolverr_config(shared_state):
 
     @app.post("/api/flaresolverr")
     def set_flaresolverr_url():
-        url = request.forms.get("url").strip()
-        config = Config("FlareSolverr")
-
-        if not url.startswith("http://") and not url.startswith("https://"):
-            url = "http://" + url
-
-        if url:
-            try:
-                headers = {"Content-Type": "application/json"}
-                data = {
-                    "cmd": "request.get",
-                    "url": "http://www.google.com/",
-                    "maxTimeout": 30000,
-                }
-                resp = requests.post(url, headers=headers, json=data, timeout=30)
-                if resp.status_code == 200:
-                    config.save("url", url)
-                    # Clear skip preference since we now have a working URL
-                    DataBase("skip_flaresolverr").delete("skipped")
-                    print(f'Using Flaresolverr URL: "{url}"')
-                    quasarr.providers.web_server.temp_server_success = True
-                    return render_reconnect_success(
-                        "FlareSolverr URL saved successfully!"
-                    )
-            except requests.RequestException:
-                pass
-
-        # on failure, clear any existing value and notify user
-        config.save("url", "")
-        return render_fail(
-            "Could not reach FlareSolverr at that URL (expected HTTP 200)."
-        )
+        return save_flaresolverr_url(shared_state, is_setup=True)
 
     info(
         '"flaresolverr" URL is required for some sites (like AL). '
