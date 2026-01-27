@@ -754,7 +754,7 @@ def get_al_download_links(shared_state, url, mirror, title, password):
                                     break
                                 else:
                                     info(
-                                        f"CAPTCHA was solved, but no links are available for the selection!"
+                                        "CAPTCHA was solved, but no links are available for the selection!"
                                     )
                                     StatsHelper(
                                         shared_state

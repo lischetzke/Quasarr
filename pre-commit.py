@@ -13,7 +13,7 @@ PYPROJECT_FILE = Path("pyproject.toml")
 
 def run(cmd, check=True, capture=False, text=True):
     """Helper to run shell commands comfortably."""
-    print(f"Exec: {' '.join(cmd)}")
+    print(f"⚙️  Exec: {' '.join(cmd)}")
     return subprocess.run(cmd, check=check, capture_output=capture, text=text)
 
 
@@ -29,18 +29,29 @@ def git_status_has_changes():
 
 
 def task_format():
-    print("--- 1. FORMATTING ---")
-    run(["uv", "run", "ruff", "check", "--select", "I", "--fix", "."], check=False)
+    print("\n🔍 --- 1. FORMATTING & SYNTAX CHECK ---")
+
+    # Runs Ruff using the rules defined in pyproject.toml
+    result = run(["uv", "run", "ruff", "check", "--fix", "."], check=False)
+
+    if result.returncode != 0:
+        print("❌ Critical errors or syntax issues found. Fix them before staging.")
+        return False
+
+    # Standard formatting (indentation/spacing)
     run(["uv", "run", "ruff", "format", "."], check=False)
 
     if git_status_has_changes():
+        print("✅ Linting fixes applied and staged.")
         run(["git", "add", "."])
         return True
+
+    print("✨ Code style is already perfect.")
     return False
 
 
 def task_upgrade_deps():
-    print("--- 2. DEPENDENCIES ---")
+    print("\n📦 --- 2. DEPENDENCIES ---")
     try:
         with open(PYPROJECT_FILE, "rb") as f:
             pyproj = tomllib.load(f)
@@ -54,7 +65,7 @@ def task_upgrade_deps():
         if deps:
             pkgs = [get_pkg_name(d) for d in deps if get_pkg_name(d)]
             if pkgs:
-                print(f"Upgrading main: {pkgs}")
+                print(f"⬆️  Upgrading main: {pkgs}")
                 run(["uv", "add", "--upgrade"] + pkgs, check=False)
 
         # Groups
@@ -63,25 +74,27 @@ def task_upgrade_deps():
             if g_deps:
                 pkgs = [get_pkg_name(d) for d in g_deps if get_pkg_name(d)]
                 if pkgs:
-                    print(f"Upgrading group '{group}': {pkgs}")
+                    print(f"🏗️  Upgrading group '{group}': {pkgs}")
                     run(
                         ["uv", "add", "--group", group, "--upgrade"] + pkgs, check=False
                     )
 
         # Lock file
+        print("🔒 Refreshing lockfile...")
         run(["uv", "lock", "--upgrade"], check=False)
 
     except Exception as e:
-        print(f"Dependency upgrade failed: {e}")
+        print(f"⚠️  Dependency upgrade failed: {e}")
 
     if git_status_has_changes():
+        print("✅ Dependencies updated.")
         run(["git", "add", "."])
         return True
     return False
 
 
 def task_version_bump():
-    print("--- 3. VERSION CHECK ---")
+    print("\n🏷️  --- 3. VERSION CHECK ---")
     new_v = ""
 
     def get_ver(content):
@@ -105,7 +118,7 @@ def task_version_bump():
             return (0, 0, 0)
 
     try:
-        # Fetch main to compare versions
+        print("🌐 Fetching remote to compare versions...")
         run(["git", "fetch", "origin", "main"], check=False)
         try:
             base = subprocess.check_output(
@@ -122,11 +135,11 @@ def task_version_bump():
         run(["git", "checkout", "HEAD", "--", str(VERSION_FILE)], capture=True)
         curr_v = get_ver(VERSION_FILE.read_text())
 
-        print(f"Main: {main_v} | Current: {curr_v}")
+        print(f"📊 Main: {main_v} | Current: {curr_v}")
 
         if main_v and curr_v and ver_tuple(curr_v) <= ver_tuple(main_v):
             new_v = bump(main_v)
-            print(f">> Bumping to {new_v}")
+            print(f"🚀 Bumping version to: {new_v}")
             content = VERSION_FILE.read_text().replace(f'"{curr_v}"', f'"{new_v}"')
             VERSION_FILE.write_text(content)
 
@@ -134,13 +147,12 @@ def task_version_bump():
             return True, new_v
 
     except Exception as e:
-        print(f"Version check warning (non-fatal): {e}")
+        print(f"⚠️  Version check warning (non-fatal): {e}")
 
     return False, new_v
 
 
 def main():
-    # Parse minimal args
     is_ci = "--ci" in sys.argv
     do_upgrade = "--upgrade" in sys.argv or is_ci
 
@@ -150,18 +162,12 @@ def main():
     if do_upgrade:
         fixed_deps = task_upgrade_deps()
 
-    fixed_version = False
-    new_v = ""
+    fixed_version, new_v = task_version_bump()
 
-    # Version Bump only runs in CI
-    if is_ci:
-        fixed_version, new_v = task_version_bump()
-
-    # --- CI Specific Logic (Push & Notify) ---
+    # --- CI Specific Logic ---
     if is_ci and (fixed_format or fixed_deps or fixed_version):
-        print("--- 4. PUSH & REPORT ---")
+        print("\n📤 --- 4. PUSH & REPORT ---")
 
-        # 1. Config Git
         run(["git", "config", "--global", "user.name", "github-actions[bot]"])
         run(
             [
@@ -173,10 +179,9 @@ def main():
             ]
         )
 
-        # 2. Commit Message
         parts = []
         if fixed_format:
-            parts.append("Fixed linting")
+            parts.append("fixed linting")
         if fixed_deps:
             parts.append("upgraded dependencies")
         if fixed_version:
@@ -185,29 +190,26 @@ def main():
         msg_body = (
             ", ".join(parts[:-1]) + " and " + parts[-1] if len(parts) > 1 else parts[0]
         )
-        msg = f"chore: {msg_body}"
+        msg = f"chore: 🤖 {msg_body}"
 
         try:
             run(["git", "commit", "-m", msg])
-
             target_ref = get_env("TARGET_REF")
+            print(f"🔄 Rebase and pushing to {target_ref}...")
             run(["git", "pull", "--rebase", "origin", target_ref], check=False)
             run(["git", "push", "origin", f"HEAD:{target_ref}"])
 
-            # Write to Github Output
             if "GITHUB_OUTPUT" in os.environ:
                 with open(os.environ["GITHUB_OUTPUT"], "a") as f:
                     f.write("changes_pushed=true\n")
         except subprocess.CalledProcessError as e:
-            print(f"::error::Failed to push fixes. ({e})")
+            print(f"❌ ::error::Failed to push fixes. ({e})")
             sys.exit(1)
 
-        # 3. Handle PR Comments & Retrigger logic
         repo = get_env("GITHUB_REPO")
         workflow_name = get_env("WORKFLOW_NAME")
-        pr_num = get_env("PR_NUMBER")  # We will pass this from YAML
+        pr_num = get_env("PR_NUMBER")
 
-        # Attempt to find PR number if not provided
         if not pr_num:
             try:
                 pr_json = subprocess.check_output(
@@ -220,21 +222,18 @@ def main():
             except:
                 pass
 
-        # Comment on PR
         if pr_num:
+            print(f"💬 Posting status update to PR #{pr_num}...")
             fixes_list = ""
             if fixed_format:
-                fixes_list += "- ✅ **Formatted Code** (Imports & Layout)\n"
+                fixes_list += "- ✅ **Formatted Code**\n"
             if fixed_deps:
                 fixes_list += "- ✅ **Upgraded Dependencies**\n"
             if fixed_version:
-                fixes_list += f"- ✅ **Bumped Version** (to {new_v})\n"
+                fixes_list += f"- ✅ **Bumped Version** ({new_v})\n"
 
-            body = "### 🤖 Auto-Fix Applied\n"
-            body += "I fixed the following issues so we can merge:\n"
-            body += fixes_list + "\n"
-            body += "**Note:** The build is now **GREEN** 🟢, but your local branch is out of sync.\n"
-            body += f"Please run this locally:\n```bash\ngit pull origin {target_ref}\n```\n"
+            body = f"### 🤖 Auto-Fix Applied\nI fixed the following issues so we can merge:\n{fixes_list}\n"
+            body += f"**Note:** Build is now **GREEN** 🟢. Please run `git pull origin {target_ref}` locally.\n"
 
             Path("comment.md").write_text(body, encoding="utf-8")
             run(
@@ -242,39 +241,29 @@ def main():
                 check=False,
             )
 
-            # Beta Build Retrigger Notification
             if target_ref == "dev":
                 actions_url = (
                     f"https://github.com/{repo}/actions?query=branch%3A{target_ref}"
                 )
-                retrigger_body = "🚀 **Beta Build Triggered!**\n\n"
-                retrigger_body += "I have automatically started a new workflow run on the updated branch.\n"
-                retrigger_body += (
-                    f"\n[**👉 Click here to view the new run**]({actions_url})"
-                )
-
+                retrigger_body = f"🚀 **Beta Build Triggered!**\n\n[**👉 View the new run**]({actions_url})"
                 Path("retrigger.md").write_text(retrigger_body, encoding="utf-8")
                 run(
                     ["gh", "pr", "comment", pr_num, "--body-file", "retrigger.md"],
                     check=False,
                 )
 
-        # 4. Retrigger Workflow
-        print(f">> Triggering new workflow run for: {workflow_name}...")
+        print(f"⚡ Triggering workflow: {workflow_name}...")
         ret = run(
             ["gh", "workflow", "run", workflow_name, "--ref", target_ref], check=False
         )
 
         if ret.returncode != 0:
-            print(
-                "::warning::Could not auto-trigger next run. Please retry the job manually."
-            )
+            print("⚠️  ::warning::Could not auto-trigger next run.")
 
         sys.exit(0)
 
     else:
-        # No changes
-        print("Clean run.")
+        print("\n✨ Clean run. No changes needed.")
         if "GITHUB_OUTPUT" in os.environ:
             with open(os.environ["GITHUB_OUTPUT"], "a") as f:
                 f.write("changes_pushed=false\n")

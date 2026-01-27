@@ -27,7 +27,7 @@ def setup_sponsors_helper_routes(app):
         try:
             if not shared_state.values["helper_active"]:
                 shared_state.update("helper_active", True)
-                info(f"Sponsor status activated successfully")
+                info("Sponsor status activated successfully")
 
             protected = shared_state.get_db("protected").retrieve_all_titles()
             if not protected:
@@ -174,7 +174,7 @@ def setup_sponsors_helper_routes(app):
             payload = json.loads(data)
             if payload["activate"]:
                 shared_state.update("helper_active", True)
-                info(f"Sponsor status activated successfully")
+                info("Sponsor status activated successfully")
                 return "Sponsor status activated successfully!"
         except:
             pass

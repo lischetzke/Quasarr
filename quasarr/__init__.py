@@ -15,7 +15,7 @@ import requests
 import quasarr.providers.web_server
 from quasarr.api import get_api
 from quasarr.providers import shared_state, version
-from quasarr.providers.log import debug, info
+from quasarr.providers.log import info
 from quasarr.providers.notifications import send_discord_message
 from quasarr.providers.utils import (
     FALLBACK_USER_AGENT,
@@ -194,7 +194,7 @@ def run():
         print(
             f"You have [{len(hostnames)} of {len(Config._DEFAULT_CONFIG['Hostnames'])}] supported hostnames set up"
         )
-        print(f"For efficiency it is recommended to set up as few hostnames as needed.")
+        print("For efficiency it is recommended to set up as few hostnames as needed.")
 
         # Check credentials for login-required hostnames
         skip_login_db = DataBase("skip_login")
@@ -243,7 +243,7 @@ def run():
             discord_webhook_pattern = r"^https://discord\.com/api/webhooks/\d+/[\w-]+$"
             if re.match(discord_webhook_pattern, arguments.discord):
                 shared_state.update("webhook", arguments.discord)
-                print(f"Using Discord Webhook URL for notifications.")
+                print("Using Discord Webhook URL for notifications.")
                 discord_url = arguments.discord
             else:
                 print(f"Invalid Discord Webhook URL provided: {arguments.discord}")

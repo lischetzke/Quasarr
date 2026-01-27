@@ -71,7 +71,7 @@ def send_discord_message(
             fields.append(
                 {
                     "name": "SponsorsHelper",
-                    "value": f"[Sponsors get automated CAPTCHA solutions!](https://github.com/rix1337/Quasarr?tab=readme-ov-file#sponsorshelper)",
+                    "value": "[Sponsors get automated CAPTCHA solutions!](https://github.com/rix1337/Quasarr?tab=readme-ov-file#sponsorshelper)",
                 }
             )
     elif case == "quasarr_update":

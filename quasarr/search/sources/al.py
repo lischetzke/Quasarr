@@ -23,11 +23,6 @@ hostname = "al"
 supported_mirrors = ["rapidgator", "ddownload"]
 
 
-def convert_to_rss_date(date_str: str) -> str:
-    parsed = datetime.strptime(date_str, "%d.%m.%Y - %H:%M")
-    return parsed.strftime("%a, %d %b %Y %H:%M:%S +0000")
-
-
 import re
 from datetime import datetime, timedelta
 

@@ -10,6 +10,10 @@
 # PyCharm
 .idea
 
+# MacOS
+.DS_Store
+**/.DS_Store
+
 # Quasarr
 *.conf
 *.db
