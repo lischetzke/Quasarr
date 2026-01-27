@@ -367,15 +367,15 @@ def get_api(shared_state_dict, shared_state_lock):
             /* Dark mode */
             @media (prefers-color-scheme: dark) {{
                 :root {{
-                    --status-success-bg: #1b5e20;
-                    --status-success-color: #a5d6a7;
-                    --status-success-border: #2e7d32;
+                    --status-success-bg: #1c4532;
+                    --status-success-color: #68d391;
+                    --status-success-border: #276749;
                     --status-warning-bg: #3d3520;
                     --status-warning-color: #ffb74d;
                     --status-warning-border: #d69e2e;
-                    --status-error-bg: #b71c1c;
-                    --status-error-color: #ef9a9a;
-                    --status-error-border: #c62828;
+                    --status-error-bg: #3d2d2d;
+                    --status-error-color: #fc8181;
+                    --status-error-border: #c53030;
                     --alert-warning-bg: #3d3520;
                     --alert-warning-border: #d69e2e;
                     --card-bg: #2d3748;
