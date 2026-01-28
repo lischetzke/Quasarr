@@ -7,7 +7,7 @@ import signal
 import threading
 import time
 
-from bottle import response
+from bottle import request, response
 
 from quasarr.providers.html_templates import render_button, render_form
 from quasarr.providers.log import info
@@ -22,6 +22,8 @@ from quasarr.storage.setup import (
     import_hostnames_from_url,
     save_flaresolverr_url,
     save_hostnames,
+    save_jdownloader_settings,
+    verify_jdownloader_credentials,
 )
 from quasarr.storage.sqlite_database import DataBase
 
@@ -217,3 +219,11 @@ def setup_config(app, shared_state):
 
         threading.Thread(target=delayed_exit, daemon=True).start()
         return {"success": True, "message": "Restarting..."}
+
+    @app.post("/api/jdownloader/verify")
+    def verify_jdownloader_api():
+        return verify_jdownloader_credentials(shared_state)
+
+    @app.post("/api/jdownloader/save")
+    def save_jdownloader_api():
+        return save_jdownloader_settings(shared_state, is_setup=False)

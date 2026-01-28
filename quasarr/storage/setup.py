@@ -1446,6 +1446,69 @@ def flaresolverr_config(shared_state):
     ).serve_temporarily()
 
 
+def verify_jdownloader_credentials(shared_state):
+    """Verify JDownloader credentials and return devices."""
+    response.content_type = "application/json"
+    try:
+        data = request.json
+        username = data.get("user")
+        password = data.get("pass")
+
+        devices = shared_state.get_devices(username, password)
+        device_names = []
+
+        if devices:
+            for device in devices:
+                device_names.append(device["name"])
+
+        if device_names:
+            return {"success": True, "devices": device_names}
+        else:
+            return {"success": False, "message": "No devices found or invalid credentials"}
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+
+def save_jdownloader_settings(shared_state, is_setup=False):
+    """Save JDownloader settings."""
+    # Handle both JSON (from main UI) and Form (from setup UI)
+    if request.json:
+        username = request.json.get("user")
+        password = request.json.get("pass")
+        device = request.json.get("device")
+    else:
+        username = request.forms.get("user")
+        password = request.forms.get("pass")
+        device = request.forms.get("device")
+
+    if username and password and device:
+        # Verify connection works before saving credentials
+        if shared_state.set_device(username, password, device):
+            config = Config("JDownloader")
+            config.save("user", username)
+            config.save("password", password)
+            config.save("device", device)
+            
+            if is_setup:
+                quasarr.providers.web_server.temp_server_success = True
+                return render_reconnect_success("Credentials set")
+            else:
+                response.content_type = "application/json"
+                return {"success": True, "message": "JDownloader configured successfully"}
+        else:
+            if is_setup:
+                return render_fail("Could not connect to selected device!")
+            else:
+                response.content_type = "application/json"
+                return {"success": False, "message": "Could not connect to selected device"}
+
+    if is_setup:
+        return render_fail("Could not set credentials!")
+    else:
+        response.content_type = "application/json"
+        return {"success": False, "message": "Missing required fields"}
+
+
 def jdownloader_config(shared_state):
     app = Bottle()
     add_no_cache_headers(app)
@@ -1549,39 +1612,11 @@ def jdownloader_config(shared_state):
 
     @app.post("/api/verify_jdownloader")
     def verify_jdownloader():
-        data = request.json
-        username = data["user"]
-        password = data["pass"]
-
-        devices = shared_state.get_devices(username, password)
-        device_names = []
-
-        if devices:
-            for device in devices:
-                device_names.append(device["name"])
-
-        if device_names:
-            return {"success": True, "devices": device_names}
-        else:
-            return {"success": False}
+        return verify_jdownloader_credentials(shared_state)
 
     @app.post("/api/store_jdownloader")
     def store_jdownloader():
-        username = request.forms.get("user")
-        password = request.forms.get("pass")
-        device = request.forms.get("device")
-
-        if username and password and device:
-            # Verify connection works before saving credentials
-            if shared_state.set_device(username, password, device):
-                config = Config("JDownloader")
-                config.save("user", username)
-                config.save("password", password)
-                config.save("device", device)
-                quasarr.providers.web_server.temp_server_success = True
-                return render_reconnect_success("Credentials set")
-
-        return render_fail("Could not set credentials!")
+        return save_jdownloader_settings(shared_state, is_setup=True)
 
     info(
         f"My-JDownloader-Credentials not set. "

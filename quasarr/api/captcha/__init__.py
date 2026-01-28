@@ -11,6 +11,7 @@ import requests
 from bottle import HTTPResponse, redirect, request, response
 
 import quasarr.providers.html_images as images
+from quasarr.api.jdownloader import get_jdownloader_disconnected_page
 from quasarr.downloads.linkcrypters.filecrypt import DLC, get_filecrypt_links
 from quasarr.downloads.packages import delete_package
 from quasarr.providers import obfuscated, shared_state
@@ -46,15 +47,7 @@ def setup_captcha_routes(app):
         except KeyError:
             device = None
         if not device:
-            return render_centered_html(f'''<h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
-            <div class="status-bar">
-                <span class="status-pill error">
-                    ❌ JDownloader disconnected
-                </span>
-            </div>
-            <p>
-                {render_button("Back", "secondary", {"onclick": "location.href='/'"})}
-            </p>''')
+            return get_jdownloader_disconnected_page(shared_state)
 
         protected = shared_state.get_db("protected").retrieve_all_titles()
         if not protected:
