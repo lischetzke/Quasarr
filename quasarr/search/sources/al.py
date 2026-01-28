@@ -15,7 +15,7 @@ from quasarr.downloads.sources.al import (
     parse_info_from_feed_entry,
 )
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
-from quasarr.providers.imdb_metadata import get_localized_title
+from quasarr.providers.imdb_metadata import get_localized_title, get_year
 from quasarr.providers.log import debug, info
 from quasarr.providers.sessions.al import fetch_via_requests_session, invalidate_session
 
@@ -122,9 +122,7 @@ def al_feed(shared_state, start_time, request_from, mirror=None):
     host = shared_state.values["config"]("Hostnames").get(hostname)
 
     if not "arr" in request_from.lower():
-        debug(
-            f'Skipping {request_from} search on "{hostname.upper()}" (unsupported media type)!'
-        )
+        debug(f"{hostname}: Skipping {request_from} search (unsupported media type)!")
         return releases
 
     if "Radarr" in request_from:
@@ -274,9 +272,7 @@ def al_search(
     host = shared_state.values["config"]("Hostnames").get(hostname)
 
     if not "arr" in request_from.lower():
-        debug(
-            f'Skipping {request_from} search on "{hostname.upper()}" (unsupported media type)!'
-        )
+        debug(f"{hostname}: Skipping {request_from} search (unsupported media type)!")
         return releases
 
     if "Radarr" in request_from:
@@ -285,7 +281,7 @@ def al_search(
         valid_type = "series"
 
     if mirror and mirror not in supported_mirrors:
-        debug(f'Mirror "{mirror}" not supported by {hostname}.')
+        debug(f'{hostname}: Mirror "{mirror}" not supported.')
         return releases
 
     imdb_id = shared_state.is_imdb_id(search_string)
@@ -303,7 +299,11 @@ def al_search(
     try:
         url = f"https://www.{host}/search?q={encoded_search_string}"
         r = fetch_via_requests_session(
-            shared_state, method="GET", target_url=url, timeout=10
+            shared_state,
+            method="GET",
+            target_url=url,
+            timeout=10,
+            year=get_year(imdb_id) if imdb_id else None,
         )
         r.raise_for_status()
     except Exception as e:
@@ -322,7 +322,7 @@ def al_search(
             last_redirect.url, redirect_location
         )  # in case of relative URL
         debug(
-            f"{search_string} redirected to {absolute_redirect_url} instead of search results page"
+            f"{hostname}: {search_string} redirected to {absolute_redirect_url} instead of search results page"
         )
 
         try:
@@ -350,9 +350,13 @@ def al_search(
             sanitized_search_string = shared_state.sanitize_string(search_string)
             sanitized_title = shared_state.sanitize_string(name)
             if not sanitized_search_string in sanitized_title:
-                debug(f"Search string '{search_string}' doesn't match '{name}'")
+                debug(
+                    f"{hostname}: Search string '{search_string}' doesn't match '{name}'"
+                )
                 continue
-            debug(f"Matched search string '{search_string}' with result '{name}'")
+            debug(
+                f"{hostname}: Matched search string '{search_string}' with result '{name}'"
+            )
 
             type_label = None
             for lbl in body.select("div.label-group a[href]"):
@@ -384,7 +388,7 @@ def al_search(
             use_cache = ts and ts > datetime.now() - timedelta(seconds=threshold)
 
             if use_cache and entry.get("html"):
-                debug(f"Using cached content for '{url}'")
+                debug(f"{hostname}: Using cached content for '{url}'")
                 data_html = entry["html"]
             else:
                 entry = {"timestamp": datetime.now()}

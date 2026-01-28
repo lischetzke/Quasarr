@@ -11,7 +11,7 @@ from html import unescape
 from bs4 import BeautifulSoup
 
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
-from quasarr.providers.imdb_metadata import get_localized_title
+from quasarr.providers.imdb_metadata import get_localized_title, get_year
 from quasarr.providers.log import debug, info
 from quasarr.providers.sessions.dl import (
     fetch_via_requests_session,
@@ -354,6 +354,9 @@ def dl_search(
             info(f"{hostname}: no title for IMDb {imdb_id}")
             return releases
         search_string = title
+        if not season:
+            if year := get_year(imdb_id):
+                search_string += f" {year}"
 
     search_string = unescape(search_string)
     max_search_duration = 7
@@ -371,6 +374,7 @@ def dl_search(
         search_id = None
         page_num = 0
         search_start_time = time.time()
+        release_titles_per_page = set()
 
         # Sequential search through pages until timeout or no results
         while (time.time() - search_start_time) < max_search_duration:
@@ -388,6 +392,14 @@ def dl_search(
                 season,
                 episode,
             )
+
+            page_release_titles = tuple(pr["details"]["title"] for pr in page_releases)
+            if page_release_titles in release_titles_per_page:
+                debug(
+                    f"{hostname}: [Page {page_num}] duplicate page detected, stopping"
+                )
+                break
+            release_titles_per_page.add(page_release_titles)
 
             # Update search_id from first page
             if page_num == 1:

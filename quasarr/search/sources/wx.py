@@ -13,7 +13,7 @@ import requests
 from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning
 
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
-from quasarr.providers.imdb_metadata import get_localized_title
+from quasarr.providers.imdb_metadata import get_localized_title, get_year
 from quasarr.providers.log import debug, info
 
 warnings.filterwarnings(
@@ -190,7 +190,7 @@ def wx_search(
         "selectedGenres": "",
         "types": "movie,series,anime",
         "genres": "",
-        "years": "",
+        "years": year if (year := get_year(imdb_id)) else "",
         "ratings": "",
         "page": 1,
         "sortBy": "latest",
@@ -244,13 +244,15 @@ def wx_search(
                 else:
                     detail_item = detail_data
 
-                item_imdb_id = imdb_id
-                if not item_imdb_id:
-                    item_imdb_id = detail_item.get("imdb_id") or detail_item.get(
-                        "imdbid"
+                item_imdb_id = detail_item.get("imdb_id") or detail_item.get("imdbid")
+                if not item_imdb_id and "options" in detail_item:
+                    item_imdb_id = detail_item["options"].get("imdb_id")
+
+                if item_imdb_id and imdb_id and item_imdb_id != imdb_id:
+                    debug(
+                        f"{hostname.upper()}: IMDb-ID mismatch ({imdb_id} != {item_imdb_id}), skipping item"
                     )
-                    if not item_imdb_id and "options" in detail_item:
-                        item_imdb_id = detail_item["options"].get("imdb_id")
+                    continue
 
                 source = f"https://{host}/detail/{uid}"
 

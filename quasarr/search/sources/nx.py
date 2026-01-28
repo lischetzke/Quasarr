@@ -9,7 +9,7 @@ from base64 import urlsafe_b64encode
 import requests
 
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
-from quasarr.providers.imdb_metadata import get_localized_title
+from quasarr.providers.imdb_metadata import get_localized_title, get_year
 from quasarr.providers.log import debug, info
 
 hostname = "nx"
@@ -150,6 +150,9 @@ def nx_search(
             info(f"Could not extract title from IMDb-ID {imdb_id}")
             return releases
         search_string = html.unescape(search_string)
+        if not season:
+            if year := get_year(imdb_id):
+                search_string += f" {year}"
 
     url = f"https://{nx}/api/frontend/search/{search_string}"
     headers = {

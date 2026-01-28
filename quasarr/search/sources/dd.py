@@ -8,7 +8,7 @@ from base64 import urlsafe_b64encode
 from datetime import datetime, timezone
 
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
-from quasarr.providers.imdb_metadata import get_localized_title
+from quasarr.providers.imdb_metadata import get_localized_title, get_year
 from quasarr.providers.log import debug, info
 from quasarr.providers.sessions.dd import (
     create_and_persist_session,
@@ -77,6 +77,13 @@ def dd_search(
             info(f"Could not extract title from IMDb-ID {imdb_id}")
             return releases
         search_string = html.unescape(search_string)
+        if season:
+            search_string += f" S{int(season):02d}"
+            if episode:
+                search_string += f"E{int(episode):02d}"
+        else:
+            if year := get_year(imdb_id):
+                search_string += f" {year}"
 
     if not search_string:
         search_type = "feed"
@@ -116,7 +123,7 @@ def dd_search(
             try:
                 if release.get("fake"):
                     debug(
-                        f"Release {release.get('release')} marked as fake. Invalidating {hostname.upper()} session..."
+                        f"{hostname}: Release {release.get('release')} marked as fake. Invalidating {hostname.upper()} session..."
                     )
                     create_and_persist_session(shared_state)
                     return []
@@ -128,14 +135,19 @@ def dd_search(
                     ):
                         continue
 
-                    imdb_id = release.get("imdbid", None)
+                    release_imdb = release.get("imdbid", None)
+                    if release_imdb and imdb_id and imdb_id != release_imdb:
+                        debug(
+                            f"{hostname}: Release {title} IMDb-ID mismatch ({imdb_id} != {release.get('imdbid', None)})"
+                        )
+                        continue
 
                     source = f"https://{dd}/"
                     size_item = extract_size(release.get("size"))
                     mb = shared_state.convert_to_mb(size_item) * 1024 * 1024
                     published = convert_to_rss_date(release.get("when"))
                     payload = urlsafe_b64encode(
-                        f"{title}|{source}|{mirror}|{mb}|{password}|{imdb_id}|{hostname}".encode(
+                        f"{title}|{source}|{mirror}|{mb}|{password}|{release_imdb}|{hostname}".encode(
                             "utf-8"
                         )
                     ).decode("utf-8")
