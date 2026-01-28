@@ -371,6 +371,7 @@ def fetch_via_requests_session(
     target_url: str,
     post_data: dict = None,
     timeout: int = 30,
+    year: int = None,
 ):
     """
     - method: "GET" or "POST"
@@ -382,6 +383,9 @@ def fetch_via_requests_session(
         raise SkippedSiteError(
             f"{hostname}: site not usable (login skipped or no credentials)"
         )
+
+    if year:
+        sess.cookies["filter"] = f'{{"year":{{"from":{year},"to":{year}}}}}'
 
     # Execute request
     if method.upper() == "GET":

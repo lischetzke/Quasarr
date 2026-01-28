@@ -13,7 +13,7 @@ import requests
 from bs4 import BeautifulSoup
 
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
-from quasarr.providers.imdb_metadata import get_localized_title
+from quasarr.providers.imdb_metadata import get_localized_title, get_year
 from quasarr.providers.log import debug, info
 
 hostname = "by"
@@ -232,6 +232,9 @@ def by_search(
             info(f"Could not extract title from IMDb-ID {imdb_id}")
             return []
         search_string = html.unescape(title)
+        if not season:
+            if year := get_year(imdb_id):
+                search_string += f" {year}"
 
     base_url = f"https://{by}"
     q = quote_plus(search_string)
