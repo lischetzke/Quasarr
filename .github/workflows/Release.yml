@@ -254,18 +254,24 @@ jobs:
         uses: metcalfc/changelog-generator@v4.6.2
         with:
           myToken: ${{ secrets.GITHUB_TOKEN }}
-      - name: Add PR Body to Changelog
+      - name: Get PR Body
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           PR_BODY=$(gh pr list --search "${{ github.sha }}" --state merged --json body --jq '.[0].body // empty')
-          if [ -n "$PR_BODY" ]; then echo -e "\n$PR_BODY" >> .github/Changelog.md; fi
+          if [ -n "$PR_BODY" ]; then
+            echo "$PR_BODY" > pr_body.txt
+          fi
       - name: Create Release Body
         run: |
           echo "### Docker:" > release_body.md
           echo "\`docker pull ${{ env.GHCR_ENDPOINT }}:latest\`" >> release_body.md
           echo "### Python:" >> release_body.md
           echo "\`uv tool upgrade quasarr\`" >> release_body.md
+          if [ -f pr_body.txt ]; then
+            cat pr_body.txt >> release_body.md
+            echo "" >> release_body.md
+          fi
           echo "### Changelog:" >> release_body.md
           echo "${{ steps.changelog.outputs.changelog }}" >> release_body.md
           echo "[Attestation](https://github.com/${{ github.repository }}/attestations/${{ needs.build-wheel.outputs.attestation-id }})" >> release_body.md
