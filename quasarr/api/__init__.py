@@ -8,6 +8,7 @@ import quasarr.providers.html_images as images
 from quasarr.api.arr import setup_arr_routes
 from quasarr.api.captcha import setup_captcha_routes
 from quasarr.api.config import setup_config
+from quasarr.api.jdownloader import get_jdownloader_modal_script, get_jdownloader_status
 from quasarr.api.packages import setup_packages_routes
 from quasarr.api.sponsors_helper import setup_sponsors_helper_routes
 from quasarr.api.statistics import setup_statistics
@@ -49,12 +50,9 @@ def get_api(shared_state_dict, shared_state_lock):
         protected = shared_state.get_db("protected").retrieve_all_titles()
         api_key = Config("API").get("key")
 
-        # Get quick status summary
-        try:
-            device = shared_state.values.get("device")
-            jd_connected = device is not None and device is not False
-        except:
-            jd_connected = False
+        # Get JDownloader status and modal script
+        jd_status = get_jdownloader_status(shared_state)
+        jd_modal_script = get_jdownloader_modal_script()
 
         # Calculate hostname status
         hostnames_config = Config("Hostnames")
@@ -126,10 +124,14 @@ def get_api(shared_state_dict, shared_state_lock):
         # Status bars
         status_bars = f"""
             <div class="status-bar">
-                <span class="status-pill {"success" if jd_connected else "error"}">
-                    {"✅" if jd_connected else "❌"} JDownloader {"connected" if jd_connected else "disconnected"}
+                <span class="status-pill {jd_status['status_class']}" 
+                      onclick="openJDownloaderModal()" 
+                      title="Click to configure JDownloader">
+                    {jd_status['status_text']}
                 </span>
-                <span class="status-pill {hostname_status_class}">
+                <span class="status-pill {hostname_status_class}"
+                      onclick="location.href='/hostnames'"
+                      title="Click to configure Hostnames">
                     {hostname_status_emoji} {hostname_status_text}
                 </span>
             </div>
@@ -209,6 +211,11 @@ def get_api(shared_state_dict, shared_state_lock):
                 padding: 8px 16px;
                 border-radius: 0.5rem;
                 font-weight: 500;
+                transition: transform 0.1s ease;
+                cursor: pointer;
+            }}
+            .status-pill:hover {{
+                transform: scale(1.05);
             }}
             .status-pill.success {{
                 background: var(--status-success-bg, #e8f5e9);
@@ -478,6 +485,7 @@ def get_api(shared_state_dict, shared_state_lock):
                 );
             }}
         </script>
+        {jd_modal_script}
         """
         # Add logout link for form auth
         logout_html = '<a href="/logout">Logout</a>' if show_logout_link() else ""

@@ -56,6 +56,16 @@ def parse_payload(payload_str):
 
 
 def setup_arr_routes(app):
+    def check_user_agent():
+        user_agent = request.headers.get("User-Agent") or ""
+        if not any(
+            tool in user_agent.lower() for tool in ["radarr", "sonarr", "lazylibrarian"]
+        ):
+            msg = f"Unsupported User-Agent: {user_agent}. Quasarr as a compatibility layer must be called by Radarr, Sonarr or LazyLibrarian directly."
+            info(msg)
+            abort(406, msg)
+        return user_agent
+
     @app.get("/download/")
     def fake_nzb_file():
         payload = request.query.payload
@@ -75,6 +85,7 @@ def setup_arr_routes(app):
     @app.post("/api")
     @require_api_key
     def download_fake_nzb_file():
+        request_from = check_user_agent()
         downloads = request.files.getall("name")
         nzo_ids = []  # naming structure for package IDs expected in newznab
 
@@ -97,7 +108,6 @@ def setup_arr_routes(app):
             source_key = root.find(".//file").attrib.get("source_key") or None
 
             info(f'Attempting download for "{title}"')
-            request_from = request.headers.get("User-Agent")
             downloaded = download(
                 shared_state,
                 request_from,
@@ -128,6 +138,8 @@ def setup_arr_routes(app):
     @app.get("/api/<mirror>")
     @require_api_key
     def quasarr_api(mirror=None):
+        request_from = check_user_agent()
+
         api_type = (
             "arr_download_client"
             if request.query.mode
@@ -198,7 +210,6 @@ def setup_arr_routes(app):
 
                     nzo_ids = []
                     info(f'Attempting download for "{parsed_payload["title"]}"')
-                    request_from = "lazylibrarian"
 
                     downloaded = download(
                         shared_state,
@@ -267,8 +278,6 @@ def setup_arr_routes(app):
                     )
 
                 mode = request.query.t
-                request_from = request.headers.get("User-Agent")
-
                 if mode == "caps":
                     info(f"Providing indexer capability information to {request_from}")
                     return """<?xml version="1.0" encoding="UTF-8"?>
@@ -352,10 +361,10 @@ def setup_arr_routes(app):
                                     mirror=mirror,
                                 )
                             else:
-                                info(
+                                # sonarr expects this but we will not support non-imdbid searches
+                                debug(
                                     f"Ignoring search request from {request_from} - only imdbid searches are supported"
                                 )
-                                releases = []  # sonarr expects this but we will not support non-imdbid searches
 
                     items = ""
                     for release in releases:

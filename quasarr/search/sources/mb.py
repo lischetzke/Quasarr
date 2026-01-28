@@ -2,7 +2,6 @@
 # Quasarr
 # Project by https://github.com/rix1337
 
-import html
 import re
 import time
 from base64 import urlsafe_b64encode
@@ -13,7 +12,6 @@ import requests
 from bs4 import BeautifulSoup
 
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
-from quasarr.providers.imdb_metadata import get_localized_title
 from quasarr.providers.log import debug, info
 
 hostname = "mb"
@@ -217,11 +215,7 @@ def mb_search(
     password = mb
     imdb_id = shared_state.is_imdb_id(search_string)
     if imdb_id:
-        title = get_localized_title(shared_state, imdb_id, "de")
-        if not title:
-            info(f"Could not extract title from IMDb-ID {imdb_id}")
-            return []
-        search_string = html.unescape(title)
+        search_string = imdb_id
 
     q = quote_plus(search_string)
     url = f"https://{mb}/?s={q}&id=20&post_type=post"

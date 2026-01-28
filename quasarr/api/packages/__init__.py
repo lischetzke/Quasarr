@@ -3,6 +3,7 @@
 # Project by https://github.com/rix1337
 
 import quasarr.providers.html_images as images
+from quasarr.api.jdownloader import get_jdownloader_disconnected_page
 from quasarr.downloads.packages import delete_package, get_packages
 from quasarr.providers import shared_state
 from quasarr.providers.html_templates import render_button, render_centered_html
@@ -349,18 +350,7 @@ def setup_packages_routes(app):
             device = None
 
         if not device:
-            back_btn = render_button(
-                "Back", "secondary", {"onclick": "location.href='/'"}
-            )
-            return render_centered_html(f'''
-                <h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
-                <div class="status-bar">
-                    <span class="status-pill error">
-                        ❌ JDownloader disconnected
-                    </span>
-                </div>
-                <p>{back_btn}</p>
-            ''')
+            return get_jdownloader_disconnected_page(shared_state)
 
         # Check for delete status from redirect
         deleted = request.query.get("deleted")

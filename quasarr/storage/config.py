@@ -38,6 +38,7 @@ class Config(object):
             ("dw", "secret", ""),
             ("fx", "secret", ""),
             ("he", "secret", ""),
+            ("hs", "secret", ""),
             ("mb", "secret", ""),
             ("nk", "secret", ""),
             ("nx", "secret", ""),

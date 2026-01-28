@@ -386,48 +386,43 @@ def jdownloader_connection(shared_state_dict, shared_state_lock):
     try:
         shared_state.set_state(shared_state_dict, shared_state_lock)
 
-        shared_state.set_device_from_config()
+        while True:
+            shared_state.set_device_from_config()
 
-        connection_established = (
-            shared_state.get_device() and shared_state.get_device().name
-        )
-        if not connection_established:
-            i = 0
-            while i < 10:
-                i += 1
+            device = shared_state.get_device()
+
+            try:
                 info(
-                    f'Connection {i} to JDownloader failed. Device name: "{shared_state.values["device"]}"'
+                    f'Connection to JDownloader successful. Device name: "{device.name}"'
                 )
-                time.sleep(60)
-                shared_state.set_device_from_config()
-                connection_established = (
-                    shared_state.get_device() and shared_state.get_device().name
+            except Exception as e:
+                info(f"Error connecting to JDownloader: {e}! Stopping Quasarr...")
+                sys.exit(1)
+
+            try:
+                shared_state.set_device_settings()
+            except Exception as e:
+                print(f"Error checking settings: {e}")
+
+            try:
+                shared_state.update_jdownloader()
+            except Exception as e:
+                print(f"Error updating JDownloader: {e}")
+
+            try:
+                shared_state.start_downloads()
+            except Exception as e:
+                print(f"Error starting downloads: {e}")
+
+            while True:
+                time.sleep(300)
+                device_state = shared_state.check_device(
+                    shared_state.values.get("device")
                 )
-                if connection_established:
+                if not device_state:
+                    info("Lost connection to JDownloader. Reconnecting...")
+                    shared_state.update("device", False)
                     break
-
-        try:
-            info(
-                f'Connection to JDownloader successful. Device name: "{shared_state.get_device().name}"'
-            )
-        except Exception as e:
-            info(f"Error connecting to JDownloader: {e}! Stopping Quasarr!")
-            sys.exit(1)
-
-        try:
-            shared_state.set_device_settings()
-        except Exception as e:
-            print(f"Error checking settings: {e}")
-
-        try:
-            shared_state.update_jdownloader()
-        except Exception as e:
-            print(f"Error updating JDownloader: {e}")
-
-        try:
-            shared_state.start_downloads()
-        except Exception as e:
-            print(f"Error starting downloads: {e}")
 
     except KeyboardInterrupt:
         pass

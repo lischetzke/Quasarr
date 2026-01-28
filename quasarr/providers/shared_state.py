@@ -171,19 +171,18 @@ def set_device_from_config():
 
 def check_device(device):
     try:
-        valid = (
-            isinstance(device, (type, Jddevice))
-            and device.downloadcontroller.get_current_state()
-        )
-    except (
-        AttributeError,
-        KeyError,
-        TokenExpiredException,
-        RequestTimeoutException,
-        MYJDException,
-    ):
-        valid = False
-    return valid
+        if not isinstance(device, (type, Jddevice)):
+            return False
+
+        # Trigger a network request to verify connectivity
+        # get_current_state() performs an API call to JDownloader
+        state = device.downloadcontroller.get_current_state()
+
+        if state:
+            return True
+        return False
+    except Exception:
+        return False
 
 
 def connect_device():
@@ -627,11 +626,12 @@ def search_string_in_sanitized_title(search_string, title):
     sanitized_search_string = sanitize_string(search_string)
     sanitized_title = sanitize_string(title)
 
+    search_regex = r"\b.+\b".join(
+        [re.escape(s) for s in sanitized_search_string.split(" ")]
+    )
     # Use word boundaries to ensure full word/phrase match
-    if re.search(rf"\b{re.escape(sanitized_search_string)}\b", sanitized_title):
-        debug(
-            f"Matched search string: {sanitized_search_string} with title: {sanitized_title}"
-        )
+    if re.search(rf"\b{search_regex}\b", sanitized_title):
+        debug(f"Matched search string: {search_regex} with title: {sanitized_title}")
         return True
     else:
         debug(
