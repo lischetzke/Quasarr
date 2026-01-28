@@ -958,41 +958,23 @@ def save_flaresolverr_url(shared_state, is_setup=False):
             "FlareSolverr URL must end with /v1 (or similar version path)."
         )
 
-    try:
-        headers = {"Content-Type": "application/json"}
-        data = {
-            "cmd": "request.get",
-            "url": "http://www.google.com/",
-            "maxTimeout": 30000,
-        }
-        resp = requests.post(url, headers=headers, json=data, timeout=30)
-        if resp.status_code == 200:
-            json_data = resp.json()
-            if json_data.get("status") == "ok":
-                config.save("url", url)
-                # Clear skip preference since we now have a working URL
-                DataBase("skip_flaresolverr").delete("skipped")
+    flaresolverr_check = check_flaresolverr(shared_state, url)
+    if flaresolverr_check:
+        config.save("url", url)
+        # Clear skip preference since we now have a working URL
+        DataBase("skip_flaresolverr").delete("skipped")
 
-                # Update user agent from FlareSolverr response
-                solution = json_data.get("solution", {})
-                solution_ua = solution.get("userAgent")
-                if solution_ua:
-                    shared_state.update("user_agent", solution_ua)
+        info(
+            f'FlareSolverr connection successful. Using User-Agent: "{shared_state.values["user_agent"]}"'
+        )
+        info(f'FlareSolverr URL configured: "{url}"')
 
-                info(f'FlareSolverr URL configured: "{url}"')
+        if is_setup:
+            quasarr.providers.web_server.temp_server_success = True
 
-                if is_setup:
-                    quasarr.providers.web_server.temp_server_success = True
-
-                return render_reconnect_success("FlareSolverr URL saved successfully!")
-            else:
-                return render_fail(
-                    f"FlareSolverr returned unexpected status: {json_data.get('status')}"
-                )
-    except requests.RequestException:
+        return render_reconnect_success("FlareSolverr URL saved successfully!")
+    else:
         return render_fail("Could not reach FlareSolverr!")
-
-    return render_fail("Could not reach FlareSolverr at that URL (expected HTTP 200).")
 
 
 def get_flaresolverr_status_data(shared_state):
