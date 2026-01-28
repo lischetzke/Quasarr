@@ -171,19 +171,18 @@ def set_device_from_config():
 
 def check_device(device):
     try:
-        valid = (
-            isinstance(device, (type, Jddevice))
-            and device.downloadcontroller.get_current_state()
-        )
-    except (
-        AttributeError,
-        KeyError,
-        TokenExpiredException,
-        RequestTimeoutException,
-        MYJDException,
-    ):
-        valid = False
-    return valid
+        if not isinstance(device, (type, Jddevice)):
+            return False
+
+        # Trigger a network request to verify connectivity
+        # get_current_state() performs an API call to JDownloader
+        state = device.downloadcontroller.get_current_state()
+
+        if state:
+            return True
+        return False
+    except Exception:
+        return False
 
 
 def connect_device():
