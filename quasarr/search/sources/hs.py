@@ -16,7 +16,7 @@ from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostnam
 warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
 from quasarr.providers.log import debug, info
 
-hostname = "hd"
+hostname = "hs"
 supported_mirrors = ["rapidgator", "ddownload", "katfile"]
 
 FILECRYPT_REGEX = re.compile(r"filecrypt\.(?:cc|co|to)/container/", re.I)
@@ -44,7 +44,7 @@ EPISODE_DURATION_REGEX = re.compile(r"Dauer[:\s]*(\d+)\s*Min\.?\s*pro\s*Folge", 
 
 def convert_to_rss_date(date_str):
     """
-    HD date format from search: 'dd.mm.yy, HH:MM' e.g. '05.07.25, 17:23'
+    HS date format from search: 'dd.mm.yy, HH:MM' e.g. '05.07.25, 17:23'
     """
     match = DATE_REGEX.search(date_str)
     if match:
@@ -341,16 +341,16 @@ def _parse_search_results(
     return releases
 
 
-def hd_feed(shared_state, start_time, request_from, mirror=None):
-    """Return recent releases from HD feed"""
+def hs_feed(shared_state, start_time, request_from, mirror=None):
+    """Return recent releases from HS feed"""
     releases = []
-    hd = shared_state.values["config"]("Hostnames").get(hostname)
-    password = hd
+    hs = shared_state.values["config"]("Hostnames").get(hostname)
+    password = hs
 
-    if not hd:
+    if not hs:
         return releases
 
-    # HD only supports movies and series
+    # HS only supports movies and series
     if "lazylibrarian" in request_from.lower():
         debug(
             f'Skipping {request_from} feed on "{hostname.upper()}" (unsupported media type)!'
@@ -363,7 +363,7 @@ def hd_feed(shared_state, start_time, request_from, mirror=None):
         )
         return releases
 
-    base_url = f"https://{hd}"
+    base_url = f"https://{hs}"
     feed_url = f"{base_url}/feed/"
     headers = {"User-Agent": shared_state.values["user_agent"]}
 
@@ -443,7 +443,7 @@ def hd_feed(shared_state, start_time, request_from, mirror=None):
     return releases
 
 
-def hd_search(
+def hs_search(
     shared_state,
     start_time,
     request_from,
@@ -452,15 +452,15 @@ def hd_search(
     season=None,
     episode=None,
 ):
-    """Search HD for releases by IMDb ID"""
+    """Search HS for releases by IMDb ID"""
     releases = []
-    hd = shared_state.values["config"]("Hostnames").get(hostname)
-    password = hd
+    hs = shared_state.values["config"]("Hostnames").get(hostname)
+    password = hs
 
-    if not hd:
+    if not hs:
         return releases
 
-    # HD only supports movies and series
+    # HS only supports movies and series
     if "lazylibrarian" in request_from.lower():
         debug(
             f'Skipping {request_from} search on "{hostname.upper()}" (unsupported media type)!'
@@ -473,7 +473,7 @@ def hd_search(
         )
         return releases
 
-    # HD supports direct IMDb ID search
+    # HS supports direct IMDb ID search
     imdb_id = shared_state.is_imdb_id(search_string)
     if not imdb_id:
         debug(
@@ -481,7 +481,7 @@ def hd_search(
         )
         return releases
 
-    base_url = f"https://{hd}"
+    base_url = f"https://{hs}"
     search_url = build_search_url(base_url, imdb_id)
     headers = {"User-Agent": shared_state.values["user_agent"]}
 
@@ -493,7 +493,7 @@ def hd_search(
         releases = _parse_search_results(
             soup,
             shared_state,
-            hd,
+            hs,
             password,
             mirror,
             request_from,

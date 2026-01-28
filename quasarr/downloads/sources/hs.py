@@ -10,7 +10,7 @@ from bs4 import BeautifulSoup
 from quasarr.providers.hostname_issues import mark_hostname_issue
 from quasarr.providers.log import debug, info
 
-hostname = "hd"
+hostname = "hs"
 
 FILECRYPT_REGEX = re.compile(
     r"https?://(?:www\.)?filecrypt\.(?:cc|co|to)/[Cc]ontainer/[A-Za-z0-9]+\.html", re.I
@@ -32,11 +32,11 @@ def normalize_mirror_name(name):
     return name_lower
 
 
-def get_hd_download_links(shared_state, url, mirror, title, password):
+def get_hs_download_links(shared_state, url, mirror, title, password):
     """
     KEEP THE SIGNATURE EVEN IF SOME PARAMETERS ARE UNUSED!
 
-    HD handler - extracts filecrypt download links from release pages.
+    HS handler - extracts filecrypt download links from release pages.
     The site structure pairs affiliate links (indicating mirror) with filecrypt links.
     """
     headers = {"User-Agent": shared_state.values["user_agent"]}
@@ -125,7 +125,7 @@ def get_hd_download_links(shared_state, url, mirror, title, password):
             debug(f"No filecrypt links found on {url} for {title}")
 
     except Exception as e:
-        info(f"Error loading HD download links: {e}")
+        info(f"Error loading HS download links: {e}")
         mark_hostname_issue(hostname, "download", str(e))
 
     return {"links": links}
