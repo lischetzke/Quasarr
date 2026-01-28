@@ -947,7 +947,7 @@ def save_flaresolverr_url(shared_state, is_setup=False):
         if is_setup:
             quasarr.providers.web_server.temp_server_success = True
 
-        return render_reconnect_success("FlareSolverr URL cleared (setup skipped).")
+        return render_reconnect_success("FlareSolverr URL cleared.")
 
     if not url.startswith("http://") and not url.startswith("https://"):
         url = "http://" + url
