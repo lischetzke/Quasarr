@@ -168,7 +168,7 @@ class FlareSolverrResponse:
             raise requests.HTTPError(f"{self.status_code} Error at {self.url}")
 
 
-def flaresolverr_get(shared_state, url, timeout=60):
+def flaresolverr_get(shared_state, url, timeout=60, session_id=None):
     """
     Core function for performing a GET request via FlareSolverr only.
     Used internally by FlareSolverrSession.get()
@@ -186,6 +186,8 @@ def flaresolverr_get(shared_state, url, timeout=60):
         raise RuntimeError("FlareSolverr URL not configured in shared_state.")
 
     payload = {"cmd": "request.get", "url": url, "maxTimeout": timeout * 1000}
+    if session_id:
+        payload["session"] = session_id
 
     try:
         resp = requests.post(
@@ -219,3 +221,46 @@ def flaresolverr_get(shared_state, url, timeout=60):
     return FlareSolverrResponse(
         url=url, status_code=status_code, headers=fs_headers, text=html
     )
+
+
+def flaresolverr_create_session(shared_state, session_id=None):
+    if not is_flaresolverr_available(shared_state):
+        return None
+
+    flaresolverr_url = shared_state.values["config"]("FlareSolverr").get("url")
+    payload = {"cmd": "sessions.create"}
+    if session_id:
+        payload["session"] = session_id
+
+    try:
+        resp = requests.post(
+            flaresolverr_url,
+            json=payload,
+            headers={"Content-Type": "application/json"},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        if data.get("status") == "ok":
+            return data.get("session")
+    except Exception:
+        pass
+    return None
+
+
+def flaresolverr_destroy_session(shared_state, session_id):
+    if not is_flaresolverr_available(shared_state):
+        return
+
+    flaresolverr_url = shared_state.values["config"]("FlareSolverr").get("url")
+    payload = {"cmd": "sessions.destroy", "session": session_id}
+
+    try:
+        requests.post(
+            flaresolverr_url,
+            json=payload,
+            headers={"Content-Type": "application/json"},
+            timeout=10,
+        )
+    except Exception:
+        pass

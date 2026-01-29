@@ -1446,7 +1446,10 @@ def verify_jdownloader_credentials(shared_state):
         if device_names:
             return {"success": True, "devices": device_names}
         else:
-            return {"success": False, "message": "No devices found or invalid credentials"}
+            return {
+                "success": False,
+                "message": "No devices found or invalid credentials",
+            }
     except Exception as e:
         return {"success": False, "message": str(e)}
 
@@ -1470,19 +1473,25 @@ def save_jdownloader_settings(shared_state, is_setup=False):
             config.save("user", username)
             config.save("password", password)
             config.save("device", device)
-            
+
             if is_setup:
                 quasarr.providers.web_server.temp_server_success = True
                 return render_reconnect_success("Credentials set")
             else:
                 response.content_type = "application/json"
-                return {"success": True, "message": "JDownloader configured successfully"}
+                return {
+                    "success": True,
+                    "message": "JDownloader configured successfully",
+                }
         else:
             if is_setup:
                 return render_fail("Could not connect to selected device!")
             else:
                 response.content_type = "application/json"
-                return {"success": False, "message": "Could not connect to selected device"}
+                return {
+                    "success": False,
+                    "message": "Could not connect to selected device",
+                }
 
     if is_setup:
         return render_fail("Could not set credentials!")

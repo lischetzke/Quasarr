@@ -7,7 +7,7 @@ import signal
 import threading
 import time
 
-from bottle import request, response
+from bottle import response
 
 from quasarr.providers.html_templates import render_button, render_form
 from quasarr.providers.log import info

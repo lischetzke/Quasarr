@@ -124,10 +124,10 @@ def get_api(shared_state_dict, shared_state_lock):
         # Status bars
         status_bars = f"""
             <div class="status-bar">
-                <span class="status-pill {jd_status['status_class']}" 
+                <span class="status-pill {jd_status["status_class"]}" 
                       onclick="openJDownloaderModal()" 
                       title="Click to configure JDownloader">
-                    {jd_status['status_text']}
+                    {jd_status["status_text"]}
                 </span>
                 <span class="status-pill {hostname_status_class}"
                       onclick="location.href='/hostnames'"

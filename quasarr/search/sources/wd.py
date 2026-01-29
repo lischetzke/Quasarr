@@ -9,12 +9,13 @@ from base64 import urlsafe_b64encode
 from datetime import datetime, timedelta
 from urllib.parse import quote, quote_plus
 
-import requests
 from bs4 import BeautifulSoup
 
+from quasarr.providers.cloudflare import flaresolverr_get, is_cloudflare_challenge
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.imdb_metadata import get_localized_title, get_year
 from quasarr.providers.log import debug, info
+from quasarr.providers.utils import is_flaresolverr_available
 
 hostname = "wd"
 supported_mirrors = ["rapidgator", "ddownload", "katfile", "fikper", "turbobit"]
@@ -170,9 +171,21 @@ def wd_feed(shared_state, start_time, request_from, mirror=None):
         feed_type = "Serien"
 
     url = f"https://{wd}/{feed_type}"
-    headers = {"User-Agent": shared_state.values["user_agent"]}
+
+    if not is_flaresolverr_available(shared_state):
+        info(
+            f"FlareSolverr is not configured. Cannot access {hostname.upper()} feed due to Cloudflare protection."
+        )
+        mark_hostname_issue(hostname, "feed", "FlareSolverr missing")
+        return []
+
     try:
-        r = requests.get(url, headers=headers, timeout=10)
+        r = flaresolverr_get(shared_state, url)
+        if r.status_code == 403 or is_cloudflare_challenge(r.text):
+            info(f"Cloudflare challenge failed for {hostname} feed.")
+            mark_hostname_issue(hostname, "feed", "Cloudflare challenge failed")
+            return []
+
         r.raise_for_status()
         soup = BeautifulSoup(r.content, "html.parser")
         releases = _parse_rows(soup, shared_state, wd, password, mirror)
@@ -215,10 +228,21 @@ def wd_search(
 
     q = quote_plus(search_string)
     url = f"https://{wd}/search?q={q}"
-    headers = {"User-Agent": shared_state.values["user_agent"]}
+
+    if not is_flaresolverr_available(shared_state):
+        info(
+            f"FlareSolverr is not configured. Cannot access {hostname.upper()} search due to Cloudflare protection."
+        )
+        mark_hostname_issue(hostname, "search", "FlareSolverr missing")
+        return []
 
     try:
-        r = requests.get(url, headers=headers, timeout=10)
+        r = flaresolverr_get(shared_state, url)
+        if r.status_code == 403 or is_cloudflare_challenge(r.text):
+            info(f"Cloudflare challenge failed for {hostname} search.")
+            mark_hostname_issue(hostname, "search", "Cloudflare challenge failed")
+            return []
+
         r.raise_for_status()
         soup = BeautifulSoup(r.content, "html.parser")
         releases = _parse_rows(
