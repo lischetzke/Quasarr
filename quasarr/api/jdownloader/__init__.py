@@ -16,9 +16,14 @@ def get_jdownloader_status(shared_state):
 
     jd_config = Config("JDownloader")
     jd_device = jd_config.get("device") or ""
-    
+
     dev_name = jd_device if jd_device else "JDownloader"
-    dev_name_safe = dev_name.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+    dev_name_safe = (
+        dev_name.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+    )
 
     if jd_connected:
         status_text = f"✅ {dev_name_safe} connected"
@@ -34,7 +39,7 @@ def get_jdownloader_status(shared_state):
         "connected": jd_connected,
         "device_name": jd_device,
         "status_text": status_text,
-        "status_class": status_class
+        "status_class": status_class,
     }
 
 
@@ -44,7 +49,7 @@ def get_jdownloader_modal_script():
     jd_user = jd_config.get("user") or ""
     jd_pass = jd_config.get("password") or ""
     jd_device = jd_config.get("device") or ""
-    
+
     jd_user_js = jd_user.replace("\\", "\\\\").replace("'", "\\'")
     jd_pass_js = jd_pass.replace("\\", "\\\\").replace("'", "\\'")
     jd_device_js = jd_device.replace("\\", "\\\\").replace("'", "\\'")
@@ -166,13 +171,13 @@ def get_jdownloader_modal_script():
 def get_jdownloader_status_pill(shared_state):
     """Return the HTML for the JDownloader status pill."""
     status = get_jdownloader_status(shared_state)
-    
+
     return f"""
-        <span class="status-pill {status['status_class']}" 
+        <span class="status-pill {status["status_class"]}" 
               onclick="openJDownloaderModal()" 
               style="cursor: pointer;"
               title="Click to configure JDownloader">
-            {status['status_text']}
+            {status["status_text"]}
         </span>
     """
 
@@ -181,12 +186,14 @@ def get_jdownloader_disconnected_page(shared_state, back_url="/"):
     """Return a full error page when JDownloader is disconnected."""
     import quasarr.providers.html_images as images
     from quasarr.providers.html_templates import render_centered_html
-    
+
     status_pill = get_jdownloader_status_pill(shared_state)
     modal_script = get_jdownloader_modal_script()
-    
-    back_btn = render_button("Back", "secondary", {"onclick": f"location.href='{back_url}'"})
-    
+
+    back_btn = render_button(
+        "Back", "secondary", {"onclick": f"location.href='{back_url}'"}
+    )
+
     content = f'''
         <h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
         <div class="status-bar">
@@ -228,5 +235,5 @@ def get_jdownloader_disconnected_page(shared_state, back_url="/"):
         </style>
         {modal_script}
     '''
-    
+
     return render_centered_html(content)
