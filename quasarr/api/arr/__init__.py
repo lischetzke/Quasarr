@@ -107,7 +107,7 @@ def setup_arr_routes(app):
             imdb_id = root.find(".//file").attrib.get("imdb_id")
             source_key = root.find(".//file").attrib.get("source_key") or None
 
-            info(f'Attempting download for "{title}"')
+            info(f"Attempting download for <y>{title}</y>")
             downloaded = download(
                 shared_state,
                 request_from,
@@ -125,12 +125,12 @@ def setup_arr_routes(app):
                 title = downloaded["title"]
 
                 if success:
-                    info(f'"{title}" added successfully!')
+                    info(f"<y>{title}</y> added successfully!")
                 else:
-                    info(f'"{title}" added unsuccessfully! See log for details.')
+                    info(f"<y>{title}</y> added unsuccessfully! See log for details.")
                 nzo_ids.append(package_id)
             except KeyError:
-                info(f'Failed to download "{title}" - no package_id returned')
+                info(f"Failed to download <y>{title}</y> - no package_id returned")
 
         return {"status": True, "nzo_ids": nzo_ids}
 
@@ -209,7 +209,7 @@ def setup_arr_routes(app):
                         abort(400, f"invalid payload format: {e}")
 
                     nzo_ids = []
-                    info(f'Attempting download for "{parsed_payload["title"]}"')
+                    info(f"Attempting download for <y>{parsed_payload['title']}</y>")
 
                     downloaded = download(
                         shared_state,
@@ -229,11 +229,9 @@ def setup_arr_routes(app):
                         title = downloaded.get("title", parsed_payload["title"])
 
                         if success:
-                            info(f'"{title}" added successfully!')
+                            info(f'"{title} added successfully!')
                         else:
-                            info(
-                                f'"{title}" added unsuccessfully! See log for details.'
-                            )
+                            info(f'"{title} added unsuccessfully! See log for details.')
                         nzo_ids.append(package_id)
                     except KeyError:
                         info(

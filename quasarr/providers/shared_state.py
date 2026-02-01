@@ -12,7 +12,7 @@ from datetime import date, datetime, timedelta
 from urllib import parse
 
 import quasarr
-from quasarr.providers.log import debug, info
+from quasarr.providers.log import debug, error, info, warn
 from quasarr.providers.myjd_api import (
     Jddevice,
     Myjdapi,
@@ -140,7 +140,7 @@ def connect_to_jd(jd, user, password, device_name):
         connection_info = device.check_direct_connection()
         if connection_info["status"]:
             info(
-                f'Direct connection to JDownloader established: "{connection_info["ip"]}"'
+                f"Direct connection to JDownloader established: <g>{connection_info['ip']}</g>"
             )
         else:
             info("Could not establish direct connection to JDownloader.")
@@ -232,25 +232,25 @@ def get_device():
             # First 10 failures: 3 seconds
             sleep_time = 3
             if attempts == 10:
-                info(
+                warn(
                     f"WARNING: {attempts} consecutive JDownloader connection errors. Switching to 1-minute intervals."
                 )
         elif attempts <= 15:
             # Next 5 failures (11-15): 1 minute
             sleep_time = 60
             if attempts % 10 == 0:
-                info(
+                warn(
                     f"WARNING: {attempts} consecutive JDownloader connection errors. Please check your credentials!"
                 )
             if attempts == 15:
-                info(
+                warn(
                     f"WARNING: Still failing after {attempts} attempts. Switching to 5-minute intervals."
                 )
         else:
             # After 15 failures: 5 minutes
             sleep_time = 300
             if attempts % 10 == 0:
-                info(
+                warn(
                     f"WARNING: {attempts} consecutive JDownloader connection errors. Please check your credentials!"
                 )
 
@@ -271,7 +271,7 @@ def get_devices(user, password):
         devices = jd.list_devices()
         return devices
     except (TokenExpiredException, RequestTimeoutException, MYJDException) as e:
-        info("Error connecting to JDownloader: " + str(e))
+        error("Error connecting to JDownloader: " + str(e))
         return []
 
 

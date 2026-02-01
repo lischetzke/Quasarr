@@ -154,19 +154,19 @@ def get_search_results(
                 search_executor.add(func, args, kwargs)
 
     if imdb_id:
-        stype = f'IMDb-ID "{imdb_id}"'
+        stype = f"IMDb-ID <b>{imdb_id}</b>"
     elif search_phrase:
-        stype = f'Search-Phrase "{search_phrase}"'
+        stype = f"Search-Phrase <b>{search_phrase}</b>"
     else:
-        stype = "feed search"
+        stype = "<b>feed</b> search"
 
-    info(
-        f"Starting {len(search_executor.searches)} searches for {stype}... <l>This may take some time.</l>"
+    debug(
+        f"Starting <g>{len(search_executor.searches)}</g> searches for {stype}... <blue>This may take some time.</blue>"
     )
     results = search_executor.run_all()
     elapsed_time = time.time() - start_time
     info(
-        f"Providing <g>{len(results)} releases</g> to {request_from} for {stype}. Time taken: {elapsed_time:.2f} seconds"
+        f"Providing <g>{len(results)} releases</g> to <d>{request_from}</d> for {stype}. <blue>Time taken: {elapsed_time:.2f} seconds</blue>"
     )
 
     return results

@@ -4,6 +4,7 @@
 
 import inspect
 import os
+import re
 import sys
 from typing import Any
 
@@ -78,6 +79,7 @@ _context_replace = {
     "setup": "🛠️",  # /quasarr/storage/setup.py
     "sqlite_database": "🗃️",  # /quasarr/storage/sqlite_database.py
     "sources": "🧲",  # /quasarr/*/sources/*
+    "utils": "🧰",  # /quasarr/providers/utils.py
 }
 
 
@@ -125,29 +127,45 @@ class _Logger:
             padding=" " * padding,
         )
 
+    def _log(self, level: int, msg: str, *args: Any, **kwargs: Any) -> None:
+        if self.level <= level:
+            try:
+                self.logger.log(log_level_names[level], msg, *args, **kwargs)
+            except ValueError as e:
+                # Fallback: try logging without color parsing if tags are mismatched
+                try:
+                    clean_msg = re.sub(r"</?[a-zA-Z0-9_]+>", "", msg)
+                    self.logger.opt(colors=False).log(
+                        log_level_names[level], clean_msg, *args, **kwargs
+                    )
+
+                    if self.level <= 10:
+                        self.logger.opt(colors=False).debug(
+                            f"Log formatting error: {e} | Original message: {msg}"
+                        )
+                except Exception:
+                    print(f"LOGGING FAILURE: {msg}", file=sys.stderr)
+            except Exception:
+                # Fallback: just print to stderr if logging fails completely
+                print(f"LOGGING FAILURE: {msg}", file=sys.stderr)
+
     def crit(self, msg: str, *args: Any, **kwargs: Any) -> None:
-        if self.level <= 50:
-            self.logger.log(log_level_names[50], msg, *args, **kwargs)
+        self._log(50, msg, *args, **kwargs)
 
     def error(self, msg: str, *args: Any, **kwargs: Any) -> None:
-        if self.level <= 40:
-            self.logger.log(log_level_names[40], msg, *args, **kwargs)
+        self._log(40, msg, *args, **kwargs)
 
     def warn(self, msg: str, *args: Any, **kwargs: Any) -> None:
-        if self.level <= 30:
-            self.logger.log(log_level_names[30], msg, *args, **kwargs)
+        self._log(30, msg, *args, **kwargs)
 
     def info(self, msg: str, *args: Any, **kwargs: Any) -> None:
-        if self.level <= 20:
-            self.logger.log(log_level_names[20], msg, *args, **kwargs)
+        self._log(20, msg, *args, **kwargs)
 
     def debug(self, msg: str, *args: Any, **kwargs: Any) -> None:
-        if self.level <= 10:
-            self.logger.log(log_level_names[10], msg, *args, **kwargs)
+        self._log(10, msg, *args, **kwargs)
 
     def trace(self, msg: str, *args: Any, **kwargs: Any) -> None:
-        if self.level <= 5:
-            self.logger.log(log_level_names[5], msg, *args, **kwargs)
+        self._log(5, msg, *args, **kwargs)
 
 
 _loggers = {}

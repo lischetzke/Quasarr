@@ -16,7 +16,7 @@ from quasarr.downloads.linkcrypters.filecrypt import DLC, get_filecrypt_links
 from quasarr.downloads.packages import delete_package
 from quasarr.providers import obfuscated, shared_state
 from quasarr.providers.html_templates import render_button, render_centered_html
-from quasarr.providers.log import debug, info
+from quasarr.providers.log import debug, error, info, trace
 from quasarr.providers.statistics import StatsHelper
 
 
@@ -1046,7 +1046,7 @@ def setup_captcha_routes(app):
                     decoded, -15
                 )  # -15 = raw deflate, no zlib header
             except Exception as e:
-                debug(f"Decompression error: {e}, trying with header...")
+                trace(f"Decompression error: {e}, trying with header...")
                 try:
                     # Fallback: try with zlib header
                     decompressed = zlib.decompress(decoded)
@@ -1070,7 +1070,9 @@ def setup_captcha_routes(app):
                     link = "https://" + link
                 links.append(link)
 
-            info(f"Quick transfer received {len(links)} links for package {package_id}")
+            debug(
+                f"Quick transfer received {len(links)} links for package {package_id}"
+            )
 
             # Get package info
             raw_data = shared_state.get_db("protected").retrieve(package_id)
@@ -1095,7 +1097,7 @@ def setup_captcha_routes(app):
                 StatsHelper(shared_state).increment_captcha_decryptions_manual()
                 shared_state.get_db("protected").delete(package_id)
 
-                info(f"Quick transfer successful: {len(links)} links processed")
+                info(f"Quick transfer successful: <g>{len(links)}</g> links processed")
 
                 # Check if more CAPTCHAs remain
                 remaining_protected = shared_state.get_db(
@@ -1131,7 +1133,7 @@ def setup_captcha_routes(app):
                 </p>''')
 
         except Exception as e:
-            info(f"Quick transfer error: {e}")
+            error(f"Quick transfer error: {e}")
             return render_centered_html(f'''<h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
             <p><b>Error:</b> {str(e)}</p>
             <p>
@@ -1656,14 +1658,13 @@ def setup_captcha_routes(app):
             mirror = None if (mirror := data.get("mirror")) == "None" else mirror
 
             if token:
-                info(f"Received token: {token}")
-                info(f"Decrypting links for {title}")
+                info(f"Received token: {token} to decrypt links for {title}")
                 decrypted = get_filecrypt_links(
                     shared_state, token, title, link, password=password, mirror=mirror
                 )
                 if decrypted:
                     links = decrypted.get("links", [])
-                    info(f"Decrypted {len(links)} download links for {title}")
+                    info(f"Decrypted <g>{len(links)}</g> download links for {title}")
                     if not links:
                         raise ValueError("No download links found after decryption")
                     downloaded = shared_state.download_package(

@@ -26,7 +26,7 @@ from quasarr.downloads.sources.sl import get_sl_download_links
 from quasarr.downloads.sources.wd import get_wd_download_links
 from quasarr.downloads.sources.wx import get_wx_download_links
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
-from quasarr.providers.log import info
+from quasarr.providers.log import info, warn
 from quasarr.providers.notifications import send_discord_message
 from quasarr.providers.statistics import StatsHelper
 from quasarr.providers.utils import filter_offline_links
@@ -214,7 +214,7 @@ def handle_auto_decrypt_links(shared_state, links, title, password, package_id):
     if not decrypted_urls:
         return {"success": False, "reason": "No links decrypted"}
 
-    info(f"Decrypted {len(decrypted_urls)} download links for {title}")
+    info(f"Decrypted <g>{len(decrypted_urls)}</g> download links for {title}")
 
     if shared_state.download_package(decrypted_urls, title, password, package_id):
         StatsHelper(shared_state).increment_package_with_links(decrypted_urls)
@@ -239,7 +239,7 @@ def store_protected_links(
         package_id, json.dumps(blob_data)
     )
     info(
-        f'CAPTCHA-Solution required for "{title}" at: "{shared_state.values["external_address"]}/captcha"'
+        f'CAPTCHA-Solution required for <b>{title}</b> at: "{shared_state.values["external_address"]}/captcha"'
     )
     return {"success": True}
 
@@ -305,7 +305,9 @@ def process_links(
 
     # PRIORITY 1: Direct hoster links
     if classified["direct"]:
-        info(f"Found {len(classified['direct'])} direct hoster links for {title}")
+        info(
+            f"Found <g>{len(classified['direct'])}</g> direct hoster links for {title}"
+        )
         send_discord_message(
             shared_state,
             title=title,
@@ -322,7 +324,9 @@ def process_links(
 
     # PRIORITY 2: Auto-decryptable (hide.cx)
     if classified["auto"]:
-        info(f"Found {len(classified['auto'])} auto-decryptable links for {title}")
+        info(
+            f"Found <g>{len(classified['auto'])}</g> auto-decryptable links for {title}"
+        )
         result = handle_auto_decrypt_links(
             shared_state, classified["auto"], title, password, package_id
         )
@@ -340,7 +344,7 @@ def process_links(
 
     # PRIORITY 3: Protected (filecrypt, tolink, keeplinks, junkies)
     if classified["protected"]:
-        info(f"Found {len(classified['protected'])} protected links for {title}")
+        info(f"Found <g>{len(classified['protected'])}</g> protected links for {title}")
         send_discord_message(
             shared_state,
             title=title,
@@ -363,7 +367,7 @@ def process_links(
         title,
         package_id,
         shared_state,
-        reason=f'No usable links found for "{title}" on {label} - "{source_url}"',
+        reason=f'No usable links found for {title} on {label} - "{source_url}"',
     )
 
 
@@ -461,7 +465,7 @@ def download(
 
     # Skip Download if package_id already exists
     if package_id_exists(shared_state, package_id):
-        info(f"Package {package_id} already exists. Skipping download!")
+        warn(f"Package {package_id} already exists. Skipping download!")
         return {"success": True, "package_id": package_id, "title": title}
 
     if source_result is None:

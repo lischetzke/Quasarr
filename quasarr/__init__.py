@@ -15,7 +15,14 @@ import requests
 import quasarr.providers.web_server
 from quasarr.api import get_api
 from quasarr.providers import shared_state, version
-from quasarr.providers.log import get_log_level, info, log_level_names
+from quasarr.providers.log import (
+    crit,
+    debug,
+    error,
+    get_log_level,
+    info,
+    log_level_names,
+)
 from quasarr.providers.notifications import send_discord_message
 from quasarr.providers.utils import (
     FALLBACK_USER_AGENT,
@@ -271,7 +278,7 @@ def run():
         if protected:
             package_count = len(protected)
             info(
-                f"CAPTCHA-Solution required for {package_count} package{'s' if package_count > 1 else ''} at: "
+                f"CAPTCHA-Solution required for <y>{package_count}</y> package{'s' if package_count > 1 else ''} at: "
                 f'"{shared_state.values["external_address"]}/captcha"!'
             )
 
@@ -327,21 +334,26 @@ def flaresolverr_checker(shared_state_dict, shared_state_lock):
                 "Some sites (AL) will not work without FlareSolverr. Configure it later in the web UI."
             )
         elif flaresolverr_url:
-            info(f'Checking FlareSolverr at URL: "{flaresolverr_url}"')
-            flaresolverr_check = check_flaresolverr(shared_state, flaresolverr_url)
-            if flaresolverr_check:
+            debug(f"Checking FlareSolverr at URL: <blue>{flaresolverr_url}</blue>")
+            flaresolverr_version_checked = check_flaresolverr(
+                shared_state, flaresolverr_url
+            )
+            if flaresolverr_version_checked:
                 info(
-                    f'FlareSolverr connection successful. <d>Using User-Agent: "{shared_state.values["user_agent"]}"</d>'
+                    f"FlareSolverr connection successful: <g>v.{flaresolverr_version_checked}</g>!"
+                )
+                debug(
+                    f"Using Flaresolverr's User-Agent: <g>{shared_state.values['user_agent']}</g>"
                 )
             else:
-                info("FlareSolverr check failed - using fallback user agent")
+                error("FlareSolverr check failed - using fallback user agent")
                 # Fallback user agent is already set in main process, but we log it
                 info(f'User Agent (fallback): "{FALLBACK_USER_AGENT}"')
 
     except KeyboardInterrupt:
         pass
     except Exception as e:
-        info(f"An unexpected error occurred in FlareSolverr checker: {e}")
+        error(f"An unexpected error occurred in FlareSolverr checker: {e}")
 
 
 def update_checker(shared_state_dict, shared_state_lock):
@@ -357,8 +369,9 @@ def update_checker(shared_state_dict, shared_state_lock):
             try:
                 update_available = version.newer_version_available()
             except Exception as e:
-                info(f"Error getting latest version: {e}")
-                info(f'Please manually check: "{link}" for more information!')
+                error(
+                    f"Error getting latest version: {e}!\nPlease manually check: <blue>{link}</blue> for more information!"
+                )
                 update_available = None
 
             if (
@@ -390,27 +403,25 @@ def jdownloader_connection(shared_state_dict, shared_state_lock):
             device = shared_state.get_device()
 
             try:
-                info(
-                    f'Connection to JDownloader successful. Device name: "{device.name}"'
-                )
+                info(f"Connection to JDownloader successful: <g>{device.name}</g>")
             except Exception as e:
-                info(f"Error connecting to JDownloader: {e}! Stopping Quasarr...")
+                crit(f"Error connecting to JDownloader: {e}! Stopping Quasarr...")
                 sys.exit(1)
 
             try:
                 shared_state.set_device_settings()
             except Exception as e:
-                print(f"Error checking settings: {e}")
+                error(f"Error checking settings: {e}")
 
             try:
                 shared_state.update_jdownloader()
             except Exception as e:
-                print(f"Error updating JDownloader: {e}")
+                error(f"Error updating JDownloader: {e}")
 
             try:
                 shared_state.start_downloads()
             except Exception as e:
-                print(f"Error starting downloads: {e}")
+                error(f"Error starting downloads: {e}")
 
             while True:
                 time.sleep(300)
@@ -418,7 +429,7 @@ def jdownloader_connection(shared_state_dict, shared_state_lock):
                     shared_state.values.get("device")
                 )
                 if not device_state:
-                    info("Lost connection to JDownloader. Reconnecting...")
+                    error("Lost connection to JDownloader. Reconnecting...")
                     shared_state.update("device", False)
                     break
 
