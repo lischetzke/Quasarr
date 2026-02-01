@@ -718,7 +718,7 @@ def get_packages(shared_state, _cache=None):
                 shared_state.get_device().linkgrabber.move_to_downloadlist(
                     links_to_start, packages_to_start
                 )
-                info(
+                debug(
                     f"Started {len(packages_to_start)} package download{'s' if len(packages_to_start) > 1 else ''} from linkgrabber"
                 )
             except Exception as e:

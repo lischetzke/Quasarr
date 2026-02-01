@@ -212,37 +212,22 @@ def setup_captcha_routes(app):
             f"pkg_pass={quote(password)}"
         )
 
+        js_url = url_with_quick_transfer_params.replace("'", "\\'")
+        js_userscript_url = userscript_url.replace("'", "\\'")
+        js_provider_name = provider_name.replace("'", "\\'")
+
         return f'''
             <div>
-                <!-- One-time setup section - visually separated -->
-                <div id="setup-instructions" class="setup-box">
-                    <h3>📦 First Time Setup:</h3>
-                    <p style="margin-bottom: 8px;">
-                        <a href="https://www.tampermonkey.net/" target="_blank" rel="noopener noreferrer">1. On mobile Safari/Firefox or any Desktop Browser install Tampermonkey</a>
-                    </p>
-                    <p style="margin-top: 0; margin-bottom: 8px;">
-                        <a href="{userscript_url}" target="_blank">2. Install the {provider_name} userscript</a>
-                    </p>
-                    <p style="margin-top: 0; margin-bottom: 12px;">
-                        3. Open link, solve CAPTCHAs, and links are automatically sent back to Quasarr!
-                    </p>
-                    <p style="margin-top: 0;">
-                        <button id="hide-setup-btn" type="button" class="btn-subtle">
-                            ✅ Don't show this again
-                        </button>
-                    </p>
-                </div>
-
-                <!-- Hidden "show instructions" button -->
-                <div id="show-instructions-link" style="display: none; margin-bottom: 16px;">
-                    <button id="show-setup-btn" type="button" class="btn-subtle">
-                        ℹ️ Show setup instructions
-                    </button>
-                </div>
-
                 <!-- Primary action - the quick transfer link -->
                 <p>
-                    {render_button(f"Open {provider_name} & Get Download Links", "primary", {"onclick": f"if(typeof incrementCaptchaAttempts==='function')incrementCaptchaAttempts();location.href='{url_with_quick_transfer_params}'"})}
+                    {render_button(f"Open {provider_name} & Get Download Links", "primary", {"onclick": f"handleProviderClick('{js_url}', '{storage_key}', '{js_provider_name}', '{js_userscript_url}')"})}
+                </p>
+
+                <!-- Reset tutorial button -->
+                <p id="reset-tutorial-btn" style="display: none;">
+                    <button type="button" class="btn-subtle" onclick="localStorage.removeItem('{storage_key}'); showModal('Tutorial Reset', '<p>Tutorial reset! Click the Open button to see it again.</p>', '<button class=\\'btn-primary\\' onclick=\\'location.reload()\\'>Reload</button>');">
+                        ℹ️ Reset Setup Guide
+                    </button>
                 </p>
 
                 <!-- Manual submission - collapsible -->
@@ -286,29 +271,60 @@ def setup_captcha_routes(app):
                 }});
               }}
 
-              // Handle setup instructions hide/show
-              const hideSetup = localStorage.getItem('{storage_key}');
-              const setupBox = document.getElementById('setup-instructions');
-              const showLink = document.getElementById('show-instructions-link');
-
-              if (hideSetup === 'true') {{
-                setupBox.style.display = 'none';
-                showLink.style.display = 'block';
+              // Show reset button if tutorial was already seen
+              if (localStorage.getItem('{storage_key}') === 'true') {{
+                  document.getElementById('reset-tutorial-btn').style.display = 'block';
               }}
 
-              // Hide setup instructions
-              document.getElementById('hide-setup-btn').addEventListener('click', function() {{
-                localStorage.setItem('{storage_key}', 'true');
-                setupBox.style.display = 'none';
-                showLink.style.display = 'block';
-              }});
+              // Global handler for provider clicks
+              if (!window.handleProviderClick) {{
+                  window.handleProviderClick = function(url, storageKey, providerName, userscriptUrl) {{
+                    if (localStorage.getItem(storageKey) === 'true') {{
+                        if(typeof incrementCaptchaAttempts==='function') incrementCaptchaAttempts();
+                        window.location.href = url;
+                        return;
+                    }}
 
-              // Show setup instructions again
-              document.getElementById('show-setup-btn').addEventListener('click', function() {{
-                localStorage.setItem('{storage_key}', 'false');
-                setupBox.style.display = 'block';
-                showLink.style.display = 'none';
-              }});
+                    const content = `
+                        <p style="margin-bottom: 8px;">
+                            <a href="https://www.tampermonkey.net/" target="_blank" rel="noopener noreferrer">1. On mobile Safari/Firefox or any Desktop Browser install Tampermonkey</a>
+                        </p>
+                        <p style="margin-top: 0; margin-bottom: 8px;">
+                            <a href="${{userscriptUrl}}" target="_blank">2. Install the ${{providerName}} userscript</a>
+                        </p>
+                        <p style="margin-top: 0; margin-bottom: 12px;">
+                            3. Open link, solve CAPTCHAs, and links are automatically sent back to Quasarr!
+                        </p>
+                    `;
+
+                    const btnId = 'modal-proceed-btn-' + Math.floor(Math.random() * 10000);
+                    const buttons = `
+                        <button id="${{btnId}}" class="btn-primary" disabled>Wait 5s...</button>
+                        <button class="btn-secondary" onclick="closeModal()">Cancel</button>
+                    `;
+
+                    showModal('📦 First Time Setup', content, buttons);
+
+                    let count = 5;
+                    const btn = document.getElementById(btnId);
+                    const interval = setInterval(() => {{
+                        count--;
+                        if (count <= 0) {{
+                            clearInterval(interval);
+                            btn.innerText = 'I have installed Tampermonkey and the userscript';
+                            btn.disabled = false;
+                            btn.onclick = function() {{
+                                localStorage.setItem(storageKey, 'true');
+                                closeModal();
+                                if(typeof incrementCaptchaAttempts==='function') incrementCaptchaAttempts();
+                                window.location.href = url;
+                            }};
+                        }} else {{
+                            btn.innerText = 'Wait ' + count + 's...';
+                        }}
+                    }}, 1000);
+                  }};
+              }}
             </script>
         '''
 
@@ -547,40 +563,26 @@ def setup_captcha_routes(app):
             f"pkg_pass={quote(password)}"
         )
 
+        js_url = url_with_quick_transfer_params.replace("'", "\\'")
+        storage_key = "hideFileCryptSetupInstructions"
+        provider_name = "FileCrypt"
+        userscript_url = "/captcha/filecrypt.user.js"
+
         return f'''
             <div class="section-divider" style="max-width: 370px; margin-left: auto; margin-right: auto;">
                 <details id="bypassDetails">
                 <summary id="bypassSummary">Show CAPTCHA Bypass</summary><br>
 
-                    <!-- One-time setup section - visually separated -->
-                    <div id="setup-instructions" class="setup-box">
-                        <h3>📦 First Time Setup:</h3>
-                        <p style="margin-bottom: 8px;">
-                            <a href="https://www.tampermonkey.net/" target="_blank" rel="noopener noreferrer">1. On mobile Safari/Firefox or any Desktop Browser install Tampermonkey</a>
-                        </p>
-                        <p style="margin-top: 0; margin-bottom: 8px;">
-                            <a href="/captcha/filecrypt.user.js" target="_blank">2. Install the FileCrypt userscript</a>
-                        </p>
-                        <p style="margin-top: 0; margin-bottom: 12px;">
-                            3. Open link, solve CAPTCHAs, and links are automatically sent back to Quasarr!
-                        </p>
-                        <p style="margin-top: 0;">
-                            <button id="hide-setup-btn" type="button" class="btn-subtle">
-                                ✅ Don't show this again
-                            </button>
-                        </p>
-                    </div>
-
-                    <!-- Hidden "show instructions" button -->
-                    <div id="show-instructions-link" style="display: none; margin-bottom: 16px;">
-                        <button id="show-setup-btn" type="button" class="btn-subtle">
-                            ℹ️ Show setup instructions
-                        </button>
-                    </div>
-
                     <!-- Primary action button -->
                     <p>
-                        {render_button("Open FileCrypt & Get Download Links", "primary", {"onclick": f"if(typeof incrementCaptchaAttempts==='function')incrementCaptchaAttempts();location.href='{url_with_quick_transfer_params}'"})}
+                        {render_button("Open FileCrypt & Get Download Links", "primary", {"onclick": f"handleProviderClick('{js_url}', '{storage_key}', '{provider_name}', '{userscript_url}')"})}
+                    </p>
+
+                    <!-- Reset tutorial button -->
+                    <p id="reset-tutorial-btn" style="display: none;">
+                        <button type="button" class="btn-subtle" onclick="localStorage.removeItem('{storage_key}'); showModal('Tutorial Reset', '<p>Tutorial reset! Click the Open button to see it again.</p>', '<button class=\\'btn-primary\\' onclick=\\'location.reload()\\'>Reload</button>');">
+                            ℹ️ Reset Setup Guide
+                        </button>
                     </p>
 
                     <!-- Manual submission section -->
@@ -625,29 +627,60 @@ def setup_captcha_routes(app):
                 }});
               }}
 
-              // Handle setup instructions hide/show
-              const hideSetup = localStorage.getItem('hideFileCryptSetupInstructions');
-              const setupBox = document.getElementById('setup-instructions');
-              const showLink = document.getElementById('show-instructions-link');
-
-              if (hideSetup === 'true') {{
-                setupBox.style.display = 'none';
-                showLink.style.display = 'block';
+              // Show reset button if tutorial was already seen
+              if (localStorage.getItem('{storage_key}') === 'true') {{
+                  document.getElementById('reset-tutorial-btn').style.display = 'block';
               }}
 
-              // Hide setup instructions
-              document.getElementById('hide-setup-btn').addEventListener('click', function() {{
-                localStorage.setItem('hideFileCryptSetupInstructions', 'true');
-                setupBox.style.display = 'none';
-                showLink.style.display = 'block';
-              }});
+              // Global handler for provider clicks (if not already defined)
+              if (!window.handleProviderClick) {{
+                  window.handleProviderClick = function(url, storageKey, providerName, userscriptUrl) {{
+                    if (localStorage.getItem(storageKey) === 'true') {{
+                        if(typeof incrementCaptchaAttempts==='function') incrementCaptchaAttempts();
+                        window.location.href = url;
+                        return;
+                    }}
 
-              // Show setup instructions again
-              document.getElementById('show-setup-btn').addEventListener('click', function() {{
-                localStorage.setItem('hideFileCryptSetupInstructions', 'false');
-                setupBox.style.display = 'block';
-                showLink.style.display = 'none';
-              }});
+                    const content = `
+                        <p style="margin-bottom: 8px;">
+                            <a href="https://www.tampermonkey.net/" target="_blank" rel="noopener noreferrer">1. On mobile Safari/Firefox or any Desktop Browser install Tampermonkey</a>
+                        </p>
+                        <p style="margin-top: 0; margin-bottom: 8px;">
+                            <a href="${{userscriptUrl}}" target="_blank">2. Install the ${{providerName}} userscript</a>
+                        </p>
+                        <p style="margin-top: 0; margin-bottom: 12px;">
+                            3. Open link, solve CAPTCHAs, and links are automatically sent back to Quasarr!
+                        </p>
+                    `;
+
+                    const btnId = 'modal-proceed-btn-' + Math.floor(Math.random() * 10000);
+                    const buttons = `
+                        <button id="${{btnId}}" class="btn-primary" disabled>Wait 5s...</button>
+                        <button class="btn-secondary" onclick="closeModal()">Cancel</button>
+                    `;
+
+                    showModal('📦 First Time Setup', content, buttons);
+
+                    let count = 5;
+                    const btn = document.getElementById(btnId);
+                    const interval = setInterval(() => {{
+                        count--;
+                        if (count <= 0) {{
+                            clearInterval(interval);
+                            btn.innerText = 'I have installed Tampermonkey and the userscript';
+                            btn.disabled = false;
+                            btn.onclick = function() {{
+                                localStorage.setItem(storageKey, 'true');
+                                closeModal();
+                                if(typeof incrementCaptchaAttempts==='function') incrementCaptchaAttempts();
+                                window.location.href = url;
+                            }};
+                        }} else {{
+                            btn.innerText = 'Wait ' + count + 's...';
+                        }}
+                    }}, 1000);
+                  }};
+              }}
             </script>
         '''
 
@@ -735,7 +768,7 @@ def setup_captcha_routes(app):
 
             selected = "selected" if pkg_id == current_package_id else ""
             # Truncate long titles for display
-            display_title = (title[:50] + "...") if len(title) > 53 else title
+            display_title = title
             options.append(
                 f'<option value="{captcha_type}|{quote(encoded)}" {selected}>{display_title}</option>'
             )
@@ -745,7 +778,7 @@ def setup_captcha_routes(app):
         return f"""
             <div class="package-selector" style="margin-bottom: 20px; padding: 12px; background: rgba(128, 128, 128, 0.1); border: 1px solid rgba(128, 128, 128, 0.3); border-radius: 8px;">
                 <label for="package-select" style="display: block; margin-bottom: 8px; font-weight: bold;">📦 Select Package:</label>
-                <select id="package-select" style="width: 100%; padding: 8px; border-radius: 4px; background: inherit; color: inherit; border: 1px solid rgba(128, 128, 128, 0.5); cursor: pointer;">
+                <select id="package-select" style="width: 100%; padding: 8px; border-radius: 4px; background: inherit; color: inherit; border: 1px solid rgba(128, 128, 128, 0.5); cursor: pointer; text-overflow: ellipsis; white-space: nowrap; overflow: hidden;">
                     {options_html}
                 </select>
             </div>
@@ -885,6 +918,11 @@ def setup_captcha_routes(app):
         if original_url:
             source_button = f"<p>{render_button('Source', 'secondary', {'onclick': f"window.open('{js_single_quoted_string_safe(original_url)}', '_blank')"})}</p>"
 
+        js_url = url_with_quick_transfer_params.replace("'", "\\'")
+        storage_key = "hideFileCryptFallbackSetupInstructions"
+        provider_name = "FileCrypt"
+        userscript_url = "/captcha/filecrypt.user.js"
+
         return render_centered_html(f"""
         <!DOCTYPE html>
         <html>
@@ -894,35 +932,16 @@ def setup_captcha_routes(app):
             {failed_warning}
 
             <div>
-                <!-- One-time setup section - visually separated -->
-                <div id="setup-instructions" class="setup-box">
-                    <h3>📦 First Time Setup:</h3>
-                    <p style="margin-bottom: 8px;">
-                        <a href="https://www.tampermonkey.net/" target="_blank" rel="noopener noreferrer">1. On mobile Safari/Firefox or any Desktop Browser install Tampermonkey</a>
-                    </p>
-                    <p style="margin-top: 0; margin-bottom: 8px;">
-                        <a href="/captcha/filecrypt.user.js" target="_blank">2. Install the FileCrypt userscript</a>
-                    </p>
-                    <p style="margin-top: 0; margin-bottom: 12px;">
-                        3. Open link, solve CAPTCHAs, and links are automatically sent back to Quasarr!
-                    </p>
-                    <p style="margin-top: 0;">
-                        <button id="hide-setup-btn" type="button" class="btn-subtle">
-                            ✅ Don't show this again
-                        </button>
-                    </p>
-                </div>
-
-                <!-- Hidden "show instructions" button -->
-                <div id="show-instructions-link" style="display: none; margin-bottom: 16px;">
-                    <button id="show-setup-btn" type="button" class="btn-subtle">
-                        ℹ️ Show setup instructions
-                    </button>
-                </div>
-
                 <!-- Primary action button -->
                 <p>
-                    {render_button("Open FileCrypt & Get Download Links", "primary", {"onclick": f"if(typeof incrementCaptchaAttempts==='function')incrementCaptchaAttempts();location.href='{url_with_quick_transfer_params}'"})}
+                    {render_button("Open FileCrypt & Get Download Links", "primary", {"onclick": f"handleProviderClick('{js_url}', '{storage_key}', '{provider_name}', '{userscript_url}')"})}
+                </p>
+
+                <!-- Reset tutorial button -->
+                <p id="reset-tutorial-btn" style="display: none;">
+                    <button type="button" class="btn-subtle" onclick="localStorage.removeItem('{storage_key}'); showModal('Tutorial Reset', '<p>Tutorial reset! Click the Open button to see it again.</p>', '<button class=\\'btn-primary\\' onclick=\\'location.reload()\\'>Reload</button>');">
+                        ℹ️ Reset Setup Guide
+                    </button>
                 </p>
 
                 <!-- Manual submission section -->
@@ -980,29 +999,58 @@ def setup_captcha_routes(app):
                 }});
               }}
 
-              // Handle setup instructions hide/show
-              const hideSetup = localStorage.getItem('hideFileCryptFallbackSetupInstructions');
-              const setupBox = document.getElementById('setup-instructions');
-              const showLink = document.getElementById('show-instructions-link');
-
-              if (hideSetup === 'true') {{
-                setupBox.style.display = 'none';
-                showLink.style.display = 'block';
+              // Show reset button if tutorial was already seen
+              if (localStorage.getItem('{storage_key}') === 'true') {{
+                  document.getElementById('reset-tutorial-btn').style.display = 'block';
               }}
 
-              // Hide setup instructions
-              document.getElementById('hide-setup-btn').addEventListener('click', function() {{
-                localStorage.setItem('hideFileCryptFallbackSetupInstructions', 'true');
-                setupBox.style.display = 'none';
-                showLink.style.display = 'block';
-              }});
+              // Global handler for provider clicks
+              window.handleProviderClick = function(url, storageKey, providerName, userscriptUrl) {{
+                if (localStorage.getItem(storageKey) === 'true') {{
+                    if(typeof incrementCaptchaAttempts==='function') incrementCaptchaAttempts();
+                    window.location.href = url;
+                    return;
+                }}
 
-              // Show setup instructions again
-              document.getElementById('show-setup-btn').addEventListener('click', function() {{
-                localStorage.setItem('hideFileCryptFallbackSetupInstructions', 'false');
-                setupBox.style.display = 'block';
-                showLink.style.display = 'none';
-              }});
+                const content = `
+                    <p style="margin-bottom: 8px;">
+                        <a href="https://www.tampermonkey.net/" target="_blank" rel="noopener noreferrer">1. On mobile Safari/Firefox or any Desktop Browser install Tampermonkey</a>
+                    </p>
+                    <p style="margin-top: 0; margin-bottom: 8px;">
+                        <a href="${{userscriptUrl}}" target="_blank">2. Install the ${{providerName}} userscript</a>
+                    </p>
+                    <p style="margin-top: 0; margin-bottom: 12px;">
+                        3. Open link, solve CAPTCHAs, and links are automatically sent back to Quasarr!
+                    </p>
+                `;
+
+                const btnId = 'modal-proceed-btn-' + Math.floor(Math.random() * 10000);
+                const buttons = `
+                    <button id="${{btnId}}" class="btn-primary" disabled>Wait 5s...</button>
+                    <button class="btn-secondary" onclick="closeModal()">Cancel</button>
+                `;
+
+                showModal('📦 First Time Setup', content, buttons);
+
+                let count = 5;
+                const btn = document.getElementById(btnId);
+                const interval = setInterval(() => {{
+                    count--;
+                    if (count <= 0) {{
+                        clearInterval(interval);
+                        btn.innerText = 'I have installed Tampermonkey and the userscript';
+                        btn.disabled = false;
+                        btn.onclick = function() {{
+                            localStorage.setItem(storageKey, 'true');
+                            closeModal();
+                            if(typeof incrementCaptchaAttempts==='function') incrementCaptchaAttempts();
+                            window.location.href = url;
+                        }};
+                    }} else {{
+                        btn.innerText = 'Wait ' + count + 's...';
+                    }}
+                }}, 1000);
+              }};
             </script>
 
           </body>
