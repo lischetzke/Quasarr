@@ -13,13 +13,31 @@ from wcwidth import wcswidth
 
 load_dotenv()
 
+_log_handle_a = None
+_log_handle_b = None
 
-def add_sink(sink=sys.stdout):
-    logger.add(
+
+def add_sink(sink=sys.stdout) -> None:
+    global _log_handle_a, _log_handle_b
+
+    if _log_handle_a is not None:
+        logger.remove(_log_handle_a)
+    if _log_handle_b is not None:
+        logger.remove(_log_handle_b)
+
+    _log_handle_a = logger.add(
         sink,
         format="<d>{time:YYYY-MM-DDTHH:mm:ss}</d> <lvl>{level:<5}</lvl> {extra[context]}<b><M>{extra[source]}</M></b>{extra[padding]} {message}",
         colorize=True,
         level=5,
+        filter=lambda record: not record["extra"].get("overflow", False),
+    )
+    _log_handle_b = logger.add(
+        sys.stdout,
+        format="{extra[padding]:33}{message}",
+        colorize=True,
+        level=5,
+        filter=lambda record: record["extra"].get("overflow", False),
     )
 
 
@@ -118,6 +136,9 @@ def get_log_level(contexts: list[str] = []) -> int:
     return level
 
 
+_log_line_max_length = 160
+
+
 class _Logger:
     def __init__(self, contexts: list[str] = []):
         self.level = get_log_level(contexts)
@@ -137,7 +158,18 @@ class _Logger:
             return
         try:
             try:
-                self.logger.log(log_level_names[level], msg, *args, **kwargs)
+                for i in range(0, msg.__len__(), _log_line_max_length):
+                    merged_kwargs = {
+                        **kwargs,
+                        "overflow": i > 0,
+                    }
+
+                    self.logger.log(
+                        log_level_names[level],
+                        msg[i : i + _log_line_max_length],
+                        *args,
+                        **merged_kwargs,
+                    )
             except ValueError as e:
                 # Fallback: try logging without color parsing if tags are mismatched
                 self.logger_alt.log(log_level_names[level], msg, *args, **kwargs)

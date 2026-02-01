@@ -8,8 +8,6 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from loguru import logger
-
 from quasarr.providers.imdb_metadata import get_imdb_metadata
 from quasarr.providers.log import add_sink, debug, info
 from quasarr.search.sources.al import al_feed, al_search
@@ -121,14 +119,13 @@ class SearchProgressBar:
 class CaptureLogs:
     def __init__(self, progress_bar):
         self.progress_bar = progress_bar
+        self.init = False
 
     def __enter__(self):
-        logger.remove()
         add_sink(self.progress_bar.log_sink)
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        logger.remove()
         add_sink()
 
 
