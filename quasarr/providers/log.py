@@ -4,7 +4,6 @@
 
 import inspect
 import os
-import re
 import sys
 from typing import Any
 
@@ -14,13 +13,18 @@ from wcwidth import wcswidth
 
 load_dotenv()
 
+
+def add_sink(sink=sys.stdout):
+    logger.add(
+        sink,
+        format="<d>{time:YYYY-MM-DDTHH:mm:ss}</d> <lvl>{level:<5}</lvl> {extra[context]}<b><M>{extra[source]}</M></b>{extra[padding]} {message}",
+        colorize=True,
+        level=5,
+    )
+
+
 logger.remove(0)
-logger.add(
-    sys.stdout,
-    format="<d>{time:YYYY-MM-DDTHH:mm:ss}</d> <lvl>{level:<5}</lvl> {extra[context]}<b><M>{extra[source]}</M></b>{extra[padding]} {message}",
-    colorize=True,
-    level=5,
-)
+add_sink()
 logger.level(name="WARN", no=30, color="<yellow>")
 logger.level(name="CRIT", no=50, color="<red>")
 
@@ -121,33 +125,30 @@ class _Logger:
         width = wcswidth(context + source)
         padding = 6 - width
 
-        self.logger = logger.opt(colors=True).bind(
+        self.logger_alt = logger.bind(
             context=context,
             source=source,
             padding=" " * padding,
         )
+        self.logger = self.logger_alt.opt(colors=True)
 
     def _log(self, level: int, msg: str, *args: Any, **kwargs: Any) -> None:
-        if self.level <= level:
+        if self.level > level:
+            return
+        try:
             try:
                 self.logger.log(log_level_names[level], msg, *args, **kwargs)
             except ValueError as e:
                 # Fallback: try logging without color parsing if tags are mismatched
-                try:
-                    clean_msg = re.sub(r"</?[a-zA-Z0-9_]+>", "", msg)
-                    self.logger.opt(colors=False).log(
-                        log_level_names[level], clean_msg, *args, **kwargs
-                    )
+                self.logger_alt.log(log_level_names[level], msg, *args, **kwargs)
 
-                    if self.level <= 10:
-                        self.logger.opt(colors=False).debug(
-                            f"Log formatting error: {e} | Original message: {msg}"
-                        )
-                except Exception:
-                    print(f"LOGGING FAILURE: {msg}", file=sys.stderr)
-            except Exception:
-                # Fallback: just print to stderr if logging fails completely
-                print(f"LOGGING FAILURE: {msg}", file=sys.stderr)
+                if self.level <= 10:
+                    self.logger_alt.debug(
+                        f"Log formatting error: {e} | Original message: {msg}"
+                    )
+        except Exception:
+            # Fallback: just print to stderr if logging fails completely
+            print(f"LOGGING FAILURE: {msg}", file=sys.stderr)
 
     def crit(self, msg: str, *args: Any, **kwargs: Any) -> None:
         self._log(50, msg, *args, **kwargs)
