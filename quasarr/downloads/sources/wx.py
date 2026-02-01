@@ -39,7 +39,7 @@ def get_wx_download_links(shared_state, url, mirror, title, password):
         # Extract slug from URL
         slug_match = re.search(r"/detail/([^/?]+)", url)
         if not slug_match:
-            info(f"{hostname.upper()}: Could not extract slug from URL: {url}")
+            info(f"Could not extract slug from URL: {url}")
             return {"links": []}
 
         api_url = f"https://api.{host}/start/d/{slug_match.group(1)}"
@@ -50,7 +50,7 @@ def get_wx_download_links(shared_state, url, mirror, title, password):
             "Accept": "application/json",
         }
 
-        debug(f"{hostname.upper()}: Fetching API data from: {api_url}")
+        debug(f"Fetching API data from: {api_url}")
         api_r = session.get(api_url, headers=api_headers, timeout=30)
         api_r.raise_for_status()
 
@@ -58,7 +58,7 @@ def get_wx_download_links(shared_state, url, mirror, title, password):
 
         # Navigate to releases in the API response
         if "item" not in data or "releases" not in data["item"]:
-            info(f"{hostname.upper()}: No releases found in API response")
+            info("No releases found in API response")
             return {"links": []}
 
         releases = data["item"]["releases"]
@@ -67,12 +67,10 @@ def get_wx_download_links(shared_state, url, mirror, title, password):
         matching_releases = [r for r in releases if r.get("fulltitle") == title]
 
         if not matching_releases:
-            info(f"{hostname.upper()}: No release found matching title: {title}")
+            info(f"No release found matching title: {title}")
             return {"links": []}
 
-        debug(
-            f"{hostname.upper()}: Found {len(matching_releases)} mirror(s) for: {title}"
-        )
+        debug(f"Found {len(matching_releases)} mirror(s) for: {title}")
 
         # Evaluate each mirror and find the best one
         # Track: (online_count, is_hide, online_links)
@@ -105,14 +103,12 @@ def get_wx_download_links(shared_state, url, mirror, title, password):
                 hide_total = len(hide_links)
                 hide_online = len(online_hide)
 
-                debug(
-                    f"{hostname.upper()}: M{idx + 1} hide.cx: {hide_online}/{hide_total} online"
-                )
+                debug(f"M{idx + 1} hide.cx: {hide_online}/{hide_total} online")
 
                 # If all hide.cx links are online, use this mirror immediately
                 if hide_online == hide_total and hide_online > 0:
                     debug(
-                        f"{hostname.upper()}: M{idx + 1} is complete (all {hide_online} hide.cx links online), using this mirror"
+                        f"M{idx + 1} is complete (all {hide_online} hide.cx links online), using this mirror"
                     )
                     return {"links": online_hide}
 
@@ -124,9 +120,7 @@ def get_wx_download_links(shared_state, url, mirror, title, password):
                 other_total = len(other_links)
                 other_online = len(online_other)
 
-                debug(
-                    f"{hostname.upper()}: M{idx + 1} other crypters: {other_online}/{other_total} online"
-                )
+                debug(f"M{idx + 1} other crypters: {other_online}/{other_total} online")
 
             # Determine best option for this mirror (prefer hide.cx on ties)
             mirror_links = None
@@ -163,15 +157,15 @@ def get_wx_download_links(shared_state, url, mirror, title, password):
         if best_mirror and best_mirror[2]:
             crypter_type = "hide.cx" if best_mirror[1] else "other crypter"
             debug(
-                f"{hostname.upper()}: No complete mirror, using best partial with {best_mirror[0]} online {crypter_type} link(s)"
+                f"No complete mirror, using best partial with {best_mirror[0]} online {crypter_type} link(s)"
             )
             return {"links": best_mirror[2]}
 
-        info(f"{hostname.upper()}: No online links found for: {title}")
+        info(f"No online links found for: {title}")
         return {"links": []}
 
     except Exception as e:
-        info(f"{hostname.upper()}: Error extracting download links from {url}: {e}")
+        info(f"Error extracting download links from {url}: {e}")
         mark_hostname_issue(
             hostname, "download", str(e) if "e" in dir() else "Download error"
         )

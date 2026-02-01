@@ -14,7 +14,7 @@ from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning
 
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.imdb_metadata import get_localized_title, get_year
-from quasarr.providers.log import debug, info
+from quasarr.providers.log import debug, error, trace, warn
 
 warnings.filterwarnings(
     "ignore", category=XMLParsedAsHTMLWarning
@@ -32,9 +32,7 @@ def wx_feed(shared_state, start_time, request_from, mirror=None):
     host = shared_state.values["config"]("Hostnames").get(hostname)
 
     if "lazylibrarian" in request_from.lower():
-        debug(
-            f'Skipping {request_from} search on "{hostname.upper()}" (unsupported media type)!'
-        )
+        debug(f"<d>Skipping {request_from}: unsupported media type.</d>")
         return releases
 
     rss_url = f"https://{host}/rss"
@@ -53,10 +51,10 @@ def wx_feed(shared_state, start_time, request_from, mirror=None):
             items = soup.find_all("item")
 
         if not items:
-            info(f"{hostname.upper()}: No entries found in RSS feed")
+            warn("No entries found in RSS feed")
             return releases
 
-        debug(f"{hostname.upper()}: Found {len(items)} entries in RSS feed")
+        trace(f"Found {len(items)} entries in RSS feed")
 
         for item in items:
             try:
@@ -120,18 +118,18 @@ def wx_feed(shared_state, start_time, request_from, mirror=None):
                 )
 
             except Exception as e:
-                debug(f"{hostname.upper()}: error parsing RSS entry: {e}")
+                debug(f"Error parsing RSS entry: {e}")
                 continue
 
     except Exception as e:
-        info(f"Error loading {hostname.upper()} feed: {e}")
+        error(f"Error loading feed: {e}")
         mark_hostname_issue(
             hostname, "feed", str(e) if "e" in dir() else "Error occurred"
         )
         return releases
 
     elapsed_time = time.time() - start_time
-    debug(f"Time taken: {elapsed_time:.2f}s ({hostname})")
+    debug(f"Time taken: {elapsed_time:.2f}s")
 
     if releases:
         clear_hostname_issue(hostname)
@@ -155,24 +153,20 @@ def wx_search(
     host = shared_state.values["config"]("Hostnames").get(hostname)
 
     if "lazylibrarian" in request_from.lower():
-        debug(
-            f'Skipping {request_from} search on "{hostname.upper()}" (unsupported media type)!'
-        )
+        debug(f"<d>Skipping {request_from}: unsupported media type.</d>")
         return releases
 
     imdb_id = shared_state.is_imdb_id(search_string)
     if imdb_id:
-        debug(f"{hostname.upper()}: Received IMDb ID: {imdb_id}")
+        debug(f"Received IMDb ID: {imdb_id}")
         title = get_localized_title(shared_state, imdb_id, "de")
         if not title:
-            debug(f"{hostname.upper()}: no title for IMDb {imdb_id}")
+            error(f"No title found for IMDb '{imdb_id}'")
             return releases
-        debug(
-            f"{hostname.upper()}: Translated IMDb {imdb_id} to German title: '{title}'"
-        )
+        trace(f"Resolved IMDb '{imdb_id}' to: '{title}'")
         search_string = html.unescape(title)
     else:
-        debug(f"{hostname.upper()}: Using search string directly: '{search_string}'")
+        debug(f"Using search string directly: '{search_string}'")
 
     api_url = f"https://api.{host}/start/search"
 
@@ -202,7 +196,7 @@ def wx_search(
     elif "radarr" in request_from.lower():
         params["types"] = "movie"
 
-    debug(f"{hostname.upper()}: Searching: '{search_string}'")
+    trace(f"Searching: '{search_string}'")
 
     try:
         r = requests.get(api_url, headers=headers, params=params, timeout=10)
@@ -219,7 +213,7 @@ def wx_search(
         else:
             items = data if isinstance(data, list) else []
 
-        debug(f"{hostname.upper()}: Found {len(items)} items in search results")
+        trace(f"Found {len(items)} items in search results")
 
         # Track seen titles to deduplicate (mirrors have same fulltitle)
         seen_titles = set()
@@ -228,10 +222,10 @@ def wx_search(
             try:
                 uid = item.get("uid")
                 if not uid:
-                    debug(f"{hostname.upper()}: Item has no UID, skipping")
+                    debug("Item has no UID, skipping")
                     continue
 
-                debug(f"{hostname.upper()}: Fetching details for UID: {uid}")
+                trace(f"Fetching details for UID: {uid}")
 
                 detail_url = f"https://api.{host}/start/d/{uid}"
                 detail_r = requests.get(detail_url, headers=headers, timeout=10)
@@ -250,9 +244,12 @@ def wx_search(
 
                 if item_imdb_id and imdb_id and item_imdb_id != imdb_id:
                     debug(
-                        f"{hostname.upper()}: IMDb-ID mismatch ({imdb_id} != {item_imdb_id}), skipping item"
+                        f"IMDb-ID mismatch ({imdb_id} != {item_imdb_id}), skipping item"
                     )
                     continue
+
+                if item_imdb_id is None:
+                    item_imdb_id = imdb_id
 
                 source = f"https://{host}/detail/{uid}"
 
@@ -270,9 +267,7 @@ def wx_search(
                     ):
                         # Skip if we've already seen this exact title
                         if title in seen_titles:
-                            debug(
-                                f"{hostname.upper()}: Skipping duplicate main title: {title}"
-                            )
+                            debug(f"Skipping duplicate main title: {title}")
                         else:
                             seen_titles.add(title)
                             published = detail_item.get(
@@ -285,7 +280,7 @@ def wx_search(
                             password = f"www.{host}"
 
                             payload = urlsafe_b64encode(
-                                f"{title}|{source}|{mirror}|0|{password}|{item_imdb_id or ''}|{hostname}".encode(
+                                f"{title}|{source}|{mirror}|0|{password}|{item_imdb_id}|{hostname}".encode(
                                     "utf-8"
                                 )
                             ).decode("utf-8")
@@ -310,9 +305,7 @@ def wx_search(
                 if "releases" in detail_item and isinstance(
                     detail_item["releases"], list
                 ):
-                    debug(
-                        f"{hostname.upper()}: Found {len(detail_item['releases'])} releases for {uid}"
-                    )
+                    trace(f"Found {len(detail_item['releases'])} releases for {uid}")
 
                     for release in detail_item["releases"]:
                         try:
@@ -330,16 +323,11 @@ def wx_search(
                                 season,
                                 episode,
                             ):
-                                debug(
-                                    f"{hostname.upper()}: ✗ Release filtered out: {release_title}"
-                                )
                                 continue
 
                             # Skip if we've already seen this exact title (deduplication)
                             if release_title in seen_titles:
-                                debug(
-                                    f"{hostname.upper()}: Skipping duplicate release: {release_title}"
-                                )
+                                trace(f"Skipping duplicate release: {release_title}")
                                 continue
 
                             seen_titles.add(release_title)
@@ -365,7 +353,7 @@ def wx_search(
                             password = f"www.{host}"
 
                             payload = urlsafe_b64encode(
-                                f"{release_title}|{release_source}|{mirror}|{release_size}|{password}|{item_imdb_id or ''}|{hostname}".encode(
+                                f"{release_title}|{release_source}|{mirror}|{release_size}|{password}|{item_imdb_id}|{hostname}".encode(
                                     "utf-8"
                                 )
                             ).decode("utf-8")
@@ -388,31 +376,29 @@ def wx_search(
                             )
 
                         except Exception as e:
-                            debug(f"{hostname.upper()}: Error parsing release: {e}")
+                            debug(f"Error parsing release: {e}")
                             continue
                 else:
-                    debug(f"{hostname.upper()}: No releases array found for {uid}")
+                    debug(f"No releases array found for {uid}")
 
             except Exception as e:
-                debug(f"{hostname.upper()}: Error processing item: {e}")
-                debug(f"{hostname.upper()}: {traceback.format_exc()}")
+                debug(f"Error processing item: {e}")
+                debug(f"{traceback.format_exc()}")
                 continue
 
-        debug(
-            f"{hostname.upper()}: Returning {len(releases)} total releases (deduplicated)"
-        )
+        trace(f"Returning {len(releases)} total releases (deduplicated)")
 
     except Exception as e:
-        info(f"Error in {hostname.upper()} search: {e}")
+        error(f"Error in search: {e}")
         mark_hostname_issue(
             hostname, "search", str(e) if "e" in dir() else "Error occurred"
         )
 
-        debug(f"{hostname.upper()}: {traceback.format_exc()}")
+        debug(f"{traceback.format_exc()}")
         return releases
 
     elapsed_time = time.time() - start_time
-    debug(f"Time taken: {elapsed_time:.2f}s ({hostname})")
+    debug(f"Time taken: {elapsed_time:.2f}s")
 
     if releases:
         clear_hostname_issue(hostname)

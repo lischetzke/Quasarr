@@ -12,7 +12,7 @@ from bs4 import BeautifulSoup
 
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.imdb_metadata import get_localized_title, get_year
-from quasarr.providers.log import debug, info
+from quasarr.providers.log import debug, info, trace, warn
 from quasarr.providers.sessions.dl import (
     fetch_via_requests_session,
     invalidate_session,
@@ -70,13 +70,13 @@ def dl_feed(shared_state, start_time, request_from, mirror=None):
         forum = "hd.14"
 
     if not host:
-        debug(f"{hostname}: hostname not configured")
+        debug("hostname not configured")
         return releases
 
     try:
         sess = retrieve_and_validate_session(shared_state)
         if not sess:
-            info(f"Could not retrieve valid session for {host}")
+            warn(f"Could not retrieve valid session for {host}")
             return releases
 
         forum_url = f"https://www.{host}/forums/{forum}/?order=post_date&direction=desc"
@@ -89,7 +89,7 @@ def dl_feed(shared_state, start_time, request_from, mirror=None):
         items = soup.select("div.structItem.structItem--thread")
 
         if not items:
-            debug(f"{hostname}: No entries found in Forum")
+            debug("No entries found in Forum")
             return releases
 
         for item in items:
@@ -148,18 +148,18 @@ def dl_feed(shared_state, start_time, request_from, mirror=None):
                 )
 
             except Exception as e:
-                debug(f"{hostname}: error parsing Forum item: {e}")
+                debug(f"error parsing Forum item: {e}")
                 continue
 
     except Exception as e:
-        info(f"{hostname}: Forum feed error: {e}")
+        warn(f"Forum feed error: {e}")
         mark_hostname_issue(
             hostname, "feed", str(e) if "e" in dir() else "Error occurred"
         )
         invalidate_session(shared_state)
 
     elapsed = time.time() - start_time
-    debug(f"Time taken: {elapsed:.2f}s ({hostname})")
+    debug(f"Time taken: {elapsed:.2f}s")
 
     if releases:
         clear_hostname_issue(hostname)
@@ -222,9 +222,7 @@ def _search_single_page(
         )
 
         if search_response.status_code != 200:
-            debug(
-                f"{hostname}: [Page {page_num}] returned status {search_response.status_code}"
-            )
+            debug(f"[Page {page_num}] returned status {search_response.status_code}")
             return page_releases, None
 
         # Extract search ID from first page
@@ -233,18 +231,16 @@ def _search_single_page(
             match = re.search(r"/search/(\d+)/", search_response.url)
             if match:
                 extracted_search_id = match.group(1)
-                debug(
-                    f"{hostname}: [Page 1] Extracted search ID: {extracted_search_id}"
-                )
+                trace(f"[Page 1] Extracted search ID: {extracted_search_id}")
 
         soup = BeautifulSoup(search_response.text, "html.parser")
         result_items = soup.select("li.block-row")
 
         if not result_items:
-            debug(f"{hostname}: [Page {page_num}] found 0 results")
+            trace(f"[Page {page_num}] found 0 results")
             return page_releases, extracted_search_id
 
-        debug(f"{hostname}: [Page {page_num}] found {len(result_items)} results")
+        trace(f"[Page {page_num}] found {len(result_items)} results")
 
         for item in result_items:
             try:
@@ -319,12 +315,12 @@ def _search_single_page(
                 )
 
             except Exception as e:
-                debug(f"{hostname}: [Page {page_num}] error parsing item: {e}")
+                debug(f"[Page {page_num}] error parsing item: {e}")
 
         return page_releases, extracted_search_id
 
     except Exception as e:
-        info(f"{hostname}: [Page {page_num}] error: {e}")
+        warn(f"[Page {page_num}] error: {e}")
         mark_hostname_issue(
             hostname, "search", str(e) if "e" in dir() else "Error occurred"
         )
@@ -351,7 +347,7 @@ def dl_search(
     if imdb_id:
         title = get_localized_title(shared_state, imdb_id, "de")
         if not title:
-            info(f"{hostname}: no title for IMDb {imdb_id}")
+            info(f"no title for IMDb {imdb_id}")
             return releases
         search_string = title
         if not season:
@@ -361,14 +357,14 @@ def dl_search(
     search_string = unescape(search_string)
     max_search_duration = 7
 
-    debug(
-        f"{hostname}: Starting sequential paginated search for '{search_string}' (Season: {season}, Episode: {episode}) - max {max_search_duration}s"
+    trace(
+        f"Starting sequential paginated search for '{search_string}' (Season: {season}, Episode: {episode}) - max {max_search_duration}s"
     )
 
     try:
         sess = retrieve_and_validate_session(shared_state)
         if not sess:
-            info(f"Could not retrieve valid session for {host}")
+            warn(f"Could not retrieve valid session for {host}")
             return releases
 
         search_id = None
@@ -395,9 +391,7 @@ def dl_search(
 
             page_release_titles = tuple(pr["details"]["title"] for pr in page_releases)
             if page_release_titles in release_titles_per_page:
-                debug(
-                    f"{hostname}: [Page {page_num}] duplicate page detected, stopping"
-                )
+                trace(f"[Page {page_num}] duplicate page detected, stopping")
                 break
             release_titles_per_page.add(page_release_titles)
 
@@ -405,37 +399,31 @@ def dl_search(
             if page_num == 1:
                 search_id = extracted_search_id
                 if not search_id:
-                    info(
-                        f"{hostname}: Could not extract search ID, stopping pagination"
-                    )
+                    trace("Could not extract search ID, stopping pagination")
                     break
 
             # Add releases from this page
             releases.extend(page_releases)
-            debug(
-                f"{hostname}: [Page {page_num}] completed with {len(page_releases)} valid releases"
+            trace(
+                f"[Page {page_num}] completed with {len(page_releases)} valid releases"
             )
 
             # Stop if this page returned 0 results
             if len(page_releases) == 0:
-                debug(
-                    f"{hostname}: [Page {page_num}] returned 0 results, stopping pagination"
-                )
+                trace(f"[Page {page_num}] returned 0 results, stopping pagination")
                 break
 
     except Exception as e:
-        info(f"{hostname}: search error: {e}")
+        info(f"search error: {e}")
         mark_hostname_issue(
             hostname, "search", str(e) if "e" in dir() else "Error occurred"
         )
         invalidate_session(shared_state)
 
-    debug(
-        f"{hostname}: FINAL - Found {len(releases)} valid releases - providing to {request_from}"
-    )
+    trace(f"FINAL - Found {len(releases)} valid releases - providing to {request_from}")
 
     elapsed = time.time() - start_time
-    debug(f"Time taken: {elapsed:.2f}s ({hostname})")
+    debug(f"Time taken: {elapsed:.2f}s")
 
     if releases:
         clear_hostname_issue(hostname)

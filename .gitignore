@@ -18,3 +18,4 @@
 *.conf
 *.db
 *.ini
+.env

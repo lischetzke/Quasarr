@@ -14,7 +14,7 @@ from bs4 import BeautifulSoup
 
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.imdb_metadata import get_localized_title, get_year
-from quasarr.providers.log import debug, info
+from quasarr.providers.log import debug, error, info
 
 hostname = "by"
 supported_mirrors = ["rapidgator", "ddownload", "nitroflare"]
@@ -168,7 +168,7 @@ def _parse_posts(
                 }
             )
         except Exception as e:
-            debug(f"Error parsing {hostname.upper()}: {e}")
+            debug(f"Error parsing: {e}")
             continue
 
     return releases
@@ -201,12 +201,12 @@ def by_feed(shared_state, start_time, request_from, mirror=None):
             mirror_filter=mirror,
         )
     except Exception as e:
-        info(f"Error loading {hostname.upper()} feed: {e}")
+        error(f"Error loading feed: {e}")
         mark_hostname_issue(
             hostname, "feed", str(e) if "e" in dir() else "Error occurred"
         )
         releases = []
-    debug(f"Time taken: {time.time() - start_time:.2f}s ({hostname})")
+    debug(f"Time taken: {time.time() - start_time:.2f}s")
 
     if releases:
         clear_hostname_issue(hostname)
@@ -257,12 +257,12 @@ def by_search(
             episode=episode,
         )
     except Exception as e:
-        info(f"Error loading {hostname.upper()} search: {e}")
+        error(f"Error loading search: {e}")
         mark_hostname_issue(
             hostname, "search", str(e) if "e" in dir() else "Error occurred"
         )
         releases = []
-    debug(f"Time taken: {time.time() - start_time:.2f}s ({hostname})")
+    debug(f"Time taken: {time.time() - start_time:.2f}s")
 
     if releases:
         clear_hostname_issue(hostname)

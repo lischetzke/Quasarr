@@ -161,12 +161,12 @@ def get_search_results(
         stype = "feed search"
 
     info(
-        f"Starting {len(search_executor.searches)} searches for {stype}... This may take some time."
+        f"Starting {len(search_executor.searches)} searches for {stype}... <l>This may take some time.</l>"
     )
     results = search_executor.run_all()
     elapsed_time = time.time() - start_time
     info(
-        f"Providing {len(results)} releases to {request_from} for {stype}. Time taken: {elapsed_time:.2f} seconds"
+        f"Providing <g>{len(results)} releases</g> to {request_from} for {stype}. Time taken: {elapsed_time:.2f} seconds"
     )
 
     return results
