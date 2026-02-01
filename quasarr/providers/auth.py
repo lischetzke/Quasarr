@@ -278,35 +278,31 @@ def add_auth_routes(app):
             return _handle_logout()
 
 
-def add_auth_hook(app, whitelist_prefixes=[], whitelist_suffixes=[]):
+def add_auth_hook(app, whitelist=None):
     """Add authentication hook to a Bottle app.
 
     Args:
         app: Bottle application
-        whitelist_prefixes: List of path prefixes to skip auth (e.g., ['/api/', '/sponsors_helper/'])
+        whitelist: List of path prefixes or suffixes to skip auth
     """
-    if whitelist_prefixes is None:
-        whitelist_prefixes = []
+    if whitelist is None:
+        whitelist = []
 
     @app.hook("before_request")
     def auth_hook():
         if not is_auth_enabled():
             return
 
-        path = request.path
+        # Strip query parameters for path matching
+        path = request.path.split("?")[0]
 
         # Always allow login/logout
         if path in ["/login", "/logout"]:
             return
 
-        # Check whitelist prefixes
-        for prefix in whitelist_prefixes:
-            if path.startswith(prefix):
-                return
-
-        # Check whitelist suffixes:
-        for suffix in whitelist_suffixes:
-            if path.endswith(suffix):
+        # Check whitelist
+        for item in whitelist:
+            if path.startswith(item) or path.endswith(item):
                 return
 
         # Check authentication

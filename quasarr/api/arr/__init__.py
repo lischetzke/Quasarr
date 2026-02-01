@@ -59,7 +59,8 @@ def setup_arr_routes(app):
     def check_user_agent():
         user_agent = request.headers.get("User-Agent") or ""
         if not any(
-            tool in user_agent.lower() for tool in ["radarr", "sonarr", "lazylibrarian"]
+            tool in user_agent.lower()
+            for tool in ["radarr", "sonarr", "lazylibrarian", "python-requests"]
         ):
             msg = f"Unsupported User-Agent: {user_agent}. Quasarr as a compatibility layer must be called by Radarr, Sonarr or LazyLibrarian directly."
             info(msg)

@@ -34,8 +34,7 @@ def get_api(shared_state_dict, shared_state_lock):
     add_auth_routes(app)
     add_auth_hook(
         app,
-        whitelist_prefixes=["/api", "/api/", "/sponsors_helper/", "/download/"],
-        whitelist_suffixes=[".user.js"],
+        whitelist=["/api", "/api/", "/sponsors_helper/", "/download/", ".user.js"],
     )
 
     setup_arr_routes(app)
