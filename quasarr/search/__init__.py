@@ -11,7 +11,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from loguru import logger
 
 from quasarr.providers.imdb_metadata import get_imdb_metadata
-from quasarr.providers.log import debug, info
+from quasarr.providers.log import add_sink, debug, info
 from quasarr.search.sources.al import al_feed, al_search
 from quasarr.search.sources.by import by_feed, by_search
 from quasarr.search.sources.dd import dd_feed, dd_search
@@ -33,9 +33,6 @@ from quasarr.search.sources.wx import wx_feed, wx_search
 
 # Global lock to ensure only ONE progress bar is active at a time.
 SEARCH_UI_LOCK = threading.Lock()
-
-# Exact format from your log.py to maintain visual consistency
-LOG_FORMAT = "<d>{time:YYYY-MM-DDTHH:mm:ss}</d> <lvl>{level:<5}</lvl> {extra[context]}<b><M>{extra[source]}</M></b>{extra[padding]} {message}"
 
 
 class SearchProgressBar:
@@ -127,14 +124,12 @@ class CaptureLogs:
 
     def __enter__(self):
         logger.remove()
-        logger.add(
-            self.progress_bar.log_sink, format=LOG_FORMAT, colorize=True, level=5
-        )
+        add_sink(self.progress_bar.log_sink)
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         logger.remove()
-        logger.add(sys.stdout, format=LOG_FORMAT, colorize=True, level=5)
+        add_sink()
 
 
 def get_search_results(
