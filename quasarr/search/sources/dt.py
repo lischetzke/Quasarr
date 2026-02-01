@@ -15,7 +15,7 @@ from bs4 import BeautifulSoup
 
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.imdb_metadata import get_localized_title
-from quasarr.providers.log import debug, info
+from quasarr.providers.log import debug, error, info, warn
 
 hostname = "dt"
 supported_mirrors = ["rapidgator", "nitroflare", "ddownload"]
@@ -69,8 +69,8 @@ def dt_feed(shared_state, start_time, request_from, mirror=None):
         feed_type = "media/tv-show/"
 
     if mirror and mirror not in supported_mirrors:
-        debug(
-            f'Mirror "{mirror}" not supported by "{hostname.upper()}". Supported: {supported_mirrors}. Skipping!'
+        error(
+            f'Mirror "{mirror}" not supported. Supported: {supported_mirrors}. Skipping!'
         )
         return releases
 
@@ -86,9 +86,7 @@ def dt_feed(shared_state, start_time, request_from, mirror=None):
             try:
                 link_tag = article.select_one("h4.font-weight-bold a")
                 if not link_tag:
-                    debug(
-                        f"Link tag not found in article: {article} at {hostname.upper()}"
-                    )
+                    warn(f"Link tag not found in article: {article}")
                     continue
 
                 source = link_tag["href"]
@@ -114,7 +112,7 @@ def dt_feed(shared_state, start_time, request_from, mirror=None):
                     r"(\d+(?:\.\d+)?\s*(?:GB|MB|KB|TB))", body_text, re.IGNORECASE
                 )
                 if not size_match:
-                    debug(f"Size not found in article: {article} at {hostname.upper()}")
+                    warn(f"Size not found in article: {article}")
                     continue
                 size_info = size_match.group(1).strip()
                 size_item = extract_size(size_info)
@@ -131,7 +129,7 @@ def dt_feed(shared_state, start_time, request_from, mirror=None):
                 link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
 
             except Exception as e:
-                info(f"Error parsing {hostname.upper()} feed: {e}")
+                warn(f"Error parsing feed: {e}")
                 mark_hostname_issue(
                     hostname, "feed", str(e) if "e" in dir() else "Error occurred"
                 )
@@ -154,13 +152,13 @@ def dt_feed(shared_state, start_time, request_from, mirror=None):
             )
 
     except Exception as e:
-        info(f"Error loading {hostname.upper()} feed: {e}")
+        error(f"Error loading feed: {e}")
         mark_hostname_issue(
             hostname, "feed", str(e) if "e" in dir() else "Error occurred"
         )
 
     elapsed = time.time() - start_time
-    debug(f"Time taken: {elapsed:.2f}s ({hostname})")
+    debug(f"Time taken: {elapsed:.2f}s")
 
     if releases:
         clear_hostname_issue(hostname)
@@ -188,8 +186,8 @@ def dt_search(
         cat_id = "64"
 
     if mirror and mirror not in supported_mirrors:
-        debug(
-            f'Mirror "{mirror}" not supported by "{hostname.upper()}". Skipping search!'
+        error(
+            f'Mirror "{mirror}" not supported. Supported: {supported_mirrors}. Skipping search!'
         )
         return releases
 
@@ -278,7 +276,7 @@ def dt_search(
                 link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
 
             except Exception as e:
-                info(f"Error parsing {hostname.upper()} search item: {e}")
+                warn(f"Error parsing search item: {e}")
                 mark_hostname_issue(
                     hostname, "search", str(e) if "e" in dir() else "Error occurred"
                 )
@@ -301,13 +299,13 @@ def dt_search(
             )
 
     except Exception as e:
-        info(f"Error loading {hostname.upper()} search page: {e}")
+        error(f"Error loading search page: {e}")
         mark_hostname_issue(
             hostname, "search", str(e) if "e" in dir() else "Error occurred"
         )
 
     elapsed = time.time() - start_time
-    debug(f"Search time: {elapsed:.2f}s ({hostname})")
+    debug(f"Search time: {elapsed:.2f}s")
 
     if releases:
         clear_hostname_issue(hostname)

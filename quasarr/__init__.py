@@ -15,7 +15,7 @@ import requests
 import quasarr.providers.web_server
 from quasarr.api import get_api
 from quasarr.providers import shared_state, version
-from quasarr.providers.log import info
+from quasarr.providers.log import get_log_level, info, log_level_names
 from quasarr.providers.notifications import send_discord_message
 from quasarr.providers.utils import (
     FALLBACK_USER_AGENT,
@@ -265,9 +265,7 @@ def run():
         if external_address != internal_address:
             print(f'External URL: "{shared_state.values["external_address"]}"')
 
-        print("\n===== Quasarr Info Log =====")
-        if os.getenv("DEBUG"):
-            print("=====    / Debug Log   =====")
+        print(f"\n===== Quasarr {log_level_names[get_log_level()]} Log =====")
 
         protected = shared_state.get_db("protected").retrieve_all_titles()
         if protected:
@@ -333,7 +331,7 @@ def flaresolverr_checker(shared_state_dict, shared_state_lock):
             flaresolverr_check = check_flaresolverr(shared_state, flaresolverr_url)
             if flaresolverr_check:
                 info(
-                    f'FlareSolverr connection successful. Using User-Agent: "{shared_state.values["user_agent"]}"'
+                    f'FlareSolverr connection successful. <d>Using User-Agent: "{shared_state.values["user_agent"]}"</d>'
                 )
             else:
                 info("FlareSolverr check failed - using fallback user agent")

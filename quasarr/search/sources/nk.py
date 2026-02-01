@@ -14,7 +14,7 @@ from bs4 import BeautifulSoup
 
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.imdb_metadata import get_localized_title, get_year
-from quasarr.providers.log import debug, info
+from quasarr.providers.log import debug, info, trace
 
 hostname = "nk"
 supported_mirrors = ["rapidgator", "ddownload"]
@@ -74,12 +74,12 @@ def nk_search(
 
     if not "arr" in request_from.lower():
         debug(
-            f'Skipping {request_from} search on "{hostname.upper()}" (unsupported media type)!'
+            f'<d>Skipping {request_from} search on "{hostname.upper()}" (unsupported media type)!</d>'
         )
         return releases
 
     if mirror and mirror not in supported_mirrors:
-        debug(f'Mirror "{mirror}" not supported by {hostname}.')
+        debug(f'Mirror "{mirror}" not supported.')
         return releases
 
     source_search = ""
@@ -88,7 +88,7 @@ def nk_search(
         if imdb_id:
             local_title = get_localized_title(shared_state, imdb_id, "de")
             if not local_title:
-                info(f"{hostname}: no title for IMDb {imdb_id}")
+                info(f"No title for IMDb {imdb_id}")
                 return releases
             if not season:
                 year = get_year(imdb_id)
@@ -124,7 +124,7 @@ def nk_search(
         soup = BeautifulSoup(r.content, "html.parser")
         results = soup.find_all("div", class_="article-right")
     except Exception as e:
-        info(f"{hostname}: {search_type} load error: {e}")
+        info(f"{search_type} load error: {e}")
         mark_hostname_issue(
             hostname, search_type, str(e) if "e" in dir() else "Error occurred"
         )
@@ -135,23 +135,6 @@ def nk_search(
 
     for result in results:
         try:
-            imdb_a = result.select_one("a.imdb")
-            if imdb_a and imdb_a.get("href"):
-                try:
-                    release_imdb_id = re.search(r"tt\d+", imdb_a["href"]).group()
-                    if imdb_id:
-                        if release_imdb_id != imdb_id:
-                            debug(
-                                f"{hostname}: IMDb ID mismatch: expected {imdb_id}, found {release_imdb_id}"
-                            )
-                            continue
-                except Exception:
-                    debug(f"{hostname}: could not extract IMDb ID")
-                    continue
-            else:
-                debug(f"{hostname}: could not extract IMDb ID")
-                continue
-
             a = result.find("a", class_="release-details", href=True)
             if not a:
                 continue
@@ -161,6 +144,23 @@ def nk_search(
                 title = sub_title.get_text(strip=True)
             else:
                 continue
+
+            imdb_a = result.select_one("a.imdb")
+            if imdb_a and imdb_a.get("href"):
+                try:
+                    release_imdb_id = re.search(r"tt\d+", imdb_a["href"]).group()
+                    if imdb_id and release_imdb_id and release_imdb_id != imdb_id:
+                        trace(
+                            f"IMDb ID mismatch: expected {imdb_id}, found {release_imdb_id}"
+                        )
+                        continue
+                except Exception:
+                    debug(f"failed to determine imdb_id for {title}")
+            else:
+                trace(f"imdb link not found for {title}")
+
+            if release_imdb_id is None:
+                release_imdb_id = imdb_id
 
             if not shared_state.is_valid_release(
                 title, request_from, search_string, season, episode
@@ -230,12 +230,11 @@ def nk_search(
             )
         except Exception as e:
             info(e)
-            debug(f"{hostname}: error parsing search result: {e}")
+            debug(f"error parsing search result: {e}")
             continue
 
     elapsed = time.time() - start_time
-    debug(f"Time taken: {elapsed:.2f}s ({hostname})")
-
+    debug(f"Time taken: {elapsed:.2f}s")
     if releases:
         clear_hostname_issue(hostname)
     return releases

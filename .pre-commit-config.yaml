@@ -3,7 +3,7 @@ repos:
     hooks:
       - id: pre-commit
         name: Pre-Commit Check
-        entry: uv run python pre-commit.py
+        entry: uv run python -X utf8 pre-commit.py
         language: system
         pass_filenames: false
         always_run: true

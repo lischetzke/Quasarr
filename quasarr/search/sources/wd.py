@@ -14,7 +14,7 @@ from bs4 import BeautifulSoup
 from quasarr.providers.cloudflare import flaresolverr_get, is_cloudflare_challenge
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.imdb_metadata import get_localized_title, get_year
-from quasarr.providers.log import debug, info
+from quasarr.providers.log import debug, error, info
 from quasarr.providers.utils import is_flaresolverr_available
 
 hostname = "wd"
@@ -57,6 +57,7 @@ def _parse_rows(
     search_string=None,
     season=None,
     episode=None,
+    imdb_id=None,
 ):
     """
     Walk the <table> rows, extract one release per row.
@@ -128,7 +129,6 @@ def _parse_rows(
             mb = shared_state.convert_to_mb(sz)
             size_bytes = mb * 1024 * 1024
 
-            imdb_id = None
             published = convert_to_rss_date(date_txt) if date_txt else one_hour_ago
 
             payload = urlsafe_b64encode(
@@ -154,7 +154,7 @@ def _parse_rows(
                 }
             )
         except Exception as e:
-            debug(f"Error parsing {hostname.upper()} row: {e}")
+            debug(f"Error parsing row: {e}")
             continue
     return releases
 
@@ -190,12 +190,12 @@ def wd_feed(shared_state, start_time, request_from, mirror=None):
         soup = BeautifulSoup(r.content, "html.parser")
         releases = _parse_rows(soup, shared_state, wd, password, mirror)
     except Exception as e:
-        info(f"Error loading {hostname.upper()} feed: {e}")
+        error(f"Error loading feed: {e}")
         mark_hostname_issue(
             hostname, "feed", str(e) if "e" in dir() else "Error occurred"
         )
         releases = []
-    debug(f"Time taken: {time.time() - start_time:.2f}s ({hostname})")
+    debug(f"Time taken: {time.time() - start_time:.2f}s")
 
     if releases:
         clear_hostname_issue(hostname)
@@ -255,14 +255,15 @@ def wd_search(
             search_string=search_string,
             season=season,
             episode=episode,
+            imdb_id=imdb_id,
         )
     except Exception as e:
-        info(f"Error loading {hostname.upper()} search: {e}")
+        error(f"Error loading search: {e}")
         mark_hostname_issue(
             hostname, "search", str(e) if "e" in dir() else "Error occurred"
         )
         releases = []
-    debug(f"Time taken: {time.time() - start_time:.2f}s ({hostname})")
+    debug(f"Time taken: {time.time() - start_time:.2f}s")
 
     if releases:
         clear_hostname_issue(hostname)

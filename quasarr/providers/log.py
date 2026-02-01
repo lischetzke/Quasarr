@@ -2,18 +2,191 @@
 # Quasarr
 # Project by https://github.com/rix1337
 
-import datetime
+import inspect
 import os
+import sys
+from typing import Any
+
+from dotenv import load_dotenv
+from loguru import logger
+from wcwidth import wcswidth
+
+load_dotenv()
+
+logger.remove(0)
+logger.add(
+    sys.stdout,
+    format="<d>{time:YYYY-MM-DDTHH:mm:ss}</d> <lvl>{level:<5}</lvl> {extra[context]}<b><M>{extra[source]}</M></b>{extra[padding]} {message}",
+    colorize=True,
+    level=5,
+)
+logger.level(name="WARN", no=30, color="<yellow>")
+logger.level(name="CRIT", no=50, color="<red>")
+
+log_level_names = {
+    50: "CRIT",
+    40: "ERROR",
+    30: "WARN",
+    20: "INFO",
+    10: "DEBUG",
+    5: "TRACE",
+}
+
+# reverse map log_level_names
+log_names_to_level = {v: k for k, v in log_level_names.items()}
 
 
-def timestamp():
-    return datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+def _read_env_log(key, default):
+    level = os.getenv(key, default)
+
+    try:
+        try:
+            level = log_names_to_level[level.upper()]
+        except Exception:
+            level = max(0, min(int(level), 50))
+    except Exception:
+        level = default
+
+    return level
 
 
-def info(string):
-    print(f"{timestamp()} {string}")
+_log_level = _read_env_log("LOG", 20)
 
 
-def debug(string):
-    if os.getenv("DEBUG"):
-        info(string)
+_context_replace = {
+    "quasarr": "",  # /quasarr/*
+    "arr": "🏴‍☠️",  # /quasarr/arr/*
+    "api": "🌐",  # /quasarr/api/*
+    "captcha": "🧩",  # /quasarr/api/captcha/*
+    "config": "⚙️",  # /quasarr/api/config/*
+    "sponsors_helper": "💖",  # /quasarr/api/sponsors_helper/*
+    "downloads": "📥",  # /quasarr/downloads/*
+    "linkcrypters": "🔐",  # /quasarr/linkcrypters/*
+    "filecrypt": "🛡️",  # /quasarr/linkcrypters/filecrypt.py
+    "hide": "👻",  # /quasarr/linkcrypters/hide.py
+    "packages": "📦",  # /quasarr/api/packages/*
+    "providers": "🔌",  # /quasarr/providers/*
+    "imdb_metadata": "🎬",  # /quasarr/providers/imdb_metadata.py
+    "jd_cache": "📇",  # /quasarr/providers/jd_cache.py
+    "log": "📝",  # /quasarr/providers/log.py
+    "myjd_api": "🔑",  # /quasarr/providers/myjd_api.py
+    "notifications": "🔔",  # /quasarr/providers/notifications.py
+    "shared_state": "🧠",  # /quasarr/providers/shared_state.py
+    "sessions": "🍪",  # /quasarr/providers/sessions/*
+    "search": "🔍",  # /quasarr/search/*
+    "storage": "💽",  # /quasarr/storage/*
+    "setup": "🛠️",  # /quasarr/storage/setup.py
+    "sqlite_database": "🗃️",  # /quasarr/storage/sqlite_database.py
+    "sources": "🧲",  # /quasarr/*/sources/*
+}
+
+
+def _contexts_to_str(contexts: list[str]) -> str:
+    source = ""
+    if len(contexts) == 0:
+        return "", source
+
+    if contexts:
+        if contexts[-1].__len__() == 2:
+            source = contexts.pop()
+        elif contexts[0] == "quasarr" and contexts.__len__() == 1:
+            return "🌌", source
+
+    return "".join(_context_replace.get(c, c) for c in contexts), source.upper()
+
+
+def get_log_level_name(level: int = _log_level) -> str:
+    return log_level_names[level]
+
+
+def get_log_level(contexts: list[str] = []) -> int:
+    level = _log_level
+
+    for context in contexts:
+        context_level = _read_env_log(
+            "LOG" + f"_{context.upper()}" if context else "", _log_level
+        )
+        if context_level < level:
+            level = context_level
+
+    return level
+
+
+class _Logger:
+    def __init__(self, contexts: list[str] = []):
+        self.level = get_log_level(contexts)
+        context, source = _contexts_to_str(contexts)
+        width = wcswidth(context + source)
+        padding = 6 - width
+
+        self.logger = logger.opt(colors=True).bind(
+            context=context,
+            source=source,
+            padding=" " * padding,
+        )
+
+    def crit(self, msg: str, *args: Any, **kwargs: Any) -> None:
+        if self.level <= 50:
+            self.logger.log(log_level_names[50], msg, *args, **kwargs)
+
+    def error(self, msg: str, *args: Any, **kwargs: Any) -> None:
+        if self.level <= 40:
+            self.logger.log(log_level_names[40], msg, *args, **kwargs)
+
+    def warn(self, msg: str, *args: Any, **kwargs: Any) -> None:
+        if self.level <= 30:
+            self.logger.log(log_level_names[30], msg, *args, **kwargs)
+
+    def info(self, msg: str, *args: Any, **kwargs: Any) -> None:
+        if self.level <= 20:
+            self.logger.log(log_level_names[20], msg, *args, **kwargs)
+
+    def debug(self, msg: str, *args: Any, **kwargs: Any) -> None:
+        if self.level <= 10:
+            self.logger.log(log_level_names[10], msg, *args, **kwargs)
+
+    def trace(self, msg: str, *args: Any, **kwargs: Any) -> None:
+        if self.level <= 5:
+            self.logger.log(log_level_names[5], msg, *args, **kwargs)
+
+
+_loggers = {}
+
+
+def get_logger(context: str) -> _Logger:
+    if context not in _loggers:
+        _loggers[context] = _Logger(context.split(".") if context else [])
+    return _loggers[context]
+
+
+def _get_logger_for_module() -> _Logger:
+    # get the calling module filename
+    frame = inspect.currentframe()
+    caller_frame = frame.f_back.f_back
+    module_name = caller_frame.f_globals["__name__"]
+
+    return get_logger(module_name)
+
+
+def crit(msg: str) -> None:
+    _get_logger_for_module().crit(msg)
+
+
+def error(msg: str) -> None:
+    _get_logger_for_module().error(msg)
+
+
+def warn(msg: str) -> None:
+    _get_logger_for_module().warn(msg)
+
+
+def info(msg: str) -> None:
+    _get_logger_for_module().info(msg)
+
+
+def debug(msg: str) -> None:
+    _get_logger_for_module().debug(msg)
+
+
+def trace(msg: str) -> None:
+    _get_logger_for_module().trace(msg)

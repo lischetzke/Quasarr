@@ -10,7 +10,7 @@ import requests
 from bs4 import BeautifulSoup
 
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
-from quasarr.providers.log import debug, info
+from quasarr.providers.log import debug, info, trace, warn
 
 hostname = "fx"
 supported_mirrors = ["rapidgator"]
@@ -33,7 +33,7 @@ def fx_feed(shared_state, start_time, request_from, mirror=None):
 
     if not "arr" in request_from.lower():
         debug(
-            f'Skipping {request_from} search on "{hostname.upper()}" (unsupported media type)!'
+            f'<d>Skipping {request_from} search on "{hostname.upper()}" (unsupported media type)!</d>'
         )
         return releases
 
@@ -56,7 +56,7 @@ def fx_feed(shared_state, start_time, request_from, mirror=None):
         feed = BeautifulSoup(r.content, "html.parser")
         items = feed.find_all("article")
     except Exception as e:
-        info(f"Error loading {hostname.upper()} feed: {e}")
+        warn(f"Error loading {hostname.upper()} feed: {e}")
         mark_hostname_issue(
             hostname, "feed", str(e) if "e" in dir() else "Error occurred"
         )
@@ -135,7 +135,7 @@ def fx_feed(shared_state, start_time, request_from, mirror=None):
                 )
 
     elapsed_time = time.time() - start_time
-    debug(f"Time taken: {elapsed_time:.2f}s ({hostname})")
+    debug(f"Time taken: {elapsed_time:.2f}s")
 
     if releases:
         clear_hostname_issue(hostname)
@@ -157,7 +157,7 @@ def fx_search(
 
     if not "arr" in request_from.lower():
         debug(
-            f'Skipping {request_from} search on "{hostname.upper()}" (unsupported media type)!'
+            f'<d>Skipping {request_from} search on "{hostname.upper()}" (unsupported media type)!</d>'
         )
         return releases
 
@@ -167,6 +167,11 @@ def fx_search(
             " Skipping search!"
         )
         return releases
+
+    if search_string != "":
+        imdb_id = shared_state.is_imdb_id(search_string)
+    else:
+        imdb_id = None
 
     url = f"https://{fx}/?s={search_string}"
     headers = {
@@ -180,7 +185,7 @@ def fx_search(
         results = search.find("h2", class_="entry-title")
 
     except Exception as e:
-        info(f"Error loading {hostname.upper()} feed: {e}")
+        warn(f"Error loading {hostname.upper()} feed: {e}")
         mark_hostname_issue(
             hostname, "search", str(e) if "e" in dir() else "Error occurred"
         )
@@ -195,7 +200,7 @@ def fx_search(
                 feed = BeautifulSoup(result_r.content, "html.parser")
                 items = feed.find_all("article")
             except Exception as e:
-                info(f"Error loading {hostname.upper()} feed: {e}")
+                warn(f"Error loading {hostname.upper()} feed: {e}")
                 mark_hostname_issue(
                     hostname, "search", str(e) if "e" in dir() else "Error occurred"
                 )
@@ -220,9 +225,18 @@ def fx_search(
 
                         try:
                             imdb_link = article.find("a", href=re.compile(r"imdb\.com"))
-                            imdb_id = re.search(r"tt\d+", str(imdb_link)).group()
+                            release_imdb_id = re.search(
+                                r"tt\d+", str(imdb_link)
+                            ).group()
                         except:
-                            imdb_id = None
+                            release_imdb_id = None
+
+                        if imdb_id and release_imdb_id and release_imdb_id != imdb_id:
+                            trace(f"Skipping result '{title}' due to IMDb ID mismatch.")
+                            continue
+
+                        if release_imdb_id is None:
+                            release_imdb_id = imdb_id
 
                         try:
                             size_info = (
@@ -269,13 +283,13 @@ def fx_search(
                         )
 
                 except Exception as e:
-                    info(f"Error parsing {hostname.upper()} search: {e}")
+                    info(f"Error parsing search: {e}")
                     mark_hostname_issue(
                         hostname, "search", str(e) if "e" in dir() else "Error occurred"
                     )
 
     elapsed_time = time.time() - start_time
-    debug(f"Time taken: {elapsed_time:.2f}s ({hostname})")
+    debug(f"Time taken: {elapsed_time:.2f}s")
 
     if releases:
         clear_hostname_issue(hostname)

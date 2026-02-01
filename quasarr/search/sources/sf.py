@@ -12,7 +12,7 @@ import requests
 
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.imdb_metadata import get_localized_title
-from quasarr.providers.log import debug, info
+from quasarr.providers.log import debug, info, trace, warn
 
 hostname = "sf"
 supported_mirrors = ["1fichier", "ddownload", "katfile", "rapidgator", "turbobit"]
@@ -102,7 +102,7 @@ def sf_feed(shared_state, start_time, request_from, mirror=None):
 
     if not "sonarr" in request_from.lower():
         debug(
-            f'Skipping {request_from} search on "{hostname.upper()}" (unsupported media type)!'
+            f'<d>Skipping {request_from} search on "{hostname.upper()}" (unsupported media type)!</d>'
         )
         return releases
 
@@ -131,7 +131,7 @@ def sf_feed(shared_state, start_time, request_from, mirror=None):
             )
             r.raise_for_status()
         except Exception as e:
-            info(f"Error loading {hostname.upper()} feed: {e} for {formatted_date}")
+            warn(f"Error loading {hostname.upper()} feed: {e} for {formatted_date}")
             mark_hostname_issue(
                 hostname, "feed", str(e) if "e" in dir() else "Error occurred"
             )
@@ -194,7 +194,7 @@ def sf_feed(shared_state, start_time, request_from, mirror=None):
                 )
 
     elapsed_time = time.time() - start_time
-    debug(f"Time taken: {elapsed_time:.2f}s ({hostname})")
+    debug(f"Time taken: {elapsed_time:.2f}s")
 
     if releases:
         clear_hostname_issue(hostname)
@@ -234,7 +234,7 @@ def sf_search(
 
     if not "sonarr" in request_from.lower():
         debug(
-            f'Skipping {request_from} search on "{hostname.upper()}" (unsupported media type)!'
+            f'<d>Skipping {request_from} search on "{hostname.upper()}" (unsupported media type)!</d>'
         )
         return releases
 
@@ -255,7 +255,7 @@ def sf_search(
         r.raise_for_status()
         feed = r.json()
     except Exception as e:
-        info(f"Error loading {hostname.upper()} search: {e}")
+        warn(f"Error loading {hostname.upper()} search: {e}")
         mark_hostname_issue(
             hostname, "search", str(e) if "e" in dir() else "Error occurred"
         )
@@ -266,11 +266,11 @@ def sf_search(
         sanitized_search_string = shared_state.sanitize_string(search_string)
         sanitized_title = shared_state.sanitize_string(result.get("title", ""))
         if not re.search(rf"\b{re.escape(sanitized_search_string)}\b", sanitized_title):
-            debug(
+            trace(
                 f"Search string '{search_string}' doesn't match '{result.get('title')}'"
             )
             continue
-        debug(
+        trace(
             f"Matched search string '{search_string}' with result '{result.get('title')}'"
         )
 
@@ -333,6 +333,15 @@ def sf_search(
                     hostname, "search", str(e) if "e" in dir() else "Error occurred"
                 )
                 continue
+
+            if imdb_id_in_search and imdb_id and imdb_id != imdb_id_in_search:
+                trace(
+                    f"{hostname.upper()}: Skipping result '{result.get('title')}' due to IMDb ID mismatch."
+                )
+                continue
+
+            if imdb_id is None:
+                imdb_id = imdb_id_in_search
 
             # cache content and imdb_id
             entry["content"] = data_html
@@ -451,7 +460,7 @@ def sf_search(
                 debug(f"Error parsing item for '{search_string}': {e}")
 
     elapsed_time = time.time() - start_time
-    debug(f"Time taken: {elapsed_time:.2f}s ({hostname})")
+    debug(f"Time taken: {elapsed_time:.2f}s")
 
     if releases:
         clear_hostname_issue(hostname)

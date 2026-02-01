@@ -100,12 +100,12 @@ def get_by_download_links(shared_state, url, mirror, title, password):
                 )
                 rq.raise_for_status()
                 if "/404.html" in rq.url:
-                    info(f"Link leads to 404 page for {hostname}: {r.url}")
+                    info(f"Link leads to 404 page: {r.url}")
                     return None
                 time.sleep(1)
                 return rq.url
             except Exception as e:
-                info(f"Error resolving link for {hostname}: {e}")
+                info(f"Error resolving link: {e}")
                 mark_hostname_issue(
                     hostname, "download", str(e) if "e" in dir() else "Download error"
                 )

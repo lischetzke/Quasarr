@@ -38,8 +38,7 @@ def create_and_persist_session(shared_state):
     # AL requires FlareSolverr - check availability first
     if not is_flaresolverr_available(shared_state):
         info(
-            f'"{hostname.upper()}" requires FlareSolverr which is not configured. '
-            f"Please configure FlareSolverr in the web UI to use this site."
+            "FlareSolverr is not configured, configure FlareSolverr in the web UI to use this site."
         )
         mark_hostname_issue(
             hostname, "session", "FlareSolverr required but not configured"
@@ -58,7 +57,7 @@ def create_and_persist_session(shared_state):
 
     # Prime cookies via FlareSolverr
     try:
-        info(f'Priming "{hostname}" session via FlareSolverr...')
+        debug("Priming session via FlareSolverr...")
         fs_headers = {"Content-Type": "application/json"}
         fs_payload = {
             "cmd": "request.get",
@@ -72,19 +71,19 @@ def create_and_persist_session(shared_state):
             )
             fs_resp.raise_for_status()
         except Timeout:
-            info(f"{hostname}: FlareSolverr request timed out")
+            info("FlareSolverr request timed out")
             mark_hostname_issue(hostname, "session", "FlareSolverr request timed out")
             return None
         except RequestException as e:
             # This covers HTTP errors and connection issues *other than* timeout
-            info(f"{hostname}: FlareSolverr server error: {e}")
+            info(f"FlareSolverr server error: {e}")
             mark_hostname_issue(hostname, "session", str(e))
             return None
 
         fs_json = fs_resp.json()
         # Check if FlareSolverr actually solved the challenge
         if fs_json.get("status") != "ok" or "solution" not in fs_json:
-            info(f"{hostname}: FlareSolverr did not return a valid solution")
+            info("FlareSolverr did not return a valid solution")
             mark_hostname_issue(
                 hostname, "session", "FlareSolverr did not return a valid solution"
             )
@@ -106,7 +105,7 @@ def create_and_persist_session(shared_state):
             sess.cookies.set(name, value, domain=domain, path=path)
 
     except Exception as e:
-        debug(f'Could not prime "{hostname}" session via FlareSolverr: {e}')
+        debug(f"Could not prime session via FlareSolverr: {e}")
         mark_hostname_issue(hostname, "session", str(e))
         return None
 
@@ -124,12 +123,12 @@ def create_and_persist_session(shared_state):
         )
 
         if r.status_code != 200 or "invalid" in r.text.lower():
-            info(f'Login failed: "{hostname}" - {r.status_code} - {r.text}')
+            info(f"Login failed: {r.status_code} - {r.text}")
             mark_hostname_issue(hostname, "session", "Login failed")
             return None
-        info(f'Login successful: "{hostname}"')
+        info("Login successful")
     else:
-        info(f'Missing credentials for: "{hostname}" - skipping login')
+        info("Missing credentials - skipping login")
         mark_hostname_issue(hostname, "session", "Missing credentials")
         return None
 
@@ -144,7 +143,7 @@ def retrieve_and_validate_session(shared_state):
 
     # AL requires FlareSolverr - check availability
     if not is_flaresolverr_available(shared_state):
-        info(f'"{hostname.upper()}" requires FlareSolverr which is not configured')
+        info("Requires FlareSolverr which is not configured")
         mark_hostname_issue(hostname, "session", "FlareSolverr required")
         return None
 
@@ -162,16 +161,15 @@ def retrieve_and_validate_session(shared_state):
         # Check if session is older than 24 hours
         age = time.time() - created_at
         if age > SESSION_MAX_AGE_SECONDS:
-            debug(f"{hostname}: session expired (age: {age / 3600:.1f} hours)")
+            debug(f"Session expired (age: {age / 3600:.1f} hours)")
             invalidate_session(shared_state)
             return create_and_persist_session(shared_state)
         else:
-            debug(f"{hostname}: session valid (age: {age / 3600:.1f} hours)")
-
+            debug(f"Session valid (age: {age / 3600:.1f} hours)")
     except (json.JSONDecodeError, TypeError):
         # Legacy format: plain base64 token without timestamp
         # Treat as expired and recreate
-        debug(f"{hostname}: legacy session format detected, recreating")
+        debug("Legacy session format detected, recreating")
         invalidate_session(shared_state)
         return create_and_persist_session(shared_state)
 
@@ -181,7 +179,7 @@ def retrieve_and_validate_session(shared_state):
         if not isinstance(sess, requests.Session):
             raise ValueError("Not a Session")
     except Exception as e:
-        debug(f"{hostname}: session load failed: {e}")
+        debug(f"Session load failed: {e}")
         return create_and_persist_session(shared_state)
 
     return sess
@@ -190,7 +188,7 @@ def retrieve_and_validate_session(shared_state):
 def invalidate_session(shared_state):
     db = shared_state.values["database"]("sessions")
     db.delete(hostname)
-    debug(f'Session for "{hostname}" marked as invalid!')
+    debug("Session marked as invalid!")
 
 
 def _persist_session_to_db(shared_state, sess):
@@ -259,8 +257,8 @@ def fetch_via_flaresolverr(
     # Check if FlareSolverr is available
     if not is_flaresolverr_available(shared_state):
         info(
-            f'"{hostname.upper()}" requires FlareSolverr which is not configured. '
-            f"Please configure FlareSolverr in the web UI."
+            "Requires FlareSolverr which is not configured. "
+            "Please configure FlareSolverr in the web UI."
         )
         return {
             "status_code": None,
@@ -275,7 +273,7 @@ def fetch_via_flaresolverr(
 
     sess = retrieve_and_validate_session(shared_state)
     if not sess:
-        debug(f"Skipping {hostname}: site not usable (login skipped or no credentials)")
+        debug("Site not usable (login skipped or no credentials).")
         return {
             "status_code": None,
             "headers": {},
@@ -381,7 +379,7 @@ def fetch_via_requests_session(
     sess = retrieve_and_validate_session(shared_state)
     if not sess:
         raise SkippedSiteError(
-            f"{hostname}: site not usable (login skipped or no credentials)"
+            f"Site '{hostname}' not usable (login skipped or no credentials)"
         )
 
     if year:

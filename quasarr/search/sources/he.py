@@ -13,7 +13,7 @@ from bs4 import BeautifulSoup
 
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.imdb_metadata import get_localized_title, get_year
-from quasarr.providers.log import debug, info
+from quasarr.providers.log import debug, info, trace
 
 hostname = "he"
 supported_mirrors = ["rapidgator", "nitroflare"]
@@ -74,7 +74,7 @@ def he_search(
 
     if not "arr" in request_from.lower():
         debug(
-            f'Skipping {request_from} search on "{hostname.upper()}" (unsupported media type)!'
+            f'<d>Skipping {request_from} search on "{hostname.upper()}" (unsupported media type)!</d>'
         )
         return releases
 
@@ -84,7 +84,7 @@ def he_search(
         tag = "tv-shows"
 
     if mirror and mirror not in supported_mirrors:
-        debug(f'Mirror "{mirror}" not supported by {hostname}.')
+        debug(f'Mirror "{mirror}" not supported.')
         return releases
 
     source_search = ""
@@ -93,7 +93,7 @@ def he_search(
         if imdb_id:
             local_title = get_localized_title(shared_state, imdb_id, "en")
             if not local_title:
-                info(f"{hostname}: no title for IMDb {imdb_id}")
+                info(f"No title for IMDb {imdb_id}")
                 return releases
             if not season:
                 year = get_year(imdb_id)
@@ -130,7 +130,7 @@ def he_search(
         soup = BeautifulSoup(r.content, "html.parser")
         results = soup.find_all("div", class_="item")
     except Exception as e:
-        info(f"{hostname}: {search_type} load error: {e}")
+        info(f"{search_type} load error: {e}")
         mark_hostname_issue(
             hostname, search_type, str(e) if "e" in dir() else "Error occurred"
         )
@@ -196,22 +196,25 @@ def he_search(
                 mark_hostname_issue(
                     hostname, search_type, str(e) if "e" in dir() else "Error occurred"
                 )
+            release_imdb_id = None
             try:
                 imdb_link = soup.find(
                     "a", href=re.compile(r"imdb\.com/title/tt\d+", re.IGNORECASE)
                 )
                 if imdb_link:
                     release_imdb_id = re.search(r"tt\d+", imdb_link["href"]).group()
-                    if imdb_id and release_imdb_id != imdb_id:
-                        debug(
-                            f"{hostname}: IMDb ID mismatch: expected {imdb_id}, found {release_imdb_id}"
+                    if imdb_id and release_imdb_id and release_imdb_id != imdb_id:
+                        trace(
+                            f"IMDb ID mismatch: expected {imdb_id}, found {release_imdb_id}"
                         )
                         continue
                 else:
-                    debug(f"{hostname}: imdb link not found for title {title}")
+                    trace(f"imdb link not found for title {title}")
             except Exception:
-                debug(f"{hostname}: failed to determine imdb_id for title {title}")
-                continue
+                debug(f"failed to determine imdb_id for title {title}")
+
+            if release_imdb_id is None:
+                release_imdb_id = imdb_id
 
             password = None
             payload = urlsafe_b64encode(
@@ -239,12 +242,11 @@ def he_search(
                 }
             )
         except Exception as e:
-            debug(f"{hostname}: error parsing search result: {e}")
+            debug(f"error parsing search result: {e}")
             continue
 
     elapsed = time.time() - start_time
-    debug(f"Time taken: {elapsed:.2f}s ({hostname})")
-
+    debug(f"Time taken: {elapsed:.2f}s")
     if releases:
         clear_hostname_issue(hostname)
     return releases
