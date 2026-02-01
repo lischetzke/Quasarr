@@ -2,8 +2,13 @@
 # Quasarr
 # Project by https://github.com/rix1337
 
+import datetime
+import sys
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
+from loguru import logger
 
 from quasarr.providers.imdb_metadata import get_imdb_metadata
 from quasarr.providers.log import debug, info
@@ -26,6 +31,111 @@ from quasarr.search.sources.sl import sl_feed, sl_search
 from quasarr.search.sources.wd import wd_feed, wd_search
 from quasarr.search.sources.wx import wx_feed, wx_search
 
+# Global lock to ensure only ONE progress bar is active at a time.
+SEARCH_UI_LOCK = threading.Lock()
+
+# Exact format from your log.py to maintain visual consistency
+LOG_FORMAT = "<d>{time:YYYY-MM-DDTHH:mm:ss}</d> <lvl>{level:<5}</lvl> {extra[context]}<b><M>{extra[source]}</M></b>{extra[padding]} {message}"
+
+
+class SearchProgressBar:
+    def __init__(self, total, description, silent=False):
+        self.total = total
+        self.description = description
+        self.silent = silent
+        self.slots = ["▪️"] * total
+        self.finished_count = 0
+        self.stream = sys.__stdout__
+        self.lock = threading.Lock()
+
+        # Only draw immediately if NOT silent (active bar)
+        if not self.silent:
+            self._draw()
+
+    def _get_timestamp(self):
+        return datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+
+    def _draw(self):
+        """Draws the dynamic bar to stdout (Active Mode only)."""
+        if self.silent:
+            return
+
+        bar_str = "".join(self.slots)
+        if self.total > 0:
+            percent = int((self.finished_count / self.total) * 100)
+        else:
+            percent = 100
+
+        ts = self._get_timestamp()
+
+        # FIXED: Changed \x1b[32m (Green) to \x1b[1m (Bold) to match default Loguru INFO style
+        # \x1b[2m = Dim (Timestamp)
+        # \x1b[1m = Bold (INFO level)
+        # \x1b[0m = Reset
+        prefix = f"\x1b[2m{ts}\x1b[0m \x1b[1mINFO \x1b[0m 🔍    "
+        message = f"{self.description} [{bar_str}] {percent}%"
+
+        self.stream.write(f"\r\x1b[K{prefix} {message}")
+        self.stream.flush()
+
+    def get_status_message(self):
+        """Returns the formatted string for logging (Silent/Fallback Mode)."""
+        bar_str = "".join(self.slots)
+        if self.total > 0:
+            percent = int((self.finished_count / self.total) * 100)
+        else:
+            percent = 100
+        # We omit the 🔍 icon here because info() adds it automatically
+        return f"{self.description} [{bar_str}] {percent}%"
+
+    def update(self, index, status):
+        """Update slot status and redraw."""
+        with self.lock:
+            icon_map = {"found": "✅", "empty": "⚪", "error": "❌"}
+            self.slots[index] = icon_map.get(status, "?")
+            self.finished_count += 1
+            if not self.silent:
+                self._draw()
+
+    def update_silent(self, index, status):
+        """Update slot status WITHOUT redrawing (for background threads)."""
+        with self.lock:
+            icon_map = {"found": "✅", "empty": "⚪", "error": "❌"}
+            self.slots[index] = icon_map.get(status, "?")
+            self.finished_count += 1
+
+    def finish(self):
+        if self.silent:
+            return
+        with self.lock:
+            self.stream.write("\n")
+            self.stream.flush()
+
+    def log_sink(self, message):
+        """Sink for intercepting other logs while active."""
+        if self.silent:
+            return
+        with self.lock:
+            self.stream.write("\r\x1b[K")
+            self.stream.write(message.rstrip() + "\n")
+            self._draw()
+
+
+class CaptureLogs:
+    def __init__(self, progress_bar):
+        self.progress_bar = progress_bar
+
+    def __enter__(self):
+        logger.remove()
+        logger.add(
+            self.progress_bar.log_sink, format=LOG_FORMAT, colorize=True, level=5
+        )
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        logger.remove()
+        logger.add(sys.stdout, format=LOG_FORMAT, colorize=True, level=5)
+
 
 def get_search_results(
     shared_state,
@@ -39,36 +149,36 @@ def get_search_results(
     if imdb_id and not imdb_id.startswith("tt"):
         imdb_id = f"tt{imdb_id}"
 
-    # Pre-populate IMDb metadata cache to avoid API hammering by search threads
     if imdb_id:
         get_imdb_metadata(imdb_id)
 
     docs_search = "lazylibrarian" in request_from.lower()
 
-    al = shared_state.values["config"]("Hostnames").get("al")
-    by = shared_state.values["config"]("Hostnames").get("by")
-    dd = shared_state.values["config"]("Hostnames").get("dd")
-    dl = shared_state.values["config"]("Hostnames").get("dl")
-    dt = shared_state.values["config"]("Hostnames").get("dt")
-    dj = shared_state.values["config"]("Hostnames").get("dj")
-    dw = shared_state.values["config"]("Hostnames").get("dw")
-    fx = shared_state.values["config"]("Hostnames").get("fx")
-    he = shared_state.values["config"]("Hostnames").get("he")
-    hs = shared_state.values["config"]("Hostnames").get("hs")
-    mb = shared_state.values["config"]("Hostnames").get("mb")
-    nk = shared_state.values["config"]("Hostnames").get("nk")
-    nx = shared_state.values["config"]("Hostnames").get("nx")
-    sf = shared_state.values["config"]("Hostnames").get("sf")
-    sj = shared_state.values["config"]("Hostnames").get("sj")
-    sl = shared_state.values["config"]("Hostnames").get("sl")
-    wd = shared_state.values["config"]("Hostnames").get("wd")
-    wx = shared_state.values["config"]("Hostnames").get("wx")
+    # Config retrieval
+    config = shared_state.values["config"]("Hostnames")
+    al = config.get("al")
+    by = config.get("by")
+    dd = config.get("dd")
+    dl = config.get("dl")
+    dt = config.get("dt")
+    dj = config.get("dj")
+    dw = config.get("dw")
+    fx = config.get("fx")
+    he = config.get("he")
+    hs = config.get("hs")
+    mb = config.get("mb")
+    nk = config.get("nk")
+    nx = config.get("nx")
+    sf = config.get("sf")
+    sj = config.get("sj")
+    sl = config.get("sl")
+    wd = config.get("wd")
+    wx = config.get("wx")
 
     start_time = time.time()
-
     search_executor = SearchExecutor()
 
-    # Radarr/Sonarr use imdb_id for searches
+    # Mappings
     imdb_map = [
         (al, al_search),
         (by, by_search),
@@ -90,7 +200,6 @@ def get_search_results(
         (wx, wx_search),
     ]
 
-    # LazyLibrarian uses search_phrase for searches
     phrase_map = [
         (by, by_search),
         (dl, dl_search),
@@ -100,7 +209,6 @@ def get_search_results(
         (wd, wd_search),
     ]
 
-    # Feed searches omit imdb_id and search_phrase
     feed_map = [
         (al, al_feed),
         (by, by_feed),
@@ -122,7 +230,8 @@ def get_search_results(
         (wx, wx_feed),
     ]
 
-    if imdb_id:  # only Radarr/Sonarr are using imdb_id
+    # Add searches
+    if imdb_id:
         args, kwargs = (
             (shared_state, start_time, request_from, imdb_id),
             {"mirror": mirror, "season": season, "episode": episode},
@@ -131,9 +240,7 @@ def get_search_results(
             if flag:
                 search_executor.add(func, args, kwargs, True)
 
-    elif (
-        search_phrase and docs_search
-    ):  # only LazyLibrarian is allowed to use search_phrase
+    elif search_phrase and docs_search:
         args, kwargs = (
             (shared_state, start_time, request_from, search_phrase),
             {"mirror": mirror, "season": season, "episode": episode},
@@ -143,9 +250,7 @@ def get_search_results(
                 search_executor.add(func, args, kwargs)
 
     elif search_phrase:
-        debug(
-            f"Search phrase '{search_phrase}' is not supported for {request_from}. Only LazyLibrarian can use search phrases."
-        )
+        debug(f"Search phrase '{search_phrase}' is not supported for {request_from}.")
 
     else:
         args, kwargs = ((shared_state, start_time, request_from), {"mirror": mirror})
@@ -153,17 +258,19 @@ def get_search_results(
             if flag:
                 search_executor.add(func, args, kwargs)
 
+    # Clean description for Console UI
     if imdb_id:
+        desc_text = f"Searching for IMDb-ID {imdb_id}"
         stype = f"IMDb-ID <b>{imdb_id}</b>"
     elif search_phrase:
+        desc_text = f"Searching for '{search_phrase}'"
         stype = f"Search-Phrase <b>{search_phrase}</b>"
     else:
+        desc_text = "Running Feed Search"
         stype = "<b>feed</b> search"
 
-    debug(
-        f"Starting <g>{len(search_executor.searches)}</g> searches for {stype}... <blue>This may take some time.</blue>"
-    )
-    results = search_executor.run_all()
+    results = search_executor.run_all(desc_text)
+
     elapsed_time = time.time() - start_time
     info(
         f"Providing <g>{len(results)} releases</g> to <d>{request_from}</d> for {stype}. <blue>Time taken: {elapsed_time:.2f} seconds</blue>"
@@ -177,45 +284,109 @@ class SearchExecutor:
         self.searches = []
 
     def add(self, func, args, kwargs, use_cache=False):
-        # create cache key
         key_args = list(args)
-        key_args[1] = None  # ignore start_time in cache key
+        key_args[1] = None
         key_args = tuple(key_args)
         key = hash((func.__name__, key_args, frozenset(kwargs.items())))
-
         self.searches.append((key, lambda: func(*args, **kwargs), use_cache))
 
-    def run_all(self):
+    def run_all(self, description):
         results = []
-        futures = []
-        cache_keys = []
-        cache_used = False
+        future_to_meta = {}
 
         with ThreadPoolExecutor() as executor:
+            current_index = 0
+            pending_futures = []
+            cache_used = False
+
             for key, func, use_cache in self.searches:
+                cached_result = None
                 if use_cache:
                     cached_result = search_cache.get(key)
-                    if cached_result is not None:
-                        debug(f"Using cached result for {key}")
-                        cache_used = True
-                        results.extend(cached_result)
-                        continue
 
-                futures.append(executor.submit(func))
-                cache_keys.append(key if use_cache else None)
+                if cached_result is not None:
+                    debug(f"Using cached result for {key}")
+                    cache_used = True
+                    results.extend(cached_result)
+                else:
+                    future = executor.submit(func)
+                    cache_key = key if use_cache else None
+                    future_to_meta[future] = (current_index, cache_key)
+                    pending_futures.append(future)
+                    current_index += 1
 
-        for index, future in enumerate(as_completed(futures)):
+            total_active = len(pending_futures)
+
+            # Try to acquire lock non-blocking
+            lock_acquired = SEARCH_UI_LOCK.acquire(blocking=False)
+
             try:
-                result = future.result()
-                results.extend(result)
+                # Update description with count
+                full_desc = f"{description} ({total_active} hostnames)"
 
-                if cache_keys[index]:  # only cache if flag is set
-                    search_cache.set(cache_keys[index], result)
-            except Exception as e:
-                info(f"An error occurred: {e}")
+                if lock_acquired and total_active > 0:
+                    # === ACTIVE MODE ===
+                    # Shows dynamic bar with \r updates
+                    progress = SearchProgressBar(total_active, full_desc, silent=False)
 
-        if cache_used:
-            info("Presenting cached results instead of searching online.")
+                    try:
+                        with CaptureLogs(progress):
+                            for future in as_completed(pending_futures):
+                                index, cache_key = future_to_meta[future]
+                                try:
+                                    res = future.result()
+                                    status = (
+                                        "found" if res and len(res) > 0 else "empty"
+                                    )
+                                    progress.update(index, status)
+
+                                    results.extend(res)
+                                    if cache_key:
+                                        search_cache.set(cache_key, res)
+                                except Exception as e:
+                                    progress.update(index, "error")
+                                    info(f"Search error: {e}")
+                    finally:
+                        progress.finish()
+
+                else:
+                    # === FALLBACK MODE ===
+                    # Shows 0% log -> waits -> Shows 100% log
+                    if total_active > 0:
+                        fallback_bar = SearchProgressBar(
+                            total_active, full_desc, silent=True
+                        )
+
+                        # Log the "0%" state immediately
+                        info(fallback_bar.get_status_message())
+
+                        for future in as_completed(pending_futures):
+                            index, cache_key = future_to_meta[future]
+                            try:
+                                res = future.result()
+                                status = "found" if res and len(res) > 0 else "empty"
+
+                                # Silent update to track status for the final log
+                                fallback_bar.update_silent(index, status)
+
+                                results.extend(res)
+                                if cache_key:
+                                    search_cache.set(cache_key, res)
+                            except Exception as e:
+                                fallback_bar.update_silent(index, "error")
+                                info(f"Search error: {e}")
+
+                        # Log the "100%" state at the end
+                        info(fallback_bar.get_status_message())
+                    else:
+                        pass
+
+            finally:
+                if lock_acquired:
+                    SEARCH_UI_LOCK.release()
+
+            if cache_used:
+                info("Presenting cached results for some items.")
 
         return results
 
@@ -228,22 +399,14 @@ class SearchCache:
     def clean(self, now):
         if now - self.last_cleaned < 60:
             return
-
-        keys_to_delete = [
-            key for key, (_, expiry) in self.cache.items() if now >= expiry
-        ]
-
-        for key in keys_to_delete:
-            del self.cache[key]
-
+        keys_to_delete = [k for k, (_, exp) in self.cache.items() if now >= exp]
+        for k in keys_to_delete:
+            del self.cache[k]
         self.last_cleaned = now
 
     def get(self, key):
-        value, expiry = self.cache.get(key, (None, 0))
-        if time.time() < expiry:
-            return value
-
-        return None
+        val, exp = self.cache.get(key, (None, 0))
+        return val if time.time() < exp else None
 
     def set(self, key, value, ttl=300):
         now = time.time()
