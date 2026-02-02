@@ -17,8 +17,6 @@ if TYPE_CHECKING:
 
 load_dotenv()
 
-_log_handle = None
-
 
 def get_log_max_width() -> int:
     try:
@@ -44,22 +42,13 @@ def wrapping_sink(message: Message) -> None:
         sys.stdout.write(w + "\n")
 
 
-def add_sink(sink=wrapping_sink) -> None:
-    global _log_handle
-
-    if _log_handle is not None:
-        logger.remove(_log_handle)
-
-    _log_handle = logger.add(
-        sink,
-        format="<d>{time:YYYY-MM-DDTHH:mm:ss}</d> <lvl>{level:<5}</lvl> {extra[context]}<b><M>{extra[source]}</M></b>{extra[padding]} {message}",
-        colorize=True,
-        level=5,
-    )
-
-
 logger.remove(0)
-add_sink()
+logger.add(
+    wrapping_sink,
+    format="<d>{time:YYYY-MM-DDTHH:mm:ss}</d> <lvl>{level:<5}</lvl> {extra[context]}<b><M>{extra[source]}</M></b>{extra[padding]} {message}",
+    colorize=os.getenv("LOG_COLOR", "1").lower() in ["1", "true", "yes"],
+    level=5,
+)
 logger.level(name="WARN", no=30, color="<yellow>")
 logger.level(name="CRIT", no=50, color="<red>")
 
