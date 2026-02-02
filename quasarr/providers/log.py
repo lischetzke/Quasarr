@@ -1,35 +1,43 @@
 # -*- coding: utf-8 -*-
 # Quasarr
 # Project by https://github.com/rix1337
+from __future__ import annotations
 
 import inspect
 import os
 import sys
-import textwrap
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from dotenv import load_dotenv
 from loguru import logger
-from wcwidth import wcswidth
+from wcwidth import wcswidth, wrap
+
+if TYPE_CHECKING:
+    from loguru import Message
 
 load_dotenv()
 
 _log_handle = None
 
-try:
-    _log_line_max_length = int(os.getenv("LOG_MAX_WIDTH"))
-except Exception:
-    _log_line_max_length = 160
+
+def get_log_max_width() -> int:
+    try:
+        return int(os.getenv("LOG_MAX_WIDTH"))
+    except Exception:
+        return os.get_terminal_size().columns
+
 
 _subsequent_indent = " " * 33
 
 
-def wrapping_sink(msg: str):
-    text = msg.rstrip("\n")
-    wrapped = textwrap.fill(
-        text, width=_log_line_max_length, subsequent_indent=_subsequent_indent
+def wrapping_sink(message: Message) -> None:
+    wrapped = wrap(
+        text=message,
+        width=get_log_max_width(),
+        subsequent_indent=_subsequent_indent,
     )
-    sys.stdout.write(wrapped + "\n")
+    for w in wrapped:
+        sys.stdout.write(w + "\n")
 
 
 def add_sink(sink=wrapping_sink) -> None:
