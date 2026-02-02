@@ -5,6 +5,7 @@
 import inspect
 import os
 import sys
+import textwrap
 from typing import Any
 
 from dotenv import load_dotenv
@@ -13,31 +14,35 @@ from wcwidth import wcswidth
 
 load_dotenv()
 
-_log_handle_a = None
-_log_handle_b = None
+_log_handle = None
+
+try:
+    _log_line_max_length = int(os.getenv("LOG_MAX_WIDTH"))
+except Exception:
+    _log_line_max_length = 160
+
+_subsequent_indent = " " * 33
 
 
-def add_sink(sink=sys.stdout) -> None:
-    global _log_handle_a, _log_handle_b
+def wrapping_sink(msg: str):
+    text = msg.rstrip("\n")
+    wrapped = textwrap.fill(
+        text, width=_log_line_max_length, subsequent_indent=_subsequent_indent
+    )
+    sys.stdout.write(wrapped + "\n")
 
-    if _log_handle_a is not None:
-        logger.remove(_log_handle_a)
-    if _log_handle_b is not None:
-        logger.remove(_log_handle_b)
 
-    _log_handle_a = logger.add(
+def add_sink(sink=wrapping_sink) -> None:
+    global _log_handle
+
+    if _log_handle is not None:
+        logger.remove(_log_handle)
+
+    _log_handle = logger.add(
         sink,
         format="<d>{time:YYYY-MM-DDTHH:mm:ss}</d> <lvl>{level:<5}</lvl> {extra[context]}<b><M>{extra[source]}</M></b>{extra[padding]} {message}",
         colorize=True,
         level=5,
-        filter=lambda record: not record["extra"].get("overflow", False),
-    )
-    _log_handle_b = logger.add(
-        sys.stdout,
-        format="{extra[padding]:33}{message}",
-        colorize=True,
-        level=5,
-        filter=lambda record: record["extra"].get("overflow", False),
     )
 
 
@@ -60,11 +65,9 @@ log_names_to_level = {v: k for k, v in log_level_names.items()}
 
 
 def _read_env_log(key, default):
-    level = os.getenv(key, default)
-
     try:
         try:
-            level = log_names_to_level[level.upper()]
+            level = log_names_to_level[os.getenv(key, default).upper()]
         except Exception:
             level = max(0, min(int(level), 50))
     except Exception:
@@ -136,9 +139,6 @@ def get_log_level(contexts: list[str] = []) -> int:
     return level
 
 
-_log_line_max_length = 160
-
-
 class _Logger:
     def __init__(self, contexts: list[str] = []):
         self.level = get_log_level(contexts)
@@ -158,18 +158,7 @@ class _Logger:
             return
         try:
             try:
-                for i in range(0, msg.__len__(), _log_line_max_length):
-                    merged_kwargs = {
-                        **kwargs,
-                        "overflow": i > 0,
-                    }
-
-                    self.logger.log(
-                        log_level_names[level],
-                        msg[i : i + _log_line_max_length],
-                        *args,
-                        **merged_kwargs,
-                    )
+                self.logger.log(log_level_names[level], msg, *args, **kwargs)
             except ValueError as e:
                 # Fallback: try logging without color parsing if tags are mismatched
                 self.logger_alt.log(log_level_names[level], msg, *args, **kwargs)
@@ -219,25 +208,25 @@ def _get_logger_for_module() -> _Logger:
     return get_logger(module_name)
 
 
-def crit(msg: str) -> None:
-    _get_logger_for_module().crit(msg)
+def crit(msg: str, *args: Any, **kwargs: Any) -> None:
+    _get_logger_for_module().crit(msg, *args, **kwargs)
 
 
-def error(msg: str) -> None:
-    _get_logger_for_module().error(msg)
+def error(msg: str, *args: Any, **kwargs: Any) -> None:
+    _get_logger_for_module().error(msg, *args, **kwargs)
 
 
-def warn(msg: str) -> None:
-    _get_logger_for_module().warn(msg)
+def warn(msg: str, *args: Any, **kwargs: Any) -> None:
+    _get_logger_for_module().warn(msg, *args, **kwargs)
 
 
-def info(msg: str) -> None:
-    _get_logger_for_module().info(msg)
+def info(msg: str, *args: Any, **kwargs: Any) -> None:
+    _get_logger_for_module().info(msg, *args, **kwargs)
 
 
-def debug(msg: str) -> None:
-    _get_logger_for_module().debug(msg)
+def debug(msg: str, *args: Any, **kwargs: Any) -> None:
+    _get_logger_for_module().debug(msg, *args, **kwargs)
 
 
-def trace(msg: str) -> None:
-    _get_logger_for_module().trace(msg)
+def trace(msg: str, *args: Any, **kwargs: Any) -> None:
+    _get_logger_for_module().trace(msg, *args, **kwargs)
