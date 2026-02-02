@@ -722,7 +722,9 @@ def is_valid_release(
         if not is_docs_search and not is_imdb_id(search_string):
             if not search_string_in_sanitized_title(search_string, title):
                 debug(
-                    f"Skipping {title!r} as it doesn't match sanitized search string: {search_string!r}"
+                    "Skipping {title!r} as it doesn't match sanitized search string: {search_string!r}",
+                    title=title,
+                    search_string=search_string,
                 )
                 return False
 
@@ -730,7 +732,9 @@ def is_valid_release(
         if is_movie_search:
             if not MOVIE_REGEX.match(title):
                 debug(
-                    f"Skipping {title!r} as title doesn't match movie regex: {MOVIE_REGEX.pattern}"
+                    "Skipping {title!r} as title doesn't match movie regex: {pattern!r}",
+                    title=title,
+                    pattern=MOVIE_REGEX.pattern,
                 )
                 return False
             return True
@@ -740,14 +744,19 @@ def is_valid_release(
             # must have some S/E tag present
             if not SEASON_EP_REGEX.search(title):
                 debug(
-                    f"Skipping {title!r} as title doesn't match TV show regex: {SEASON_EP_REGEX.pattern}"
+                    "Skipping {title!r} as title doesn't match TV show regex: {pattern!r}",
+                    title=title,
+                    pattern=SEASON_EP_REGEX.pattern,
                 )
                 return False
             # if caller specified a season or episode, double‑check the match
             if season is not None or episode is not None:
                 if not match_in_title(title, season, episode):
                     debug(
-                        f"Skipping {title!r} as it doesn't match season {season} and episode {episode}"
+                        "Skipping {title!r} as it doesn't match season {season} and episode {episode}",
+                        title=title,
+                        season=season,
+                        episode=episode,
                     )
                     return False
             return True
@@ -757,7 +766,9 @@ def is_valid_release(
             # must NOT have any S/E tag present
             if SEASON_EP_REGEX.search(title):
                 debug(
-                    f"Skipping {title!r} as title matches TV show regex: {SEASON_EP_REGEX.pattern}"
+                    "Skipping {title!r} as title matches TV show regex: {pattern!r}",
+                    title=title,
+                    pattern=SEASON_EP_REGEX.pattern,
                 )
                 return False
             return True
