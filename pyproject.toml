@@ -49,7 +49,8 @@ build = [
 
 [tool.ruff]
 # This covers syntax and logic (F) + import sorting (I)
-lint.select = ["F", "I"]
+# PLE (Pylint Error) adds more robust checks for variable usage (like PLE0601 for used-before-assignment)
+lint.select = ["F", "I", "PLE"]
 lint.fixable = ["F", "I"]
 lint.ignore = ["E"]
 

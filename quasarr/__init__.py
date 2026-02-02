@@ -255,12 +255,21 @@ def run():
 
         # Hostnames log
         hostnames_log = []
+        set_hostnames_count = 0
         for key in supported_hostnames:
             if key in hostnames:
-                hostnames_log.append(f"<g>{key.upper()}</g>")
+                hostnames_log.append(f"<bg green><black>{key.upper()}</black></bg green>")
+                set_hostnames_count += 1
             else:
-                hostnames_log.append(f"<r>{key.upper()}</r>")
-        info(f"Hostnames: [{' '.join(hostnames_log)}]")
+                hostnames_log.append(f"<bg black><white>{key.upper()}</white></bg black>")
+
+        total_hostnames_count = len(supported_hostnames)
+        if set_hostnames_count == total_hostnames_count:
+            count_str = f"<g>{set_hostnames_count}</g>/<g>{total_hostnames_count}</g>"
+        else:
+            count_str = f"<y>{set_hostnames_count}</y>/<g>{total_hostnames_count}</g>"
+
+        info(f"Hostnames: [{' '.join(hostnames_log)}] {count_str} set")
 
         protected = shared_state.get_db("protected").retrieve_all_titles()
         if protected:

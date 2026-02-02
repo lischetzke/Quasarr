@@ -308,13 +308,13 @@ def setup_arr_routes(app):
 
                     try:
                         offset = int(getattr(request.query, "offset", 0))
-                    except (AttributeError, ValueError):
+                    except (AttributeError, ValueError) as e:
                         debug(f"Error parsing offset parameter: {e}")
                         offset = 0
 
                     try:
                         limit = int(getattr(request.query, "limit", 100))
-                    except (AttributeError, ValueError):
+                    except (AttributeError, ValueError) as e:
                         debug(f"Error parsing limit parameter: {e}")
                         limit = 100
 

@@ -24,7 +24,11 @@ def get_log_max_width() -> int:
     try:
         return int(os.getenv("LOG_MAX_WIDTH"))
     except Exception:
+        pass
+    try:
         return os.get_terminal_size().columns
+    except Exception:
+        return 160
 
 
 _subsequent_indent = " " * 33
