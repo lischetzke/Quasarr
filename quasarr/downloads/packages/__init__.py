@@ -365,7 +365,7 @@ def get_packages(shared_state, _cache=None):
                         "package_id": package_id,
                     }
                 )
-                debug(f"Added protected package '{data['title']}' ({package_id})")
+                trace(f"Protected package: '{data['title']}' ({package_id})")
             except (json.JSONDecodeError, KeyError) as e:
                 debug(f"Failed to parse protected package {package_id}: {e}")
 
@@ -401,9 +401,7 @@ def get_packages(shared_state, _cache=None):
                         "uuid": package_id,
                     }
                 )
-                debug(
-                    f"Added failed package '{details['name']}' ({package_id}): {error}"
-                )
+                trace(f"Failed package: '{details['name']}' ({package_id}): {error}")
             except (json.JSONDecodeError, KeyError, TypeError) as e:
                 debug(f"Failed to parse failed package {package_id}: {e}")
 
@@ -453,7 +451,7 @@ def get_packages(shared_state, _cache=None):
                     "error": error,
                 }
             )
-            debug(f"Added linkgrabber package '{package_name}' -> {location}")
+            trace(f"Linkgrabber package: '{package_name}' -> {location}")
 
     # === DOWNLOADER PACKAGES ===
     downloader_packages = cache.downloader_packages

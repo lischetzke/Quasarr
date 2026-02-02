@@ -2,14 +2,11 @@
 # Quasarr
 # Project by https://github.com/rix1337
 
-import datetime
-import sys
-import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from quasarr.providers.imdb_metadata import get_imdb_metadata
-from quasarr.providers.log import add_sink, debug, info
+from quasarr.providers.log import debug, info
 from quasarr.search.sources.al import al_feed, al_search
 from quasarr.search.sources.by import by_feed, by_search
 from quasarr.search.sources.dd import dd_feed, dd_search
@@ -28,105 +25,6 @@ from quasarr.search.sources.sj import sj_feed, sj_search
 from quasarr.search.sources.sl import sl_feed, sl_search
 from quasarr.search.sources.wd import wd_feed, wd_search
 from quasarr.search.sources.wx import wx_feed, wx_search
-
-# Global lock to ensure only ONE progress bar is active at a time.
-SEARCH_UI_LOCK = threading.Lock()
-
-
-class SearchProgressBar:
-    def __init__(self, total, description, silent=False):
-        self.total = total
-        self.description = description
-        self.silent = silent
-        self.slots = ["▪️"] * total
-        self.finished_count = 0
-        self.stream = sys.__stdout__
-        self.lock = threading.Lock()
-
-        # Only draw immediately if NOT silent (active bar)
-        if not self.silent:
-            self._draw()
-
-    def _get_timestamp(self):
-        return datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
-
-    def _draw(self):
-        """Draws the dynamic bar to stdout (Active Mode only)."""
-        if self.silent:
-            return
-
-        bar_str = "".join(self.slots)
-        if self.total > 0:
-            percent = int((self.finished_count / self.total) * 100)
-        else:
-            percent = 100
-
-        ts = self._get_timestamp()
-
-        # FIXED: Changed \x1b[32m (Green) to \x1b[1m (Bold) to match default Loguru INFO style
-        # \x1b[2m = Dim (Timestamp)
-        # \x1b[1m = Bold (INFO level)
-        # \x1b[0m = Reset
-        prefix = f"\x1b[2m{ts}\x1b[0m \x1b[1mINFO \x1b[0m 🔍    "
-        message = f"{self.description} [{bar_str}] {percent}%"
-
-        self.stream.write(f"\r\x1b[K{prefix} {message}")
-        self.stream.flush()
-
-    def get_status_message(self):
-        """Returns the formatted string for logging (Silent/Fallback Mode)."""
-        bar_str = "".join(self.slots)
-        if self.total > 0:
-            percent = int((self.finished_count / self.total) * 100)
-        else:
-            percent = 100
-        # We omit the 🔍 icon here because info() adds it automatically
-        return f"{self.description} [{bar_str}] {percent}%"
-
-    def update(self, index, status):
-        """Update slot status and redraw."""
-        with self.lock:
-            icon_map = {"found": "✅", "empty": "⚪", "error": "❌"}
-            self.slots[index] = icon_map.get(status, "?")
-            self.finished_count += 1
-            if not self.silent:
-                self._draw()
-
-    def update_silent(self, index, status):
-        """Update slot status WITHOUT redrawing (for background threads)."""
-        with self.lock:
-            icon_map = {"found": "✅", "empty": "⚪", "error": "❌"}
-            self.slots[index] = icon_map.get(status, "?")
-            self.finished_count += 1
-
-    def finish(self):
-        if self.silent:
-            return
-        with self.lock:
-            self.stream.write("\n")
-            self.stream.flush()
-
-    def log_sink(self, message):
-        """Sink for intercepting other logs while active."""
-        if self.silent:
-            return
-        with self.lock:
-            self.stream.write("\r\x1b[K")
-            self.stream.write(message.rstrip() + "\n")
-            self._draw()
-
-
-class CaptureLogs:
-    def __init__(self, progress_bar):
-        self.progress_bar = progress_bar
-        self.init = False
-
-    def __enter__(self):
-        add_sink(self.progress_bar.log_sink)
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        add_sink()
 
 
 def get_search_results(
@@ -261,6 +159,8 @@ def get_search_results(
         desc_text = "Running Feed Search"
         stype = "<b>feed</b> search"
 
+    debug(f"Starting <g>{len(search_executor.searches)}</g> searches for {stype}...")
+
     results = search_executor.run_all(desc_text)
 
     elapsed_time = time.time() - start_time
@@ -307,75 +207,33 @@ class SearchExecutor:
                     pending_futures.append(future)
                     current_index += 1
 
+            # Prepare list to track status of each provider
+            # Icons will be filled in as threads complete
             total_active = len(pending_futures)
+            icons = ["▪️"] * total_active
 
-            # Try to acquire lock non-blocking
-            lock_acquired = SEARCH_UI_LOCK.acquire(blocking=False)
-
-            try:
-                # Update description with count
-                full_desc = f"{description} ({total_active} hostnames)"
-
-                if lock_acquired and total_active > 0:
-                    # === ACTIVE MODE ===
-                    # Shows dynamic bar with \r updates
-                    progress = SearchProgressBar(total_active, full_desc, silent=False)
-
-                    try:
-                        with CaptureLogs(progress):
-                            for future in as_completed(pending_futures):
-                                index, cache_key = future_to_meta[future]
-                                try:
-                                    res = future.result()
-                                    status = (
-                                        "found" if res and len(res) > 0 else "empty"
-                                    )
-                                    progress.update(index, status)
-
-                                    results.extend(res)
-                                    if cache_key:
-                                        search_cache.set(cache_key, res)
-                                except Exception as e:
-                                    progress.update(index, "error")
-                                    info(f"Search error: {e}")
-                    finally:
-                        progress.finish()
-
-                else:
-                    # === FALLBACK MODE ===
-                    # Shows 0% log -> waits -> Shows 100% log
-                    if total_active > 0:
-                        fallback_bar = SearchProgressBar(
-                            total_active, full_desc, silent=True
-                        )
-
-                        # Log the "0%" state immediately
-                        info(fallback_bar.get_status_message())
-
-                        for future in as_completed(pending_futures):
-                            index, cache_key = future_to_meta[future]
-                            try:
-                                res = future.result()
-                                status = "found" if res and len(res) > 0 else "empty"
-
-                                # Silent update to track status for the final log
-                                fallback_bar.update_silent(index, status)
-
-                                results.extend(res)
-                                if cache_key:
-                                    search_cache.set(cache_key, res)
-                            except Exception as e:
-                                fallback_bar.update_silent(index, "error")
-                                info(f"Search error: {e}")
-
-                        # Log the "100%" state at the end
-                        info(fallback_bar.get_status_message())
+            for future in as_completed(pending_futures):
+                index, cache_key = future_to_meta[future]
+                try:
+                    res = future.result()
+                    if res and len(res) > 0:
+                        status = "✅"
                     else:
-                        pass
+                        status = "⚪"
 
-            finally:
-                if lock_acquired:
-                    SEARCH_UI_LOCK.release()
+                    icons[index] = status
+
+                    results.extend(res)
+                    if cache_key:
+                        search_cache.set(cache_key, res)
+                except Exception as e:
+                    icons[index] = "❌"
+                    info(f"Search error: {e}")
+
+            # Log the final status summary if any searches were performed
+            if total_active > 0:
+                bar_str = "".join(icons)
+                info(f"{description} [{bar_str}]")
 
             if cache_used:
                 info("Presenting cached results for some items.")

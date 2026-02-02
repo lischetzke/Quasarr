@@ -352,7 +352,7 @@ def al_search(
             if not sanitized_search_string in sanitized_title:
                 debug(f"Search string '{search_string}' doesn't match '{name}'")
                 continue
-            debug(f"Matched search string '{search_string}' with result '{name}'")
+            trace(f"Matched search string '{search_string}' with result '{name}'")
 
             type_label = None
             for lbl in body.select("div.label-group a[href]"):

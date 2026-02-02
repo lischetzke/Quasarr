@@ -173,8 +173,6 @@ def get_clean_hostnames(shared_state):
             hostnames.save(host, strg)
         if strg and re.match(r".*[A-Z].*", strg):
             hostnames.save(host, strg.lower())
-        if strg:
-            print(f'Using "{strg}" as hostname for "{host}"')
         return strg
 
     for name in shared_state.values["sites"]:

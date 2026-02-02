@@ -631,7 +631,7 @@ def search_string_in_sanitized_title(search_string, title):
     )
     # Use word boundaries to ensure full word/phrase match
     if re.search(rf"\b{search_regex}\b", sanitized_title):
-        debug(f"Matched search string: {search_regex} with title: {sanitized_title}")
+        trace(f"Matched search string: {search_regex} with title: {sanitized_title}")
         return True
     else:
         debug(
