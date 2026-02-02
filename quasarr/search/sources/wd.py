@@ -9,6 +9,7 @@ from base64 import urlsafe_b64encode
 from datetime import datetime, timedelta
 from urllib.parse import quote, quote_plus
 
+import requests
 from bs4 import BeautifulSoup
 
 from quasarr.providers.cloudflare import flaresolverr_get, is_cloudflare_challenge
@@ -171,20 +172,26 @@ def wd_feed(shared_state, start_time, request_from, mirror=None):
         feed_type = "Serien"
 
     url = f"https://{wd}/{feed_type}"
-
-    if not is_flaresolverr_available(shared_state):
-        info(
-            f"FlareSolverr is not configured. Cannot access {hostname.upper()} feed due to Cloudflare protection."
-        )
-        mark_hostname_issue(hostname, "feed", "FlareSolverr missing")
-        return []
+    headers = {"User-Agent": shared_state.values["user_agent"]}
 
     try:
-        r = flaresolverr_get(shared_state, url)
-        if r.status_code == 403 or is_cloudflare_challenge(r.text):
-            info(f"Cloudflare challenge failed for {hostname} feed.")
-            mark_hostname_issue(hostname, "feed", "Cloudflare challenge failed")
-            return []
+        # Try normal request first
+        try:
+            r = requests.get(url, headers=headers, timeout=30)
+        except requests.RequestException:
+            r = None
+
+        # If blocked or failed, try FlareSolverr
+        if r is None or r.status_code == 403 or is_cloudflare_challenge(r.text):
+            if is_flaresolverr_available(shared_state):
+                info(f"Encountered Cloudflare on {hostname} feed. Trying FlareSolverr...")
+                r = flaresolverr_get(shared_state, url)
+            elif r is None:
+                raise requests.RequestException("Connection failed and FlareSolverr not available")
+            elif r.status_code == 403 or is_cloudflare_challenge(r.text):
+                info(f"Cloudflare protection detected on {hostname} feed but FlareSolverr is not configured.")
+                mark_hostname_issue(hostname, "feed", "Cloudflare protection - FlareSolverr missing")
+                return []
 
         r.raise_for_status()
         soup = BeautifulSoup(r.content, "html.parser")
@@ -228,20 +235,26 @@ def wd_search(
 
     q = quote_plus(search_string)
     url = f"https://{wd}/search?q={q}"
-
-    if not is_flaresolverr_available(shared_state):
-        info(
-            f"FlareSolverr is not configured. Cannot access {hostname.upper()} search due to Cloudflare protection."
-        )
-        mark_hostname_issue(hostname, "search", "FlareSolverr missing")
-        return []
+    headers = {"User-Agent": shared_state.values["user_agent"]}
 
     try:
-        r = flaresolverr_get(shared_state, url)
-        if r.status_code == 403 or is_cloudflare_challenge(r.text):
-            info(f"Cloudflare challenge failed for {hostname} search.")
-            mark_hostname_issue(hostname, "search", "Cloudflare challenge failed")
-            return []
+        # Try normal request first
+        try:
+            r = requests.get(url, headers=headers, timeout=30)
+        except requests.RequestException:
+            r = None
+
+        # If blocked or failed, try FlareSolverr
+        if r is None or r.status_code == 403 or is_cloudflare_challenge(r.text):
+            if is_flaresolverr_available(shared_state):
+                info(f"Encountered Cloudflare on {hostname} search. Trying FlareSolverr...")
+                r = flaresolverr_get(shared_state, url)
+            elif r is None:
+                raise requests.RequestException("Connection failed and FlareSolverr not available")
+            elif r.status_code == 403 or is_cloudflare_challenge(r.text):
+                info(f"Cloudflare protection detected on {hostname} search but FlareSolverr is not configured.")
+                mark_hostname_issue(hostname, "search", "Cloudflare protection - FlareSolverr missing")
+                return []
 
         r.raise_for_status()
         soup = BeautifulSoup(r.content, "html.parser")

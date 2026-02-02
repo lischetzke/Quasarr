@@ -12,7 +12,7 @@ from datetime import date, datetime, timedelta
 from urllib import parse
 
 import quasarr
-from quasarr.providers.log import debug, error, info, warn
+from quasarr.providers.log import debug, error, info, trace, warn
 from quasarr.providers.myjd_api import (
     Jddevice,
     Myjdapi,

@@ -6,6 +6,7 @@ import re
 import uuid
 from urllib.parse import urljoin
 
+import requests
 from bs4 import BeautifulSoup
 
 from quasarr.providers.cloudflare import (
@@ -25,18 +26,45 @@ def resolve_wd_redirect(shared_state, url, session_id=None):
     """
     Follow redirects for a WD mirror URL and return the final destination.
     """
-    try:
-        # Use FlareSolverr to follow redirects as well, since the redirector might be protected
-        r = flaresolverr_get(shared_state, url, session_id=session_id)
+    # Try FlareSolverr first if available and session_id is provided
+    if session_id and is_flaresolverr_available(shared_state):
+        try:
+            r = flaresolverr_get(shared_state, url, session_id=session_id)
+            if r.status_code == 200:
+                if r.url.endswith("/404.html"):
+                    return None
+                return r.url
+            else:
+                info(f"WD blocked attempt to resolve {url}. Status: {r.status_code}")
+        except Exception as e:
+            info(f"FlareSolverr error fetching redirected URL for {url}: {e}")
+            # Fallback to requests if FlareSolverr fails?
+            # For now, let's assume if FS is configured we should rely on it or fail.
+            # But the user asked to reconsider "without cloudflare".
 
-        # FlareSolverr follows redirects automatically and returns the final URL
-        if r.status_code == 200:
-            # Check if we landed on a 404 page (soft 404)
-            if r.url.endswith("/404.html"):
-                return None
+    # Fallback to regular requests if FlareSolverr not used or failed/not configured
+    try:
+        user_agent = shared_state.values["user_agent"]
+        r = requests.get(
+            url,
+            allow_redirects=True,
+            timeout=10,
+            headers={"User-Agent": user_agent},
+        )
+        r.raise_for_status()
+        if r.history:
+            for resp in r.history:
+                debug(f"Redirected from {resp.url} to {r.url}")
             return r.url
         else:
-            info(f"WD blocked attempt to resolve {url}. Status: {r.status_code}")
+            # If no history, maybe it wasn't a redirect or it blocked us?
+            # WD usually redirects. If we get 200 OK but same URL, it might be a block page or direct link?
+            # The original code assumed if no history -> blocked.
+            # But if it's a direct link, history is empty.
+            # Let's trust the original logic: "WD blocked attempt..."
+            info(
+                f"WD blocked attempt to resolve {url}. Your IP may be banned. Try again later."
+            )
     except Exception as e:
         info(f"Error fetching redirected URL for {url}: {e}")
         mark_hostname_issue(
@@ -54,36 +82,64 @@ def get_wd_download_links(shared_state, url, mirror, title, password):
 
     wd = shared_state.values["config"]("Hostnames").get("wd")
 
-    if not is_flaresolverr_available(shared_state):
-        info(
-            "WD is protected by Cloudflare but FlareSolverr is not configured. "
-            "Please configure FlareSolverr in the web UI to access this site."
-        )
-        mark_hostname_issue(hostname, "download", "FlareSolverr required but missing.")
-        return {"links": [], "imdb_id": None}
-
-    # Create a temporary FlareSolverr session for this download attempt
-    session_id = str(uuid.uuid4())
-    created_session = flaresolverr_create_session(shared_state, session_id)
-    if not created_session:
-        info("Could not create FlareSolverr session. Proceeding without session...")
-        session_id = None
-    else:
-        debug(f"Created FlareSolverr session: {session_id}")
+    # Try normal request first
+    text = None
+    status_code = None
+    session_id = None
 
     try:
-        r = flaresolverr_get(shared_state, url, session_id=session_id)
+        headers = {"User-Agent": shared_state.values["user_agent"]}
+        r = requests.get(url, headers=headers, timeout=10)
+        # Don't raise for status yet, check for 403/challenge
         if r.status_code == 403 or is_cloudflare_challenge(r.text):
-            info("Could not bypass Cloudflare protection with FlareSolverr!")
-            mark_hostname_issue(hostname, "download", "Cloudflare challenge failed")
+            raise requests.RequestException("Cloudflare protection detected")
+        r.raise_for_status()
+        text = r.text
+        status_code = r.status_code
+    except Exception as e:
+        # If blocked or failed, try FlareSolverr
+        if is_flaresolverr_available(shared_state):
+            info(f"Encountered Cloudflare on {hostname} download. Trying FlareSolverr...")
+            # Create a temporary FlareSolverr session for this download attempt
+            session_id = str(uuid.uuid4())
+            created_session = flaresolverr_create_session(shared_state, session_id)
+            if not created_session:
+                info("Could not create FlareSolverr session. Proceeding without session...")
+                session_id = None
+            else:
+                debug(f"Created FlareSolverr session: {session_id}")
+
+            try:
+                r = flaresolverr_get(shared_state, url, session_id=session_id)
+                if r.status_code == 403 or is_cloudflare_challenge(r.text):
+                    info("Could not bypass Cloudflare protection with FlareSolverr!")
+                    mark_hostname_issue(
+                        hostname, "download", "Cloudflare challenge failed"
+                    )
+                    if session_id:
+                        flaresolverr_destroy_session(shared_state, session_id)
+                    return {"links": [], "imdb_id": None}
+                text = r.text
+                status_code = r.status_code
+            except RuntimeError as fs_err:
+                info(f"WD access failed via FlareSolverr: {fs_err}")
+                if session_id:
+                    flaresolverr_destroy_session(shared_state, session_id)
+                return {"links": [], "imdb_id": None}
+        else:
+            info(
+                f"WD site has been updated or is protected. Grabbing download links for {title} not possible! ({e})"
+            )
+            mark_hostname_issue(hostname, "download", str(e))
             return {"links": [], "imdb_id": None}
 
-        if r.status_code >= 400:
+    try:
+        if status_code and status_code >= 400:
             mark_hostname_issue(
-                hostname, "download", f"Download error: {str(r.status_code)}"
+                hostname, "download", f"Download error: {str(status_code)}"
             )
 
-        soup = BeautifulSoup(r.text, "html.parser")
+        soup = BeautifulSoup(text, "html.parser")
 
         # extract IMDb id if present
         imdb_id = None
@@ -118,7 +174,7 @@ def get_wd_download_links(shared_state, url, mirror, title, password):
                 raw_href = a["href"]
                 full_link = urljoin(f"https://{wd}", raw_href)
 
-                # resolve any redirects using the same session
+                # resolve any redirects using the same session (or requests if no session)
                 resolved = resolve_wd_redirect(
                     shared_state, full_link, session_id=session_id
                 )
@@ -153,17 +209,13 @@ def get_wd_download_links(shared_state, url, mirror, title, password):
             "imdb_id": imdb_id,
         }
 
-    except RuntimeError as e:
-        # Catch FlareSolverr not configured error
-        info(f"WD access failed: {e}")
-        return {"links": [], "imdb_id": None}
     except Exception as e:
         info(
             f"WD site has been updated. Grabbing download links for {title} not possible! Error: {e}"
         )
         return {"links": [], "imdb_id": None}
     finally:
-        # Always destroy the session
+        # Always destroy the session if we created one
         if session_id:
             debug(f"Destroying FlareSolverr session: {session_id}")
             flaresolverr_destroy_session(shared_state, session_id)

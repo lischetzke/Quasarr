@@ -14,6 +14,7 @@ from urllib.parse import quote_plus
 import requests
 from bs4 import BeautifulSoup
 
+from quasarr.providers.cloudflare import ensure_session_cf_bypassed
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.imdb_metadata import get_localized_title
 from quasarr.providers.log import debug, info, warn
@@ -66,7 +67,13 @@ def sl_feed(shared_state, start_time, request_from, mirror=None):
     headers = {"User-Agent": shared_state.values["user_agent"]}
 
     try:
-        r = requests.get(url, headers=headers, timeout=30)
+        session = requests.Session()
+        session, headers, r = ensure_session_cf_bypassed(
+            info, shared_state, session, url, headers
+        )
+        if not r:
+            raise requests.RequestException("Cloudflare bypass failed")
+
         r.raise_for_status()
         root = ET.fromstring(r.text)
 
@@ -189,7 +196,12 @@ def sl_search(
         def fetch(url):
             try:
                 debug(f"Fetching {url}")
-                r = requests.get(url, headers=headers, timeout=10)
+                session = requests.Session()
+                session, _, r = ensure_session_cf_bypassed(
+                    info, shared_state, session, url, headers
+                )
+                if not r:
+                    raise requests.RequestException("Cloudflare bypass failed")
                 r.raise_for_status()
                 return r.text
             except Exception as e:
