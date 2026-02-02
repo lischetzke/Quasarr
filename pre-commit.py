@@ -36,7 +36,7 @@ def task_format():
 
     if result.returncode != 0:
         print("❌ Critical errors or syntax issues found. Fix them before staging.")
-        return False
+        sys.exit(1)
 
     # Standard formatting (indentation/spacing)
     run(["uv", "run", "ruff", "format", "."], check=False)

@@ -55,7 +55,7 @@ def get_he_download_links(shared_state, url, mirror, title, password):
     except Exception:
         debug(f"failed to extract imdb_id for title {title}.")
     anchors = []
-    for retries in range(10):
+    for _retries in range(10):
         form = soup.find("form", id=re.compile(r"content-protector-access-form"))
         if not form:
             return {"links": [], "imdb_id": None}

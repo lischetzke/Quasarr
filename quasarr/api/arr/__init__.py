@@ -326,7 +326,9 @@ def setup_arr_routes(app):
                             cache_key = f"{request_from}::{imdb_id}::${mirror}"
 
                             if result := results_cache.get(cache_key, offset, limit):
-                                debug(f"Returning offset {offset}, limit {limit} for {cache_key}")
+                                debug(
+                                    f"Returning offset {offset}, limit {limit} for {cache_key}"
+                                )
                                 return result
 
                         releases = get_search_results(
@@ -346,9 +348,11 @@ def setup_arr_routes(app):
                             cache_key = f"{request_from}::{imdb_id}::${mirror}::{season}::{episode}"
 
                             if result := results_cache.get(cache_key, offset, limit):
-                                debug(f"Returning offset {offset}, limit {limit} for {cache_key}")
+                                debug(
+                                    f"Returning offset {offset}, limit {limit} for {cache_key}"
+                                )
                                 return result
-                        
+
                         releases = get_search_results(
                             shared_state,
                             request_from,
@@ -409,28 +413,40 @@ def setup_arr_routes(app):
                             <enclosure url="{release.get("link", "")}" length="{release.get("size", 0)}" type="application/x-nzb" />
                         </item>'''
                         items_amount += 1
-                            
+
                         if cache_key and items_amount == limit:
                             items_processed += items_amount
-                            debug(f"Processed {items_processed}/{len(releases)} releases")
-                            results_cache.set(cache_key, f"""<?xml version="1.0" encoding="UTF-8"?>
+                            debug(
+                                f"Processed {items_processed}/{len(releases)} releases"
+                            )
+                            results_cache.set(
+                                cache_key,
+                                f"""<?xml version="1.0" encoding="UTF-8"?>
                                 <rss>
                                     <channel>
                                         {items}
                                     </channel>
-                                </rss>""", items_processed-items_amount, limit)
+                                </rss>""",
+                                items_processed - items_amount,
+                                limit,
+                            )
                             items = ""
                             items_amount = 0
-                    
+
                     if cache_key and items_amount > 0:
                         items_processed += items_amount
                         debug(f"Processed {items_processed}/{len(releases)} releases")
-                        results_cache.set(cache_key, f"""<?xml version="1.0" encoding="UTF-8"?>
+                        results_cache.set(
+                            cache_key,
+                            f"""<?xml version="1.0" encoding="UTF-8"?>
                                 <rss>
                                     <channel>
                                         {items}
                                     </channel>
-                                </rss>""", items_processed-items_amount, limit)
+                                </rss>""",
+                            items_processed - items_amount,
+                            limit,
+                        )
                         items = ""
                         items_amount = 0
 
@@ -450,7 +466,9 @@ def setup_arr_routes(app):
 
                     if cache_key:
                         if result := results_cache.get(cache_key, offset, limit):
-                            debug(f"Returning offset {offset}, limit {limit} for {cache_key}")
+                            debug(
+                                f"Returning offset {offset}, limit {limit} for {cache_key}"
+                            )
                             return result
 
                     return f"""<?xml version="1.0" encoding="UTF-8"?>

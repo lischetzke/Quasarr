@@ -64,7 +64,7 @@ def get_by_download_links(shared_state, url, mirror, title, password):
                     async_results.append((content, source))
 
         url_hosters = []
-        for content, source in async_results:
+        for content, _source in async_results:
             host_soup = BeautifulSoup(content, "html.parser")
             link = host_soup.find(
                 "a",

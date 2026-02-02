@@ -315,7 +315,7 @@ def fetch_via_flaresolverr(
             "error": f"FlareSolverr request failed: {e}",
         }
     except Exception as e:
-        raise RuntimeError(f"Could not reach FlareSolverr: {e}")
+        raise RuntimeError(f"Could not reach FlareSolverr: {e}") from e
 
     if resp.status_code >= 400:
         mark_hostname_issue(hostname, "session", f"Request failed: {resp.status_code}")

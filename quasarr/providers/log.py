@@ -127,7 +127,9 @@ def get_log_level_name(level: int = _log_level) -> str:
     return log_level_names[level]
 
 
-def get_log_level(contexts: list[str] = []) -> int:
+def get_log_level(contexts: list[str] | None = None) -> int:
+    if contexts is None:
+        contexts = []
     level = _log_level
 
     for context in contexts:
@@ -141,7 +143,9 @@ def get_log_level(contexts: list[str] = []) -> int:
 
 
 class _Logger:
-    def __init__(self, contexts: list[str] = []):
+    def __init__(self, contexts: list[str] | None = None):
+        if contexts is None:
+            contexts = []
         self.level = get_log_level(contexts)
         context, source = _contexts_to_str(contexts)
         width = wcswidth(context + source)

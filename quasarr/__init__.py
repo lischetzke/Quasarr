@@ -250,7 +250,7 @@ def run():
         print(f"\n===== Quasarr {log_level_names[get_log_level()]} Log =====")
 
         # Start Logging
-        info(f"Web UI: <blue>{shared_state.values['internal_address']}</blue>")
+        info(f"Web UI: <blue>{shared_state.values['external_address']}</blue>")
         debug(f'Config path: "{config_path}"')
 
         # Hostnames log
@@ -258,10 +258,14 @@ def run():
         set_hostnames_count = 0
         for key in supported_hostnames:
             if key in hostnames:
-                hostnames_log.append(f"<bg green><black>{key.upper()}</black></bg green>")
+                hostnames_log.append(
+                    f"<bg green><black>{key.upper()}</black></bg green>"
+                )
                 set_hostnames_count += 1
             else:
-                hostnames_log.append(f"<bg black><white>{key.upper()}</white></bg black>")
+                hostnames_log.append(
+                    f"<bg black><white>{key.upper()}</white></bg black>"
+                )
 
         total_hostnames_count = len(supported_hostnames)
         if set_hostnames_count == total_hostnames_count:

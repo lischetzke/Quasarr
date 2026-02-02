@@ -611,7 +611,7 @@ def sanitize_string(s):
 
     # Remove German and English articles
     articles = r"\b(?:der|die|das|ein|eine|einer|eines|einem|einen|the|a|an|and)\b"
-    s = re.sub(articles, "", s, re.IGNORECASE)
+    s = re.sub(articles, "", s, count=0, flags=re.IGNORECASE)
 
     # Replace obsolete titles
     s = s.replace("navy cis", "ncis")
@@ -718,7 +718,7 @@ def is_valid_release(
         is_tv_search = "sonarr" in rf
         is_docs_search = "lazylibrarian" in rf
 
-        # if search string is NOT an imdb id check search_string_in_sanitized_title - if not match, its not valid
+        # if search string is NOT an imdb id check search_string_in_sanitized_title - if not match, it is not valid
         if not is_docs_search and not is_imdb_id(search_string):
             if not search_string_in_sanitized_title(search_string, title):
                 debug(

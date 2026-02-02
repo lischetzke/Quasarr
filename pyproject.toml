@@ -48,9 +48,11 @@ build = [
 ]
 
 [tool.ruff]
-# This covers syntax and logic (F) + import sorting (I)
-# PLE (Pylint Error) adds more robust checks for variable usage (like PLE0601 for used-before-assignment)
-lint.select = ["F", "I", "PLE"]
+# F   = Pyflakes (Critical: F821 catches undefined names)
+# I   = Isort (Import sorting)
+# PLE = Pylint Errors (Catches robust logic errors like used-before-assignment)
+# B   = Bugbear (Catches common runtime crash bugs and potential logical errors)
+lint.select = ["F", "I", "PLE", "B"]
 lint.fixable = ["F", "I"]
 lint.ignore = ["E"]
 

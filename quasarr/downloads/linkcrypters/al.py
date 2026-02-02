@@ -189,8 +189,8 @@ def solve_captcha(
 
     try:
         image_ids = result["json"]
-    except ValueError:
-        raise RuntimeError(f"Cannot decode captcha IDs: {result['text']}")
+    except ValueError as e:
+        raise RuntimeError(f"Cannot decode captcha IDs: {result['text']}") from e
 
     if not isinstance(image_ids, list) or len(image_ids) < 2:
         raise RuntimeError("Unexpected captcha IDs format.")
@@ -233,7 +233,7 @@ def solve_captcha(
     images_pixel_differences = []
     for idx_i, (img_id_i, img_i) in enumerate(image_objects):
         total_difference = 0.0
-        for idx_j, (img_id_j, img_j) in enumerate(image_objects):
+        for idx_j, (_img_id_j, img_j) in enumerate(image_objects):
             if idx_i == idx_j:
                 continue  # skip self-comparison
             total_difference += calculate_pixel_based_difference(img_i, img_j)

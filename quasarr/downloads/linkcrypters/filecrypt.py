@@ -228,10 +228,9 @@ def get_filecrypt_links(shared_state, token, title, url, password=None, mirror=N
             return False
 
         if output.status_code == 403 or is_cloudflare_challenge(output.text):
-            info(
+            debug(
                 "Encountered Cloudflare after password POST. Re-running FlareSolverr..."
             )
-            debug("Cloudflare reappeared after password submit, retrying bypass.")
             session, headers, output = ensure_session_cf_bypassed(
                 info, shared_state, session, output.url, headers
             )

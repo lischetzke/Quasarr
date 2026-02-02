@@ -419,7 +419,7 @@ def parse_info_from_download_item(
                     r"\.(German|Japanese|English)\.",
                     f".{part_string}.\\1.",
                     release_title,
-                    1,
+                    count=1,
                 )
 
     # determine if optional episode exists on release page
@@ -735,10 +735,10 @@ def get_al_download_links(shared_state, url, mirror, title, password):
                             )
                             try:
                                 response_json = check_solution.get("json", {})
-                            except ValueError:
+                            except ValueError as e:
                                 raise RuntimeError(
                                     f"Unexpected /ajax/captcha response: {check_solution.get('text', '')}"
-                                )
+                                ) from e
 
                             code = response_json.get("code", "")
                             message = response_json.get("message", "")

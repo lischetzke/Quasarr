@@ -16,7 +16,7 @@ from quasarr.downloads.sources.al import (
 )
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.imdb_metadata import get_localized_title, get_year
-from quasarr.providers.log import debug, error, info
+from quasarr.providers.log import debug, error, info, trace
 from quasarr.providers.sessions.al import fetch_via_requests_session, invalidate_session
 
 hostname = "al"
@@ -37,9 +37,9 @@ def convert_to_rss_date(date_str: str) -> str:
     try:
         parsed = datetime.strptime(date_str, "%d.%m.%Y - %H:%M")
         return parsed.strftime("%a, %d %b %Y %H:%M:%S +0000")
-    except ValueError:
+    except ValueError as e:
         # If parsing fails, return the original string or handle as needed
-        raise ValueError(f"Could not parse date: {date_str}")
+        raise ValueError(f"Could not parse date: {date_str}") from e
 
 
 def parse_relative_date(raw: str) -> datetime | None:

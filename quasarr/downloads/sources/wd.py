@@ -99,12 +99,16 @@ def get_wd_download_links(shared_state, url, mirror, title, password):
     except Exception as e:
         # If blocked or failed, try FlareSolverr
         if is_flaresolverr_available(shared_state):
-            info(f"Encountered Cloudflare on {hostname} download. Trying FlareSolverr...")
+            debug(
+                f"Encountered Cloudflare on {hostname} download. Trying FlareSolverr..."
+            )
             # Create a temporary FlareSolverr session for this download attempt
             session_id = str(uuid.uuid4())
             created_session = flaresolverr_create_session(shared_state, session_id)
             if not created_session:
-                info("Could not create FlareSolverr session. Proceeding without session...")
+                info(
+                    "Could not create FlareSolverr session. Proceeding without session..."
+                )
                 session_id = None
             else:
                 debug(f"Created FlareSolverr session: {session_id}")

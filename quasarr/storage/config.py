@@ -77,7 +77,7 @@ class Config(object):
 
     def _set_default_config(self, section):
         self._config.add_section(section)
-        for key, key_type, value in self._DEFAULT_CONFIG[section]:
+        for key, _key_type, value in self._DEFAULT_CONFIG[section]:
             self._config.set(section, key, value)
         with open(self._configfile, "w") as configfile:
             self._config.write(configfile)

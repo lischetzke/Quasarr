@@ -184,13 +184,21 @@ def wd_feed(shared_state, start_time, request_from, mirror=None):
         # If blocked or failed, try FlareSolverr
         if r is None or r.status_code == 403 or is_cloudflare_challenge(r.text):
             if is_flaresolverr_available(shared_state):
-                info(f"Encountered Cloudflare on {hostname} feed. Trying FlareSolverr...")
+                debug(
+                    f"Encountered Cloudflare on {hostname} feed. Trying FlareSolverr..."
+                )
                 r = flaresolverr_get(shared_state, url)
             elif r is None:
-                raise requests.RequestException("Connection failed and FlareSolverr not available")
+                raise requests.RequestException(
+                    "Connection failed and FlareSolverr not available"
+                )
             elif r.status_code == 403 or is_cloudflare_challenge(r.text):
-                info(f"Cloudflare protection detected on {hostname} feed but FlareSolverr is not configured.")
-                mark_hostname_issue(hostname, "feed", "Cloudflare protection - FlareSolverr missing")
+                info(
+                    f"Cloudflare protection detected on {hostname} feed but FlareSolverr is not configured."
+                )
+                mark_hostname_issue(
+                    hostname, "feed", "Cloudflare protection - FlareSolverr missing"
+                )
                 return []
 
         r.raise_for_status()
@@ -247,13 +255,21 @@ def wd_search(
         # If blocked or failed, try FlareSolverr
         if r is None or r.status_code == 403 or is_cloudflare_challenge(r.text):
             if is_flaresolverr_available(shared_state):
-                info(f"Encountered Cloudflare on {hostname} search. Trying FlareSolverr...")
+                debug(
+                    f"Encountered Cloudflare on {hostname} search. Trying FlareSolverr..."
+                )
                 r = flaresolverr_get(shared_state, url)
             elif r is None:
-                raise requests.RequestException("Connection failed and FlareSolverr not available")
+                raise requests.RequestException(
+                    "Connection failed and FlareSolverr not available"
+                )
             elif r.status_code == 403 or is_cloudflare_challenge(r.text):
-                info(f"Cloudflare protection detected on {hostname} search but FlareSolverr is not configured.")
-                mark_hostname_issue(hostname, "search", "Cloudflare protection - FlareSolverr missing")
+                info(
+                    f"Cloudflare protection detected on {hostname} search but FlareSolverr is not configured."
+                )
+                mark_hostname_issue(
+                    hostname, "search", "Cloudflare protection - FlareSolverr missing"
+                )
                 return []
 
         r.raise_for_status()

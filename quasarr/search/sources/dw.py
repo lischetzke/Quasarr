@@ -47,7 +47,7 @@ def convert_to_rss_date(date_str):
         "December",
     ]
 
-    for german, english in zip(german_months, english_months):
+    for german, english in zip(german_months, english_months, strict=False):
         if german in date_str:
             date_str = date_str.replace(german, english)
             break
