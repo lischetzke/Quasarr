@@ -307,16 +307,16 @@ def setup_arr_routes(app):
                     cache_key = None
 
                     try:
-                        offset = int(getattr(request.query, "offset", 0))
+                        offset = int(getattr(request.query, "offset", 0) or 0)
                     except (AttributeError, ValueError) as e:
                         debug(f"Error parsing offset parameter: {e}")
                         offset = 0
 
                     try:
-                        limit = int(getattr(request.query, "limit", 100))
+                        limit = int(getattr(request.query, "limit", 1000) or 1000)
                     except (AttributeError, ValueError) as e:
                         debug(f"Error parsing limit parameter: {e}")
-                        limit = 100
+                        limit = 1000
 
                     if mode == "movie":
                         # supported params: imdbid

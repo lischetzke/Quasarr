@@ -41,6 +41,8 @@ packages = ["quasarr"]
 dev = [
     "pre-commit>=4.5.1",
     "ruff>=0.14.14",
+    "questionary>=2.1.1",
+    "rich>=14.3.2",
 ]
 build = [
     "pyinstaller>=6.18.0",
