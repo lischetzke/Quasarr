@@ -236,7 +236,7 @@ class IMDbFlareSolverr:
                 flaresolverr_url,
                 json=post_data,
                 headers={"Content-Type": "application/json"},
-                timeout=60,
+                timeout=30,
             )
             if response.status_code == 200:
                 json_response = response.json()

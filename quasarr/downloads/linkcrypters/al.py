@@ -254,7 +254,7 @@ def solve_captcha(
         method="POST",
         target_url=captcha_base,
         post_data={"cID": 0, "pC": identified_captcha_image, "rT": 2},
-        timeout=60,
+        timeout=30,
     )
 
     return {"response": result["text"], "captcha_id": identified_captcha_image}
