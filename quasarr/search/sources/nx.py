@@ -10,7 +10,7 @@ import requests
 
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.imdb_metadata import get_localized_title, get_year
-from quasarr.providers.log import debug, info
+from quasarr.providers.log import debug, info, trace, warn
 
 hostname = "nx"
 supported_mirrors = ["filer"]
@@ -30,8 +30,8 @@ def nx_feed(shared_state, start_time, request_from, mirror=None):
 
     if mirror and mirror not in supported_mirrors:
         debug(
-            f'Mirror "{mirror}" not supported by "{hostname.upper()}". Supported mirrors: {supported_mirrors}.'
-            " Skipping search!"
+            f'Mirror "{mirror}" not supported by "{hostname.upper()}". Supported mirrors: {supported_mirrors}. '
+            "Skipping search!"
         )
         return releases
 
@@ -47,7 +47,7 @@ def nx_feed(shared_state, start_time, request_from, mirror=None):
         r.raise_for_status()
         feed = r.json()
     except Exception as e:
-        info(f"Error loading {hostname.upper()} feed: {e}")
+        warn(f"Error loading {hostname.upper()} feed: {e}")
         mark_hostname_issue(
             hostname, "feed", str(e) if "e" in dir() else "Error occurred"
         )
@@ -103,13 +103,13 @@ def nx_feed(shared_state, start_time, request_from, mirror=None):
                 )
 
         except Exception as e:
-            info(f"Error parsing {hostname.upper()} feed: {e}")
+            warn(f"Error parsing {hostname.upper()} feed: {e}")
             mark_hostname_issue(
                 hostname, "feed", str(e) if "e" in dir() else "Error occurred"
             )
 
     elapsed_time = time.time() - start_time
-    debug(f"Time taken: {elapsed_time:.2f}s ({hostname})")
+    debug(f"Time taken: {elapsed_time:.2f}s")
 
     if releases:
         clear_hostname_issue(hostname)
@@ -138,8 +138,8 @@ def nx_search(
 
     if mirror and mirror not in supported_mirrors:
         debug(
-            f'Mirror "{mirror}" not supported by "{hostname.upper()}". Supported mirrors: {supported_mirrors}.'
-            " Skipping search!"
+            f'Mirror "{mirror}" not supported by "{hostname.upper()}". Supported mirrors: {supported_mirrors}. '
+            "Skipping search!"
         )
         return releases
 
@@ -164,7 +164,7 @@ def nx_search(
         r.raise_for_status()
         feed = r.json()
     except Exception as e:
-        info(f"Error loading {hostname.upper()} search: {e}")
+        warn(f"Error loading {hostname.upper()} search: {e}")
         mark_hostname_issue(
             hostname, "search", str(e) if "e" in dir() else "Error occurred"
         )
@@ -187,12 +187,19 @@ def nx_search(
 
                     try:
                         source = f"https://{nx}/release/{item['slug']}"
-                        if not imdb_id:
-                            imdb_id = item.get("_media", {}).get("imdbid", None)
+                        release_imdb_id = item.get("_media", {}).get("imdbid", None)
+                        if imdb_id and release_imdb_id and release_imdb_id != imdb_id:
+                            trace(
+                                f"{hostname.upper()}: Skipping result '{title}' due to IMDb ID mismatch."
+                            )
+                            continue
+
+                        if release_imdb_id is None:
+                            release_imdb_id = imdb_id
 
                         mb = shared_state.convert_to_mb(item)
                         payload = urlsafe_b64encode(
-                            f"{title}|{source}|{mirror}|{mb}|{password}|{imdb_id}".encode(
+                            f"{title}|{source}|{mirror}|{mb}|{password}|{release_imdb_id}".encode(
                                 "utf-8"
                             )
                         ).decode("utf-8")
@@ -215,7 +222,7 @@ def nx_search(
                             "details": {
                                 "title": title,
                                 "hostname": hostname.lower(),
-                                "imdb_id": imdb_id,
+                                "imdb_id": release_imdb_id,
                                 "link": link,
                                 "mirror": mirror,
                                 "size": size,
@@ -227,13 +234,13 @@ def nx_search(
                     )
 
         except Exception as e:
-            info(f"Error parsing {hostname.upper()} search: {e}")
+            warn(f"Error parsing {hostname.upper()} search: {e}")
             mark_hostname_issue(
                 hostname, "search", str(e) if "e" in dir() else "Error occurred"
             )
 
     elapsed_time = time.time() - start_time
-    debug(f"Time taken: {elapsed_time:.2f}s ({hostname})")
+    debug(f"Time taken: {elapsed_time:.2f}s")
 
     if releases:
         clear_hostname_issue(hostname)

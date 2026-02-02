@@ -39,36 +39,36 @@ def get_search_results(
     if imdb_id and not imdb_id.startswith("tt"):
         imdb_id = f"tt{imdb_id}"
 
-    # Pre-populate IMDb metadata cache to avoid API hammering by search threads
     if imdb_id:
         get_imdb_metadata(imdb_id)
 
     docs_search = "lazylibrarian" in request_from.lower()
 
-    al = shared_state.values["config"]("Hostnames").get("al")
-    by = shared_state.values["config"]("Hostnames").get("by")
-    dd = shared_state.values["config"]("Hostnames").get("dd")
-    dl = shared_state.values["config"]("Hostnames").get("dl")
-    dt = shared_state.values["config"]("Hostnames").get("dt")
-    dj = shared_state.values["config"]("Hostnames").get("dj")
-    dw = shared_state.values["config"]("Hostnames").get("dw")
-    fx = shared_state.values["config"]("Hostnames").get("fx")
-    he = shared_state.values["config"]("Hostnames").get("he")
-    hs = shared_state.values["config"]("Hostnames").get("hs")
-    mb = shared_state.values["config"]("Hostnames").get("mb")
-    nk = shared_state.values["config"]("Hostnames").get("nk")
-    nx = shared_state.values["config"]("Hostnames").get("nx")
-    sf = shared_state.values["config"]("Hostnames").get("sf")
-    sj = shared_state.values["config"]("Hostnames").get("sj")
-    sl = shared_state.values["config"]("Hostnames").get("sl")
-    wd = shared_state.values["config"]("Hostnames").get("wd")
-    wx = shared_state.values["config"]("Hostnames").get("wx")
+    # Config retrieval
+    config = shared_state.values["config"]("Hostnames")
+    al = config.get("al")
+    by = config.get("by")
+    dd = config.get("dd")
+    dl = config.get("dl")
+    dt = config.get("dt")
+    dj = config.get("dj")
+    dw = config.get("dw")
+    fx = config.get("fx")
+    he = config.get("he")
+    hs = config.get("hs")
+    mb = config.get("mb")
+    nk = config.get("nk")
+    nx = config.get("nx")
+    sf = config.get("sf")
+    sj = config.get("sj")
+    sl = config.get("sl")
+    wd = config.get("wd")
+    wx = config.get("wx")
 
     start_time = time.time()
-
     search_executor = SearchExecutor()
 
-    # Radarr/Sonarr use imdb_id for searches
+    # Mappings
     imdb_map = [
         (al, al_search),
         (by, by_search),
@@ -90,7 +90,6 @@ def get_search_results(
         (wx, wx_search),
     ]
 
-    # LazyLibrarian uses search_phrase for searches
     phrase_map = [
         (by, by_search),
         (dl, dl_search),
@@ -100,7 +99,6 @@ def get_search_results(
         (wd, wd_search),
     ]
 
-    # Feed searches omit imdb_id and search_phrase
     feed_map = [
         (al, al_feed),
         (by, by_feed),
@@ -122,7 +120,8 @@ def get_search_results(
         (wx, wx_feed),
     ]
 
-    if imdb_id:  # only Radarr/Sonarr are using imdb_id
+    # Add searches
+    if imdb_id:
         args, kwargs = (
             (shared_state, start_time, request_from, imdb_id),
             {"mirror": mirror, "season": season, "episode": episode},
@@ -131,9 +130,7 @@ def get_search_results(
             if flag:
                 search_executor.add(func, args, kwargs, True)
 
-    elif (
-        search_phrase and docs_search
-    ):  # only LazyLibrarian is allowed to use search_phrase
+    elif search_phrase and docs_search:
         args, kwargs = (
             (shared_state, start_time, request_from, search_phrase),
             {"mirror": mirror, "season": season, "episode": episode},
@@ -143,9 +140,7 @@ def get_search_results(
                 search_executor.add(func, args, kwargs)
 
     elif search_phrase:
-        debug(
-            f"Search phrase '{search_phrase}' is not supported for {request_from}. Only LazyLibrarian can use search phrases."
-        )
+        debug(f"Search phrase '{search_phrase}' is not supported for {request_from}.")
 
     else:
         args, kwargs = ((shared_state, start_time, request_from), {"mirror": mirror})
@@ -153,20 +148,24 @@ def get_search_results(
             if flag:
                 search_executor.add(func, args, kwargs)
 
+    # Clean description for Console UI
     if imdb_id:
-        stype = f'IMDb-ID "{imdb_id}"'
+        desc_text = f"Searching for IMDb-ID {imdb_id}"
+        stype = f"IMDb-ID <b>{imdb_id}</b>"
     elif search_phrase:
-        stype = f'Search-Phrase "{search_phrase}"'
+        desc_text = f"Searching for '{search_phrase}'"
+        stype = f"Search-Phrase <b>{search_phrase}</b>"
     else:
-        stype = "feed search"
+        desc_text = "Running Feed Search"
+        stype = "<b>feed</b> search"
 
-    info(
-        f"Starting {len(search_executor.searches)} searches for {stype}... This may take some time."
-    )
-    results = search_executor.run_all()
+    debug(f"Starting <g>{len(search_executor.searches)}</g> searches for {stype}...")
+
+    results = search_executor.run_all(desc_text)
+
     elapsed_time = time.time() - start_time
     info(
-        f"Providing {len(results)} releases to {request_from} for {stype}. Time taken: {elapsed_time:.2f} seconds"
+        f"Providing <g>{len(results)} releases</g> to <d>{request_from}</d> for {stype}. <blue>Time taken: {elapsed_time:.2f} seconds</blue>"
     )
 
     return results
@@ -177,45 +176,67 @@ class SearchExecutor:
         self.searches = []
 
     def add(self, func, args, kwargs, use_cache=False):
-        # create cache key
         key_args = list(args)
-        key_args[1] = None  # ignore start_time in cache key
+        key_args[1] = None
         key_args = tuple(key_args)
         key = hash((func.__name__, key_args, frozenset(kwargs.items())))
-
         self.searches.append((key, lambda: func(*args, **kwargs), use_cache))
 
-    def run_all(self):
+    def run_all(self, description):
         results = []
-        futures = []
-        cache_keys = []
-        cache_used = False
+        future_to_meta = {}
 
         with ThreadPoolExecutor() as executor:
+            current_index = 0
+            pending_futures = []
+            cache_used = False
+
             for key, func, use_cache in self.searches:
+                cached_result = None
                 if use_cache:
                     cached_result = search_cache.get(key)
-                    if cached_result is not None:
-                        debug(f"Using cached result for {key}")
-                        cache_used = True
-                        results.extend(cached_result)
-                        continue
 
-                futures.append(executor.submit(func))
-                cache_keys.append(key if use_cache else None)
+                if cached_result is not None:
+                    debug(f"Using cached result for {key}")
+                    cache_used = True
+                    results.extend(cached_result)
+                else:
+                    future = executor.submit(func)
+                    cache_key = key if use_cache else None
+                    future_to_meta[future] = (current_index, cache_key)
+                    pending_futures.append(future)
+                    current_index += 1
 
-        for index, future in enumerate(as_completed(futures)):
-            try:
-                result = future.result()
-                results.extend(result)
+            # Prepare list to track status of each provider
+            # Icons will be filled in as threads complete
+            total_active = len(pending_futures)
+            icons = ["▪️"] * total_active
 
-                if cache_keys[index]:  # only cache if flag is set
-                    search_cache.set(cache_keys[index], result)
-            except Exception as e:
-                info(f"An error occurred: {e}")
+            for future in as_completed(pending_futures):
+                index, cache_key = future_to_meta[future]
+                try:
+                    res = future.result()
+                    if res and len(res) > 0:
+                        status = "✅"
+                    else:
+                        status = "⚪"
 
-        if cache_used:
-            info("Presenting cached results instead of searching online.")
+                    icons[index] = status
+
+                    results.extend(res)
+                    if cache_key:
+                        search_cache.set(cache_key, res)
+                except Exception as e:
+                    icons[index] = "❌"
+                    info(f"Search error: {e}")
+
+            # Log the final status summary if any searches were performed
+            if total_active > 0:
+                bar_str = "".join(icons)
+                info(f"{description} [{bar_str}]")
+
+            if cache_used:
+                info("Presenting cached results for some items.")
 
         return results
 
@@ -228,22 +249,14 @@ class SearchCache:
     def clean(self, now):
         if now - self.last_cleaned < 60:
             return
-
-        keys_to_delete = [
-            key for key, (_, expiry) in self.cache.items() if now >= expiry
-        ]
-
-        for key in keys_to_delete:
-            del self.cache[key]
-
+        keys_to_delete = [k for k, (_, exp) in self.cache.items() if now >= exp]
+        for k in keys_to_delete:
+            del self.cache[k]
         self.last_cleaned = now
 
     def get(self, key):
-        value, expiry = self.cache.get(key, (None, 0))
-        if time.time() < expiry:
-            return value
-
-        return None
+        val, exp = self.cache.get(key, (None, 0))
+        return val if time.time() < exp else None
 
     def set(self, key, value, ttl=300):
         now = time.time()

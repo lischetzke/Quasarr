@@ -190,18 +190,7 @@ class Linkgrabber:
 
     def add_links(
         self,
-        params=[
-            {
-                "autostart": True,
-                "links": None,
-                "packageName": None,
-                "extractPassword": None,
-                "priority": "DEFAULT",
-                "downloadPassword": None,
-                "destinationFolder": None,
-                "overwritePackagizerRules": False,
-            }
-        ],
+        params=None,
     ):
         """
         Add links to the linkcollector
@@ -216,10 +205,23 @@ class Linkgrabber:
         "destinationFolder" : null
         }
         """
+        if params is None:
+            params = [
+                {
+                    "autostart": True,
+                    "links": None,
+                    "packageName": None,
+                    "extractPassword": None,
+                    "priority": "DEFAULT",
+                    "downloadPassword": None,
+                    "destinationFolder": None,
+                    "overwritePackagizerRules": False,
+                }
+            ]
         resp = self.device.action(self.url + "/addLinks", params)
         return resp
 
-    def cleanup(self, action, mode, selection_type, link_ids=[], package_ids=[]):
+    def cleanup(self, action, mode, selection_type, link_ids=None, package_ids=None):
         """
         Clean packages and/or links of the linkgrabber list.
         Requires at least a package_ids or link_ids list, or both.
@@ -235,6 +237,10 @@ class Linkgrabber:
         :param selection_type: Type of selection to use. Types: SELECTED, UNSELECTED, ALL, NONE
         :type: str:
         """
+        if link_ids is None:
+            link_ids = []
+        if package_ids is None:
+            package_ids = []
         params = [link_ids, package_ids]
         params += [action, mode, selection_type]
         resp = self.device.action(self.url + "/cleanup", params)
@@ -259,24 +265,7 @@ class Linkgrabber:
 
     def query_links(
         self,
-        params=[
-            {
-                "bytesTotal": True,
-                "comment": True,
-                "status": True,
-                "enabled": True,
-                "maxResults": -1,
-                "startAt": 0,
-                "hosts": True,
-                "url": True,
-                "availability": True,
-                "variantIcon": True,
-                "variantName": True,
-                "variantID": True,
-                "variants": True,
-                "priority": True,
-            }
-        ],
+        params=None,
     ):
         """
 
@@ -288,34 +277,55 @@ class Linkgrabber:
         :type: Dictionary
         :rtype: List of dictionaries of this style, with more or less detail based on your options.
         """
+        if params is None:
+            params = [
+                {
+                    "bytesTotal": True,
+                    "comment": True,
+                    "status": True,
+                    "enabled": True,
+                    "maxResults": -1,
+                    "startAt": 0,
+                    "hosts": True,
+                    "url": True,
+                    "availability": True,
+                    "variantIcon": True,
+                    "variantName": True,
+                    "variantID": True,
+                    "variants": True,
+                    "priority": True,
+                }
+            ]
         resp = self.device.action(self.url + "/queryLinks", params)
         return resp
 
     def query_packages(
         self,
-        params=[
-            {
-                "bytesLoaded": True,
-                "bytesTotal": True,
-                "comment": True,
-                "enabled": True,
-                "eta": True,
-                "priority": False,
-                "finished": True,
-                "running": True,
-                "speed": True,
-                "status": True,
-                "childCount": True,
-                "hosts": True,
-                "saveTo": True,
-                "maxResults": -1,
-                "startAt": 0,
-            }
-        ],
+        params=None,
     ):
         """
         Get the links in the linkgrabber list
         """
+        if params is None:
+            params = [
+                {
+                    "bytesLoaded": True,
+                    "bytesTotal": True,
+                    "comment": True,
+                    "enabled": True,
+                    "eta": True,
+                    "priority": False,
+                    "finished": True,
+                    "running": True,
+                    "speed": True,
+                    "status": True,
+                    "childCount": True,
+                    "hosts": True,
+                    "saveTo": True,
+                    "maxResults": -1,
+                    "startAt": 0,
+                }
+            ]
         resp = self.device.action("/linkgrabberv2/queryPackages", params)
         return resp
 
@@ -329,7 +339,7 @@ class Downloads:
         self.device = device
         self.url = "/downloadsV2"
 
-    def cleanup(self, action, mode, selection_type, link_ids=[], package_ids=[]):
+    def cleanup(self, action, mode, selection_type, link_ids=None, package_ids=None):
         """
         Clean packages and/or links of the linkgrabber list.
         Requires at least a package_ids or link_ids list, or both.
@@ -345,6 +355,10 @@ class Downloads:
         :param selection_type: Type of selection to use. Types: SELECTED, UNSELECTED, ALL, NONE
         :type: str:
         """
+        if link_ids is None:
+            link_ids = []
+        if package_ids is None:
+            package_ids = []
         params = [link_ids, package_ids]
         params += [action, mode, selection_type]
         resp = self.device.action(self.url + "/cleanup", params)
@@ -352,59 +366,63 @@ class Downloads:
 
     def query_links(
         self,
-        params=[
-            {
-                "bytesTotal": True,
-                "comment": True,
-                "status": True,
-                "enabled": True,
-                "maxResults": -1,
-                "startAt": 0,
-                "packageUUIDs": [],
-                "host": True,
-                "url": True,
-                "bytesloaded": True,
-                "speed": True,
-                "eta": True,
-                "finished": True,
-                "priority": True,
-                "running": True,
-                "skipped": True,
-                "extractionStatus": True,
-            }
-        ],
+        params=None,
     ):
         """
         Get the links in the download list
         """
+        if params is None:
+            params = [
+                {
+                    "bytesTotal": True,
+                    "comment": True,
+                    "status": True,
+                    "enabled": True,
+                    "maxResults": -1,
+                    "startAt": 0,
+                    "packageUUIDs": [],
+                    "host": True,
+                    "url": True,
+                    "bytesloaded": True,
+                    "speed": True,
+                    "eta": True,
+                    "finished": True,
+                    "priority": True,
+                    "running": True,
+                    "skipped": True,
+                    "extractionStatus": True,
+                }
+            ]
         resp = self.device.action(self.url + "/queryLinks", params)
         return resp
 
     def query_packages(
         self,
-        params=[
-            {
-                "bytesLoaded": True,
-                "bytesTotal": True,
-                "comment": True,
-                "enabled": True,
-                "eta": True,
-                "priority": False,
-                "finished": True,
-                "running": True,
-                "speed": True,
-                "status": True,
-                "childCount": True,
-                "hosts": True,
-                "saveTo": True,
-                "maxResults": -1,
-                "startAt": 0,
-            }
-        ],
+        params=None,
     ):
         """
         Get the packages in the downloads list
         """
+        if params is None:
+            params = [
+                {
+                    "bytesLoaded": True,
+                    "bytesTotal": True,
+                    "comment": True,
+                    "enabled": True,
+                    "eta": True,
+                    "priority": False,
+                    "finished": True,
+                    "running": True,
+                    "speed": True,
+                    "status": True,
+                    "childCount": True,
+                    "hosts": True,
+                    "saveTo": True,
+                    "maxResults": -1,
+                    "startAt": 0,
+                }
+            ]
         resp = self.device.action(self.url + "/queryPackages", params)
         return resp
 
@@ -418,7 +436,7 @@ class Extraction:
         self.device = device
         self.url = "/extraction"
 
-    def get_archive_info(self, link_ids=[], package_ids=[]):
+    def get_archive_info(self, link_ids=None, package_ids=None):
         """
         Get ArchiveStatus for links and/or packages.
 
@@ -427,6 +445,10 @@ class Extraction:
         :param link_ids: link UUID's.
         :type: list of strings
         """
+        if link_ids is None:
+            link_ids = []
+        if package_ids is None:
+            package_ids = []
         params = [link_ids, package_ids]
         resp = self.device.action(self.url + "/getArchiveInfo", params)
         return resp
@@ -697,7 +719,7 @@ class Myjdapi:
         try:
             decrypted_data = unpad(decryptor.decrypt(self.__base64_decode(data)))
         except:
-            raise MYJDException("Failed to decode response: {}", data)
+            raise MYJDException("Failed to decode response: {}", data) from None
 
         return decrypted_data
 
@@ -977,7 +999,7 @@ class Myjdapi:
                 except:
                     raise MYJDException(
                         "Failed to decode response: {}", encrypted_response.text
-                    )
+                    ) from None
             msg = (
                 "\n\tSOURCE: "
                 + error_msg["src"]

@@ -13,7 +13,7 @@ from bs4 import BeautifulSoup
 
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.imdb_metadata import get_localized_title
-from quasarr.providers.log import debug, info
+from quasarr.providers.log import debug, error, trace, warn
 
 hostname = "dj"
 
@@ -31,9 +31,7 @@ def dj_feed(shared_state, start_time, request_from, mirror=None):
     releases = []
 
     if "sonarr" not in request_from.lower():
-        debug(
-            f'Skipping {request_from} search on "{hostname.upper()}" (unsupported media type)!'
-        )
+        debug(f"<d>Skipping {request_from} search (unsupported media type)!</d>")
         return releases
 
     sj_host = shared_state.values["config"]("Hostnames").get(hostname)
@@ -47,7 +45,7 @@ def dj_feed(shared_state, start_time, request_from, mirror=None):
         r.raise_for_status()
         data = json.loads(r.content)
     except Exception as e:
-        info(f"{hostname.upper()}: feed load error: {e}")
+        error(f"Feed load error: {e}")
         mark_hostname_issue(
             hostname, "feed", str(e) if "e" in dir() else "Error occurred"
         )
@@ -101,10 +99,10 @@ def dj_feed(shared_state, start_time, request_from, mirror=None):
             )
 
         except Exception as e:
-            debug(f"{hostname.upper()}: feed parse error: {e}")
+            warn(f"Feed parse error: {e}")
             continue
 
-    debug(f"Time taken: {time.time() - start_time:.2f}s ({hostname})")
+    debug(f"Time taken: {time.time() - start_time:.2f}s")
 
     if releases:
         clear_hostname_issue(hostname)
@@ -123,9 +121,7 @@ def dj_search(
     releases = []
 
     if "sonarr" not in request_from.lower():
-        debug(
-            f'Skipping {request_from} search on "{hostname.upper()}" (unsupported media type)!'
-        )
+        debug(f"<d>Skipping {request_from} search (unsupported media type)!</d>")
         return releases
 
     sj_host = shared_state.values["config"]("Hostnames").get(hostname)
@@ -133,11 +129,12 @@ def dj_search(
 
     imdb_id = shared_state.is_imdb_id(search_string)
     if not imdb_id:
+        error(f"No IMDb ID found in search string '{search_string}'")
         return releases
 
     localized_title = get_localized_title(shared_state, imdb_id, "de")
     if not localized_title:
-        info(f"{hostname.upper()}: no localized title for IMDb {imdb_id}")
+        error(f"No localized title for IMDb {imdb_id}")
         return releases
 
     headers = {"User-Agent": shared_state.values["user_agent"]}
@@ -149,7 +146,7 @@ def dj_search(
         soup = BeautifulSoup(r.content, "html.parser")
         results = soup.find_all("a", href=re.compile(r"^/serie/"))
     except Exception as e:
-        info(f"{hostname.upper()}: search load error: {e}")
+        error(f"Search load error: {e}")
         mark_hostname_issue(
             hostname, "search", str(e) if "e" in dir() else "Error occurred"
         )
@@ -167,12 +164,12 @@ def dj_search(
             if not re.search(
                 rf"\b{re.escape(sanitized_search_string)}\b", sanitized_title
             ):
-                debug(
+                trace(
                     f"Search string '{localized_title}' doesn't match '{result_title}'"
                 )
                 continue
 
-            debug(
+            trace(
                 f"Matched search string '{localized_title}' with result '{result_title}'"
             )
 
@@ -181,7 +178,7 @@ def dj_search(
             r = requests.get(series_url, headers=headers, timeout=10)
             media_id_match = re.search(r'data-mediaid="([^"]+)"', r.text)
             if not media_id_match:
-                debug(f"{hostname.upper()}: no media id for {result_title}")
+                warn(f"No media id for {result_title}")
                 continue
 
             media_id = media_id_match.group(1)
@@ -204,7 +201,7 @@ def dj_search(
 
                     published = convert_to_rss_date(item.get("createdAt"))
                     if not published:
-                        debug(f"{hostname.upper()}: no published date for {title}")
+                        debug(f"No published date for {title}")
                         published = one_hour_ago
 
                     mb = 0
@@ -235,10 +232,10 @@ def dj_search(
                     )
 
         except Exception as e:
-            debug(f"{hostname.upper()}: search parse error: {e}")
+            warn(f"Search parse error: {e}")
             continue
 
-    debug(f"Time taken: {time.time() - start_time:.2f}s ({hostname})")
+    debug(f"Time taken: {time.time() - start_time:.2f}s")
 
     if releases:
         clear_hostname_issue(hostname)

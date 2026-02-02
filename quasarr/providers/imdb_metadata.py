@@ -207,8 +207,6 @@ class IMDbCDN:
                 return results
 
         except Exception as e:
-            from quasarr.providers.log import debug
-
             debug(f"IMDb CDN search failed: {e}")
 
         return []

@@ -12,7 +12,7 @@ from datetime import date, datetime, timedelta
 from urllib import parse
 
 import quasarr
-from quasarr.providers.log import debug, info
+from quasarr.providers.log import debug, error, info, trace, warn
 from quasarr.providers.myjd_api import (
     Jddevice,
     Myjdapi,
@@ -140,7 +140,7 @@ def connect_to_jd(jd, user, password, device_name):
         connection_info = device.check_direct_connection()
         if connection_info["status"]:
             info(
-                f'Direct connection to JDownloader established: "{connection_info["ip"]}"'
+                f"Direct connection to JDownloader established: <g>{connection_info['ip']}</g>"
             )
         else:
             info("Could not establish direct connection to JDownloader.")
@@ -232,25 +232,25 @@ def get_device():
             # First 10 failures: 3 seconds
             sleep_time = 3
             if attempts == 10:
-                info(
+                warn(
                     f"WARNING: {attempts} consecutive JDownloader connection errors. Switching to 1-minute intervals."
                 )
         elif attempts <= 15:
             # Next 5 failures (11-15): 1 minute
             sleep_time = 60
             if attempts % 10 == 0:
-                info(
+                warn(
                     f"WARNING: {attempts} consecutive JDownloader connection errors. Please check your credentials!"
                 )
             if attempts == 15:
-                info(
+                warn(
                     f"WARNING: Still failing after {attempts} attempts. Switching to 5-minute intervals."
                 )
         else:
             # After 15 failures: 5 minutes
             sleep_time = 300
             if attempts % 10 == 0:
-                info(
+                warn(
                     f"WARNING: {attempts} consecutive JDownloader connection errors. Please check your credentials!"
                 )
 
@@ -271,7 +271,7 @@ def get_devices(user, password):
         devices = jd.list_devices()
         return devices
     except (TokenExpiredException, RequestTimeoutException, MYJDException) as e:
-        info("Error connecting to JDownloader: " + str(e))
+        error("Error connecting to JDownloader: " + str(e))
         return []
 
 
@@ -611,7 +611,7 @@ def sanitize_string(s):
 
     # Remove German and English articles
     articles = r"\b(?:der|die|das|ein|eine|einer|eines|einem|einen|the|a|an|and)\b"
-    s = re.sub(articles, "", s, re.IGNORECASE)
+    s = re.sub(articles, "", s, count=0, flags=re.IGNORECASE)
 
     # Replace obsolete titles
     s = s.replace("navy cis", "ncis")
@@ -631,7 +631,7 @@ def search_string_in_sanitized_title(search_string, title):
     )
     # Use word boundaries to ensure full word/phrase match
     if re.search(rf"\b{search_regex}\b", sanitized_title):
-        debug(f"Matched search string: {search_regex} with title: {sanitized_title}")
+        trace(f"Matched search string: {search_regex} with title: {sanitized_title}")
         return True
     else:
         debug(
@@ -718,11 +718,13 @@ def is_valid_release(
         is_tv_search = "sonarr" in rf
         is_docs_search = "lazylibrarian" in rf
 
-        # if search string is NOT an imdb id check search_string_in_sanitized_title - if not match, its not valid
+        # if search string is NOT an imdb id check search_string_in_sanitized_title - if not match, it is not valid
         if not is_docs_search and not is_imdb_id(search_string):
             if not search_string_in_sanitized_title(search_string, title):
                 debug(
-                    f"Skipping {title!r} as it doesn't match sanitized search string: {search_string!r}"
+                    "Skipping {title!r} as it doesn't match sanitized search string: {search_string!r}",
+                    title=title,
+                    search_string=search_string,
                 )
                 return False
 
@@ -730,7 +732,9 @@ def is_valid_release(
         if is_movie_search:
             if not MOVIE_REGEX.match(title):
                 debug(
-                    f"Skipping {title!r} as title doesn't match movie regex: {MOVIE_REGEX.pattern}"
+                    "Skipping {title!r} as title doesn't match movie regex: {pattern!r}",
+                    title=title,
+                    pattern=MOVIE_REGEX.pattern,
                 )
                 return False
             return True
@@ -740,14 +744,19 @@ def is_valid_release(
             # must have some S/E tag present
             if not SEASON_EP_REGEX.search(title):
                 debug(
-                    f"Skipping {title!r} as title doesn't match TV show regex: {SEASON_EP_REGEX.pattern}"
+                    "Skipping {title!r} as title doesn't match TV show regex: {pattern!r}",
+                    title=title,
+                    pattern=SEASON_EP_REGEX.pattern,
                 )
                 return False
             # if caller specified a season or episode, double‑check the match
             if season is not None or episode is not None:
                 if not match_in_title(title, season, episode):
                     debug(
-                        f"Skipping {title!r} as it doesn't match season {season} and episode {episode}"
+                        "Skipping {title!r} as it doesn't match season {season} and episode {episode}",
+                        title=title,
+                        season=season,
+                        episode=episode,
                     )
                     return False
             return True
@@ -757,7 +766,9 @@ def is_valid_release(
             # must NOT have any S/E tag present
             if SEASON_EP_REGEX.search(title):
                 debug(
-                    f"Skipping {title!r} as title matches TV show regex: {SEASON_EP_REGEX.pattern}"
+                    "Skipping {title!r} as title matches TV show regex: {pattern!r}",
+                    title=title,
+                    pattern=SEASON_EP_REGEX.pattern,
                 )
                 return False
             return True

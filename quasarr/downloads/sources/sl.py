@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 import requests
 from bs4 import BeautifulSoup
 
+from quasarr.providers.cloudflare import ensure_session_cf_bypassed
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.log import debug, info
 
@@ -33,7 +34,11 @@ def get_sl_download_links(shared_state, url, mirror, title, password):
     session = requests.Session()
 
     try:
-        r = session.get(url, headers=headers, timeout=10)
+        session, headers, r = ensure_session_cf_bypassed(
+            info, shared_state, session, url, headers
+        )
+        if not r:
+            raise requests.RequestException("Cloudflare bypass failed")
         r.raise_for_status()
 
         soup = BeautifulSoup(r.text, "html.parser")

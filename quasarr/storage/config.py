@@ -77,7 +77,7 @@ class Config(object):
 
     def _set_default_config(self, section):
         self._config.add_section(section)
-        for key, key_type, value in self._DEFAULT_CONFIG[section]:
+        for key, _key_type, value in self._DEFAULT_CONFIG[section]:
             self._config.set(section, key, value)
         with open(self._configfile, "w") as configfile:
             self._config.write(configfile)
@@ -173,8 +173,6 @@ def get_clean_hostnames(shared_state):
             hostnames.save(host, strg)
         if strg and re.match(r".*[A-Z].*", strg):
             hostnames.save(host, strg.lower())
-        if strg:
-            print(f'Using "{strg}" as hostname for "{host}"')
         return strg
 
     for name in shared_state.values["sites"]:

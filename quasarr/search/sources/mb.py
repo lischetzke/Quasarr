@@ -12,7 +12,7 @@ import requests
 from bs4 import BeautifulSoup
 
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
-from quasarr.providers.log import debug, info
+from quasarr.providers.log import debug, warn
 
 hostname = "mb"
 supported_mirrors = ["rapidgator", "ddownload"]
@@ -169,7 +169,7 @@ def mb_feed(shared_state, start_time, request_from, mirror=None):
 
     if not "arr" in request_from.lower():
         debug(
-            f'Skipping {request_from} search on "{hostname.upper()}" (unsupported media type)!'
+            f'<d>Skipping {request_from} search on "{hostname.upper()}" (unsupported media type)!</d>'
         )
         return []
 
@@ -183,12 +183,12 @@ def mb_feed(shared_state, start_time, request_from, mirror=None):
         soup = BeautifulSoup(r.content, "html.parser")
         releases = _parse_posts(soup, shared_state, password, mirror_filter=mirror)
     except Exception as e:
-        info(f"Error loading {hostname.upper()} feed: {e}")
+        warn(f"Error loading {hostname.upper()} feed: {e}")
         mark_hostname_issue(
             hostname, "feed", str(e) if "e" in dir() else "Error occurred"
         )
         releases = []
-    debug(f"Time taken: {time.time() - start_time:.2f}s ({hostname})")
+    debug(f"Time taken: {time.time() - start_time:.2f}s")
 
     if releases:
         clear_hostname_issue(hostname)
@@ -208,7 +208,7 @@ def mb_search(
 
     if not "arr" in request_from.lower():
         debug(
-            f'Skipping {request_from} search on "{hostname.upper()}" (unsupported media type)!'
+            f'<d>Skipping {request_from} search on "{hostname.upper()}" (unsupported media type)!</d>'
         )
         return []
 
@@ -236,12 +236,12 @@ def mb_search(
             episode=episode,
         )
     except Exception as e:
-        info(f"Error loading {hostname.upper()} search: {e}")
+        warn(f"Error loading {hostname.upper()} search: {e}")
         mark_hostname_issue(
             hostname, "search", str(e) if "e" in dir() else "Error occurred"
         )
         releases = []
-    debug(f"Time taken: {time.time() - start_time:.2f}s ({hostname})")
+    debug(f"Time taken: {time.time() - start_time:.2f}s")
 
     if releases:
         clear_hostname_issue(hostname)

@@ -32,7 +32,7 @@ def get_he_download_links(shared_state, url, mirror, title, password):
         r.raise_for_status()
         soup = BeautifulSoup(r.text, "html.parser")
     except Exception as e:
-        info(f"{hostname}: could not fetch release for {title}: {e}")
+        info(f"Could not fetch release for {title}: {e}")
         mark_hostname_issue(
             hostname, "download", str(e) if "e" in dir() else "Download error"
         )
@@ -49,14 +49,13 @@ def get_he_download_links(shared_state, url, mirror, title, password):
             if m:
                 imdb_id = m.group(1)
             else:
-                debug(f"{hostname}: imdb_id not found for title {title} in link href.")
+                debug(f"imdb_id not found for title {title} in link href.")
         else:
-            debug(f"{hostname}: imdb_id link href not found for title {title}.")
+            debug(f"imdb_id link href not found for title {title}.")
     except Exception:
-        debug(f"{hostname}: failed to extract imdb_id for title {title}.")
-
+        debug(f"failed to extract imdb_id for title {title}.")
     anchors = []
-    for retries in range(10):
+    for _retries in range(10):
         form = soup.find("form", id=re.compile(r"content-protector-access-form"))
         if not form:
             return {"links": [], "imdb_id": None}
@@ -91,7 +90,7 @@ def get_he_download_links(shared_state, url, mirror, title, password):
             r.raise_for_status()
             soup = BeautifulSoup(r.text, "html.parser")
         except Exception as e:
-            info(f"{hostname}: could not submit protector form for {title}: {e}")
+            info(f"Could not submit protector form for {title}: {e}")
             mark_hostname_issue(
                 hostname, "download", str(e) if "e" in dir() else "Download error"
             )
@@ -118,11 +117,11 @@ def get_he_download_links(shared_state, url, mirror, title, password):
 
             links.append([href, hoster])
         except Exception:
-            debug(f"{hostname}: could not resolve download link hoster for {title}")
+            debug(f"Could not resolve download link hoster for {title}")
             continue
 
     if not links:
-        info(f"No external download links found on {hostname} page for {title}")
+        info(f"No external download links found for {title}")
         return {"links": [], "imdb_id": None}
 
     return {

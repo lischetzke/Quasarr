@@ -11,16 +11,9 @@ VERSION_FILE = Path("quasarr/providers/version.py")
 PYPROJECT_FILE = Path("pyproject.toml")
 
 
-def safe_print(msg):
-    try:
-        print(msg)
-    except Exception:
-        print(msg.encode("ascii", errors="replace").decode("ascii"))
-
-
 def run(cmd, check=True, capture=False, text=True):
     """Helper to run shell commands comfortably."""
-    safe_print(f"⚙️  Exec: {' '.join(cmd)}")
+    print(f"⚙️  Exec: {' '.join(cmd)}")
     return subprocess.run(cmd, check=check, capture_output=capture, text=text)
 
 
@@ -36,31 +29,29 @@ def git_status_has_changes():
 
 
 def task_format():
-    safe_print("\n🔍 --- 1. FORMATTING & SYNTAX CHECK ---")
+    print("\n🔍 --- 1. FORMATTING & SYNTAX CHECK ---")
 
     # Runs Ruff using the rules defined in pyproject.toml
     result = run(["uv", "run", "ruff", "check", "--fix", "."], check=False)
 
     if result.returncode != 0:
-        safe_print(
-            "❌ Critical errors or syntax issues found. Fix them before staging."
-        )
-        return False
+        print("❌ Critical errors or syntax issues found. Fix them before staging.")
+        sys.exit(1)
 
     # Standard formatting (indentation/spacing)
     run(["uv", "run", "ruff", "format", "."], check=False)
 
     if git_status_has_changes():
-        safe_print("✅ Linting fixes applied and staged.")
+        print("✅ Linting fixes applied and staged.")
         run(["git", "add", "."])
         return True
 
-    safe_print("✨ Code style is already perfect.")
+    print("✨ Code style is already perfect.")
     return False
 
 
 def task_upgrade_deps():
-    safe_print("\n📦 --- 2. DEPENDENCIES ---")
+    print("\n📦 --- 2. DEPENDENCIES ---")
     try:
         with open(PYPROJECT_FILE, "rb") as f:
             pyproj = tomllib.load(f)
@@ -74,7 +65,7 @@ def task_upgrade_deps():
         if deps:
             pkgs = [get_pkg_name(d) for d in deps if get_pkg_name(d)]
             if pkgs:
-                safe_print(f"⬆️  Upgrading main: {pkgs}")
+                print(f"⬆️  Upgrading main: {pkgs}")
                 run(["uv", "add", "--upgrade"] + pkgs, check=False)
 
         # Groups
@@ -83,27 +74,27 @@ def task_upgrade_deps():
             if g_deps:
                 pkgs = [get_pkg_name(d) for d in g_deps if get_pkg_name(d)]
                 if pkgs:
-                    safe_print(f"🏗️  Upgrading group '{group}': {pkgs}")
+                    print(f"🏗️  Upgrading group '{group}': {pkgs}")
                     run(
                         ["uv", "add", "--group", group, "--upgrade"] + pkgs, check=False
                     )
 
         # Lock file
-        safe_print("🔒 Refreshing lockfile...")
+        print("🔒 Refreshing lockfile...")
         run(["uv", "lock", "--upgrade"], check=False)
 
     except Exception as e:
-        safe_print(f"⚠️  Dependency upgrade failed: {e}")
+        print(f"⚠️  Dependency upgrade failed: {e}")
 
     if git_status_has_changes():
-        safe_print("✅ Dependencies updated.")
+        print("✅ Dependencies updated.")
         run(["git", "add", "."])
         return True
     return False
 
 
 def task_version_bump():
-    safe_print("\n🏷️  --- 3. VERSION CHECK ---")
+    print("\n🏷️  --- 3. VERSION CHECK ---")
     new_v = ""
 
     def get_ver(content):
@@ -127,7 +118,7 @@ def task_version_bump():
             return (0, 0, 0)
 
     try:
-        safe_print("🌐 Fetching remote to compare versions...")
+        print("🌐 Fetching remote to compare versions...")
         run(["git", "fetch", "origin", "main"], check=False)
         try:
             base = subprocess.check_output(
@@ -148,11 +139,11 @@ def task_version_bump():
         # Read Current Version
         curr_v = get_ver(VERSION_FILE.read_text())
 
-        safe_print(f"📊 Main: {main_v} | Current: {curr_v}")
+        print(f"📊 Main: {main_v} | Current: {curr_v}")
 
         if main_v and curr_v and ver_tuple(curr_v) <= ver_tuple(main_v):
             new_v = bump(main_v)
-            safe_print(f"🚀 Bumping version to: {new_v}")
+            print(f"🚀 Bumping version to: {new_v}")
             content = VERSION_FILE.read_text().replace(f'"{curr_v}"', f'"{new_v}"')
             VERSION_FILE.write_text(content)
 
@@ -160,7 +151,7 @@ def task_version_bump():
             return True, new_v
 
     except Exception as e:
-        safe_print(f"⚠️  Version check warning (non-fatal): {e}")
+        print(f"⚠️  Version check warning (non-fatal): {e}")
 
     return False, new_v
 
@@ -179,7 +170,7 @@ def main():
 
     # --- CI Specific Logic ---
     if is_ci and (fixed_format or fixed_deps or fixed_version):
-        safe_print("\n📤 --- 4. PUSH & REPORT ---")
+        print("\n📤 --- 4. PUSH & REPORT ---")
 
         run(["git", "config", "--global", "user.name", "github-actions[bot]"])
         run(
@@ -208,7 +199,7 @@ def main():
         try:
             run(["git", "commit", "-m", msg])
             target_ref = get_env("TARGET_REF")
-            safe_print(f"🔄 Rebase and pushing to {target_ref}...")
+            print(f"🔄 Rebase and pushing to {target_ref}...")
             run(["git", "pull", "--rebase", "origin", target_ref], check=False)
             run(["git", "push", "origin", f"HEAD:{target_ref}"])
 
@@ -216,7 +207,7 @@ def main():
                 with open(os.environ["GITHUB_OUTPUT"], "a") as f:
                     f.write("changes_pushed=true\n")
         except subprocess.CalledProcessError as e:
-            safe_print(f"❌ ::error::Failed to push fixes. ({e})")
+            print(f"❌ ::error::Failed to push fixes. ({e})")
             sys.exit(1)
 
         repo = get_env("GITHUB_REPO")
@@ -236,7 +227,7 @@ def main():
                 pass
 
         if pr_num:
-            safe_print(f"💬 Posting status update to PR #{pr_num}...")
+            print(f"💬 Posting status update to PR #{pr_num}...")
             fixes_list = ""
             if fixed_format:
                 fixes_list += "- ✅ **Formatted Code**\n"
@@ -265,18 +256,18 @@ def main():
                     check=False,
                 )
 
-        safe_print(f"⚡ Triggering workflow: {workflow_name}...")
+        print(f"⚡ Triggering workflow: {workflow_name}...")
         ret = run(
             ["gh", "workflow", "run", workflow_name, "--ref", target_ref], check=False
         )
 
         if ret.returncode != 0:
-            safe_print("⚠️  ::warning::Could not auto-trigger next run.")
+            print("⚠️  ::warning::Could not auto-trigger next run.")
 
         sys.exit(0)
 
     else:
-        safe_print("\n✨ Clean run. No changes needed.")
+        print("\n✨ Clean run. No changes needed.")
         if "GITHUB_OUTPUT" in os.environ:
             with open(os.environ["GITHUB_OUTPUT"], "a") as f:
                 f.write("changes_pushed=false\n")

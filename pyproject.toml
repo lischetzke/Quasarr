@@ -8,9 +8,12 @@ dependencies = [
     "beautifulsoup4>=4.14.3",
     "bottle>=0.13.4",
     "dukpy>=0.5.0",
+    "loguru>=0.7.3",
     "pillow>=12.1.0",
     "pycryptodomex>=3.23.0",
+    "python-dotenv>=1.2.1",
     "requests>=2.32.5",
+    "wcwidth>=0.5.3",
 ]
 authors = [
     { name = "rix1337", email = "rix1337@users.noreply.github.com" }
@@ -45,8 +48,11 @@ build = [
 ]
 
 [tool.ruff]
-# This covers syntax and logic (F) + import sorting (I)
-lint.select = ["F", "I"]
+# F   = Pyflakes (Critical: F821 catches undefined names)
+# I   = Isort (Import sorting)
+# PLE = Pylint Errors (Catches robust logic errors like used-before-assignment)
+# B   = Bugbear (Catches common runtime crash bugs and potential logical errors)
+lint.select = ["F", "I", "PLE", "B"]
 lint.fixable = ["F", "I"]
 lint.ignore = ["E"]
 

@@ -31,7 +31,7 @@ def get_nk_download_links(shared_state, url, mirror, title, password):
         r.raise_for_status()
         soup = BeautifulSoup(r.text, "html.parser")
     except Exception as e:
-        info(f"{hostname}: could not fetch release page for {title}: {e}")
+        info(f"Could not fetch release page for {title}: {e}")
         mark_hostname_issue(
             hostname, "download", str(e) if "e" in dir() else "Download error"
         )
@@ -56,7 +56,7 @@ def get_nk_download_links(shared_state, url, mirror, title, password):
             r.raise_for_status()
             href = r.url
         except Exception as e:
-            info(f"{hostname}: could not resolve download link for {title}: {e}")
+            info(f"Could not resolve download link for {title}: {e}")
             mark_hostname_issue(
                 hostname, "download", str(e) if "e" in dir() else "Download error"
             )
@@ -65,6 +65,6 @@ def get_nk_download_links(shared_state, url, mirror, title, password):
         candidates.append([href, mirror])
 
     if not candidates:
-        info(f"No external download links found on {hostname} page for {title}")
+        info(f"No external download links found for {title}")
 
     return {"links": candidates}

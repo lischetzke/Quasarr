@@ -16,7 +16,7 @@ from quasarr.downloads.sources.al import (
 )
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.imdb_metadata import get_localized_title, get_year
-from quasarr.providers.log import debug, info
+from quasarr.providers.log import debug, error, info, trace
 from quasarr.providers.sessions.al import fetch_via_requests_session, invalidate_session
 
 hostname = "al"
@@ -37,9 +37,9 @@ def convert_to_rss_date(date_str: str) -> str:
     try:
         parsed = datetime.strptime(date_str, "%d.%m.%Y - %H:%M")
         return parsed.strftime("%a, %d %b %Y %H:%M:%S +0000")
-    except ValueError:
+    except ValueError as e:
         # If parsing fails, return the original string or handle as needed
-        raise ValueError(f"Could not parse date: {date_str}")
+        raise ValueError(f"Could not parse date: {date_str}") from e
 
 
 def parse_relative_date(raw: str) -> datetime | None:
@@ -122,7 +122,7 @@ def al_feed(shared_state, start_time, request_from, mirror=None):
     host = shared_state.values["config"]("Hostnames").get(hostname)
 
     if not "arr" in request_from.lower():
-        debug(f"{hostname}: Skipping {request_from} search (unsupported media type)!")
+        debug(f"<d>Skipping {request_from} search (unsupported media type)!</d>")
         return releases
 
     if "Radarr" in request_from:
@@ -131,7 +131,7 @@ def al_feed(shared_state, start_time, request_from, mirror=None):
         wanted_type = "series"
 
     if mirror and mirror not in supported_mirrors:
-        debug(f'Mirror "{mirror}" not supported by {hostname}.')
+        debug(f'Mirror "{mirror}" not supported.')
         return releases
 
     try:
@@ -140,7 +140,7 @@ def al_feed(shared_state, start_time, request_from, mirror=None):
         )
         r.raise_for_status()
     except Exception as e:
-        info(f"{hostname}: could not fetch feed: {e}")
+        error(f"Could not fetch feed: {e}")
         mark_hostname_issue(
             hostname, "feed", str(e) if "e" in dir() else "Error occurred"
         )
@@ -201,7 +201,7 @@ def al_feed(shared_state, start_time, request_from, mirror=None):
                     try:
                         date_converted = convert_to_rss_date(raw_date_str)
                     except Exception as e:
-                        debug(f"{hostname}: could not parse date '{raw_date_str}': {e}")
+                        debug(f"Could not parse date '{raw_date_str}': {e}")
 
             # Each of these signifies an individual release block
             mt_blocks = tr.find_all("div", class_="mt10")
@@ -239,13 +239,13 @@ def al_feed(shared_state, start_time, request_from, mirror=None):
                     )
 
         except Exception as e:
-            info(f"{hostname}: error parsing feed item: {e}")
+            info(f"Error parsing feed item: {e}")
             mark_hostname_issue(
                 hostname, "feed", str(e) if "e" in dir() else "Error occurred"
             )
 
     elapsed = time.time() - start_time
-    debug(f"Time taken: {elapsed:.2f}s ({hostname})")
+    debug(f"Time taken: {elapsed:.2f}s")
 
     if releases:
         clear_hostname_issue(hostname)
@@ -272,7 +272,7 @@ def al_search(
     host = shared_state.values["config"]("Hostnames").get(hostname)
 
     if not "arr" in request_from.lower():
-        debug(f"{hostname}: Skipping {request_from} search (unsupported media type)!")
+        debug(f"<d>Skipping {request_from} search (unsupported media type)!</d>")
         return releases
 
     if "Radarr" in request_from:
@@ -281,14 +281,14 @@ def al_search(
         valid_type = "series"
 
     if mirror and mirror not in supported_mirrors:
-        debug(f'{hostname}: Mirror "{mirror}" not supported.')
+        debug(f'Mirror "{mirror}" not supported.')
         return releases
 
     imdb_id = shared_state.is_imdb_id(search_string)
     if imdb_id:
         title = get_localized_title(shared_state, imdb_id, "de")
         if not title:
-            info(f"{hostname}: no title for IMDb {imdb_id}")
+            info(f"No title for IMDb {imdb_id}")
             return releases
         search_string = title
 
@@ -307,7 +307,7 @@ def al_search(
         )
         r.raise_for_status()
     except Exception as e:
-        info(f"{hostname}: search load error: {e}")
+        info(f"Search load error: {e}")
         mark_hostname_issue(
             hostname, "search", str(e) if "e" in dir() else "Error occurred"
         )
@@ -322,7 +322,7 @@ def al_search(
             last_redirect.url, redirect_location
         )  # in case of relative URL
         debug(
-            f"{hostname}: {search_string} redirected to {absolute_redirect_url} instead of search results page"
+            f"{search_string} redirected to {absolute_redirect_url} instead of search results page"
         )
 
         try:
@@ -350,13 +350,9 @@ def al_search(
             sanitized_search_string = shared_state.sanitize_string(search_string)
             sanitized_title = shared_state.sanitize_string(name)
             if not sanitized_search_string in sanitized_title:
-                debug(
-                    f"{hostname}: Search string '{search_string}' doesn't match '{name}'"
-                )
+                debug(f"Search string '{search_string}' doesn't match '{name}'")
                 continue
-            debug(
-                f"{hostname}: Matched search string '{search_string}' with result '{name}'"
-            )
+            trace(f"Matched search string '{search_string}' with result '{name}'")
 
             type_label = None
             for lbl in body.select("div.label-group a[href]"):
@@ -388,7 +384,7 @@ def al_search(
             use_cache = ts and ts > datetime.now() - timedelta(seconds=threshold)
 
             if use_cache and entry.get("html"):
-                debug(f"{hostname}: Using cached content for '{url}'")
+                debug(f"Using cached content for '{url}'")
                 data_html = entry["html"]
             else:
                 entry = {"timestamp": datetime.now()}
@@ -494,13 +490,13 @@ def al_search(
                 )
 
         except Exception as e:
-            info(f"{hostname}: error parsing search item: {e}")
+            info(f"Error parsing search item: {e}")
             mark_hostname_issue(
                 hostname, "search", str(e) if "e" in dir() else "Error occurred"
             )
 
     elapsed = time.time() - start_time
-    debug(f"Time taken: {elapsed:.2f}s ({hostname})")
+    debug(f"Time taken: {elapsed:.2f}s")
 
     if releases:
         clear_hostname_issue(hostname)

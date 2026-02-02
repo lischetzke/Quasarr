@@ -40,7 +40,7 @@ def create_and_persist_session(shared_state):
     password = credentials_cfg.get("password")
 
     if not user or not password:
-        info(f'Missing credentials for: "{hostname}" - user and password are required')
+        info("Missing credentials - user and password are required")
         mark_hostname_issue(hostname, "session", "Missing credentials")
         return None
 
@@ -62,7 +62,7 @@ def create_and_persist_session(shared_state):
         csrf_input = soup.find("input", {"name": "_xfToken"})
 
         if not csrf_input or not csrf_input.get("value"):
-            info(f'Could not find CSRF token on login page for: "{hostname}"')
+            info("Could not find CSRF token on login page")
             mark_hostname_issue(hostname, "session", "Could not find CSRF token")
             return None
 
@@ -87,15 +87,13 @@ def create_and_persist_session(shared_state):
         verify_r.raise_for_status()
 
         if 'data-logged-in="true"' not in verify_r.text:
-            info(
-                f'Login verification failed for: "{hostname}" - invalid credentials or login failed'
-            )
+            info("Login verification failed - invalid credentials or login failed")
             mark_hostname_issue(hostname, "session", "Login verification failed")
             return None
 
-        info(f'Session successfully created for: "{hostname}" using user/password')
+        info("Session successfully created using user/password")
     except Exception as e:
-        info(f'Failed to create session for: "{hostname}" - {e}')
+        info(f"Failed to create session - {e}")
         mark_hostname_issue(hostname, "session", str(e))
         return None
 
@@ -132,7 +130,7 @@ def retrieve_and_validate_session(shared_state):
         if not isinstance(sess, requests.Session):
             raise ValueError("Not a Session")
     except Exception as e:
-        debug(f"{hostname}: session load failed: {e}")
+        debug(f"Session load failed: {e}")
         return create_and_persist_session(shared_state)
 
     return sess
@@ -147,7 +145,7 @@ def invalidate_session(shared_state):
     """
     db = shared_state.values["database"]("sessions")
     db.delete(hostname)
-    debug(f'Session for "{hostname}" marked as invalid!')
+    debug("Session marked as invalid!")
 
 
 def _persist_session_to_db(shared_state, sess):
@@ -188,7 +186,7 @@ def fetch_via_requests_session(
     sess = retrieve_and_validate_session(shared_state)
     if not sess:
         raise SkippedSiteError(
-            f"{hostname}: site not usable (login skipped or no credentials)"
+            f"Site '{hostname}' not usable (login skipped or no credentials)"
         )
 
     # Execute request

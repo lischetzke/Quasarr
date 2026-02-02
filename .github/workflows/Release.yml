@@ -23,6 +23,7 @@ jobs:
   version:
     name: Get Version
     runs-on: ubuntu-latest
+    timeout-minutes: 1
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
@@ -44,6 +45,7 @@ jobs:
   build-wheel:
     name: Build Wheel
     runs-on: ubuntu-latest
+    timeout-minutes: 3
     outputs:
       attestation-id: ${{ steps.attest.outputs.attestation-id }}
     permissions:
@@ -76,7 +78,10 @@ jobs:
   build-exe:
     name: Build Exe (Windows)
     runs-on: windows-latest
+    timeout-minutes: 3
     needs: version
+    outputs:
+      cache-hit: ${{ steps.pyinstaller-cache.outputs.cache-hit }}
     env:
       BUILD_PATH: "build"
     steps:
@@ -121,6 +126,7 @@ jobs:
   build-docker-amd64:
     name: Build Docker (AMD64)
     runs-on: ubuntu-latest
+    timeout-minutes: 3
     needs: [ version, build-wheel ]
     steps:
       - uses: actions/checkout@v6
@@ -160,6 +166,7 @@ jobs:
   build-docker-arm64:
     name: Build Docker (ARM64)
     runs-on: ubuntu-24.04-arm
+    timeout-minutes: 3
     needs: [ version, build-wheel ]
     steps:
       - uses: actions/checkout@v6
@@ -199,6 +206,7 @@ jobs:
   merge-docker-manifest:
     name: Merge Docker Manifests
     runs-on: ubuntu-latest
+    timeout-minutes: 1
     needs: [ version, build-docker-amd64, build-docker-arm64 ]
     steps:
       - uses: docker/setup-buildx-action@v3
@@ -225,6 +233,7 @@ jobs:
   release:
     name: Create Release
     runs-on: ubuntu-latest
+    timeout-minutes: 1
     needs: [ version, build-wheel, build-exe, build-docker-amd64, build-docker-arm64 ]
     permissions:
       contents: write
@@ -269,6 +278,7 @@ jobs:
           echo "### Python:" >> release_body.md
           echo "\`uv tool upgrade quasarr\`" >> release_body.md
           if [ -f pr_body.txt ]; then
+            echo "" >> release_body.md
             cat pr_body.txt >> release_body.md
             echo "" >> release_body.md
           fi
@@ -288,6 +298,7 @@ jobs:
     needs: [ version, release, merge-docker-manifest ]
     if: always() && needs.release.result == 'success'
     runs-on: ubuntu-latest
+    timeout-minutes: 1
     steps:
       - uses: actions/checkout@v6
       - name: Send Discord Webhook
@@ -313,6 +324,7 @@ jobs:
   job-summary:
     name: 📈 Build Report
     runs-on: ubuntu-latest
+    timeout-minutes: 1
     needs: [ version, build-wheel, build-exe, build-docker-amd64, build-docker-arm64, release ]
     if: always()
     steps:

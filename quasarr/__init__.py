@@ -15,7 +15,14 @@ import requests
 import quasarr.providers.web_server
 from quasarr.api import get_api
 from quasarr.providers import shared_state, version
-from quasarr.providers.log import info
+from quasarr.providers.log import (
+    crit,
+    debug,
+    error,
+    get_log_level,
+    info,
+    log_level_names,
+)
 from quasarr.providers.notifications import send_discord_message
 from quasarr.providers.utils import (
     FALLBACK_USER_AGENT,
@@ -67,26 +74,21 @@ def run():
 └────────────────────────────────────┘""")
 
         print("\n===== Recommended Services =====")
+        print('👉 Fast premium downloads: "https://linksnappy.com/?ref=397097" 👈')
         print(
-            'For convenient universal premium downloads use: "https://linksnappy.com/?ref=397097"'
-        )
-        print(
-            'Sponsors get automated CAPTCHA solutions: "https://github.com/rix1337/Quasarr?tab=readme-ov-file#sponsorshelper"'
+            '👉 Automated CAPTCHA solutions: "https://github.com/rix1337/Quasarr?tab=readme-ov-file#sponsorshelper" 👈'
         )
 
-        print("\n===== Startup Info =====")
         port = int("8080")
         config_path = ""
         if os.environ.get("DOCKER"):
             config_path = "/config"
             if not arguments.internal_address:
-                print(
+                error(
                     "You must set the INTERNAL_ADDRESS variable to a locally reachable URL, e.g. http://192.168.1.1:8080"
+                    + " The local URL will be used by Radarr/Sonarr to connect to Quasarr"
+                    + " Stopping Quasarr..."
                 )
-                print(
-                    "The local URL will be used by Radarr/Sonarr to connect to Quasarr"
-                )
-                print("Stopping Quasarr...")
                 sys.exit(1)
         else:
             if arguments.port:
@@ -118,7 +120,7 @@ def run():
             temp_file = tempfile.TemporaryFile(dir=config_path)
             temp_file.close()
         except Exception as e:
-            print(f'Could not access "{config_path}": {e}"Stopping Quasarr...')
+            error(f'Could not access "{config_path}": {e}"Stopping Quasarr...')
             sys.exit(1)
 
         shared_state.set_files(config_path)
@@ -130,16 +132,13 @@ def run():
         shared_state.update("user_agent", FALLBACK_USER_AGENT)
         shared_state.update("helper_active", False)
 
-        print(f'Config path: "{config_path}"')
-
-        print("\n===== Hostnames =====")
         try:
             if arguments.hostnames:
                 hostnames_link = arguments.hostnames
                 if is_valid_url(hostnames_link):
                     # Store the hostnames URL for later use in web UI
                     Config("Settings").save("hostnames_url", hostnames_link)
-                    print(f"Extracting hostnames from {hostnames_link}...")
+                    info(f"Extracting hostnames from {hostnames_link}...")
                     allowed_keys = supported_hostnames
                     max_keys = len(allowed_keys)
                     shorthand_list = (
@@ -147,7 +146,7 @@ def run():
                         + " and "
                         + f'"{allowed_keys[-1]}"'
                     )
-                    print(
+                    info(
                         f"There are up to {max_keys} hostnames currently supported: {shorthand_list}"
                     )
                     data = requests.get(hostnames_link).text
@@ -165,36 +164,32 @@ def run():
                             if valid_domain:
                                 hostnames.save(shorthand, hostname)
                                 extracted_hostnames += 1
-                                print(
+                                info(
                                     f'Hostname for "{shorthand}" successfully set to "{hostname}"'
                                 )
                             else:
-                                print(
+                                info(
                                     f'Skipping invalid hostname for "{shorthand}" ("{hostname}")'
                                 )
                         if extracted_hostnames == max_keys:
-                            print(f"All {max_keys} hostnames successfully extracted!")
-                            print(
+                            info(f"All {max_keys} hostnames successfully extracted!")
+                            info(
                                 "You can now remove the hostnames link from the command line / environment variable."
                             )
                     else:
-                        print(
+                        info(
                             f'No Hostnames found at "{hostnames_link}". '
                             "Ensure to pass a plain hostnames list, not html or json!"
                         )
                 else:
-                    print(f'Invalid hostnames URL: "{hostnames_link}"')
+                    error(f'Invalid hostnames URL: "{hostnames_link}"')
         except Exception as e:
-            print(f'Error parsing hostnames link: "{e}"')
+            error(f'Error parsing hostnames link: "{e}"')
 
         hostnames = get_clean_hostnames(shared_state)
         if not hostnames:
             hostnames_config(shared_state)
             hostnames = get_clean_hostnames(shared_state)
-        print(
-            f"You have [{len(hostnames)} of {len(Config._DEFAULT_CONFIG['Hostnames'])}] supported hostnames set up"
-        )
-        print("For efficiency it is recommended to set up as few hostnames as needed.")
 
         # Check credentials for login-required hostnames
         skip_login_db = DataBase("skip_login")
@@ -237,43 +232,54 @@ def run():
         if not user or not password or not device:
             jdownloader_config(shared_state)
 
-        print("\n===== Notifications =====")
         discord_url = ""
         if arguments.discord:
             discord_webhook_pattern = r"^https://discord\.com/api/webhooks/\d+/[\w-]+$"
             if re.match(discord_webhook_pattern, arguments.discord):
                 shared_state.update("webhook", arguments.discord)
-                print("Using Discord Webhook URL for notifications.")
                 discord_url = arguments.discord
             else:
-                print(f"Invalid Discord Webhook URL provided: {arguments.discord}")
-        else:
-            print("No Discord Webhook URL provided")
+                error(f"Invalid Discord Webhook URL provided: {arguments.discord}")
         shared_state.update("discord", discord_url)
 
-        print("\n===== API Information =====")
         api_key = Config("API").get("key")
         if not api_key:
             api_key = shared_state.generate_api_key()
+            info("API-Key generated: <g>" + api_key + "</g>")
 
-        print(
-            'Setup instructions: "https://github.com/rix1337/Quasarr?tab=readme-ov-file#instructions"'
-        )
-        print(f'URL: "{shared_state.values["internal_address"]}"')
-        print(f'API Key: "{api_key}" (without quotes)')
+        print(f"\n===== Quasarr {log_level_names[get_log_level()]} Log =====")
 
-        if external_address != internal_address:
-            print(f'External URL: "{shared_state.values["external_address"]}"')
+        # Start Logging
+        info(f"Web UI: <blue>{shared_state.values['external_address']}</blue>")
+        debug(f'Config path: "{config_path}"')
 
-        print("\n===== Quasarr Info Log =====")
-        if os.getenv("DEBUG"):
-            print("=====    / Debug Log   =====")
+        # Hostnames log
+        hostnames_log = []
+        set_hostnames_count = 0
+        for key in supported_hostnames:
+            if key in hostnames:
+                hostnames_log.append(
+                    f"<bg green><black>{key.upper()}</black></bg green>"
+                )
+                set_hostnames_count += 1
+            else:
+                hostnames_log.append(
+                    f"<bg black><white>{key.upper()}</white></bg black>"
+                )
+
+        total_hostnames_count = len(supported_hostnames)
+        if set_hostnames_count == total_hostnames_count:
+            count_str = f"<g>{set_hostnames_count}</g>/<g>{total_hostnames_count}</g>"
+        else:
+            count_str = f"<y>{set_hostnames_count}</y>/<g>{total_hostnames_count}</g>"
+
+        info(f"Hostnames: [{' '.join(hostnames_log)}] {count_str} set")
 
         protected = shared_state.get_db("protected").retrieve_all_titles()
         if protected:
             package_count = len(protected)
             info(
-                f"CAPTCHA-Solution required for {package_count} package{'s' if package_count > 1 else ''} at: "
+                f"CAPTCHA-Solution required for <y>{package_count}</y> package{'s' if package_count > 1 else ''} at: "
                 f'"{shared_state.values["external_address"]}/captcha"!'
             )
 
@@ -329,21 +335,26 @@ def flaresolverr_checker(shared_state_dict, shared_state_lock):
                 "Some sites (AL) will not work without FlareSolverr. Configure it later in the web UI."
             )
         elif flaresolverr_url:
-            info(f'Checking FlareSolverr at URL: "{flaresolverr_url}"')
-            flaresolverr_check = check_flaresolverr(shared_state, flaresolverr_url)
-            if flaresolverr_check:
+            debug(f"Checking FlareSolverr at URL: <blue>{flaresolverr_url}</blue>")
+            flaresolverr_version_checked = check_flaresolverr(
+                shared_state, flaresolverr_url
+            )
+            if flaresolverr_version_checked:
                 info(
-                    f'FlareSolverr connection successful. Using User-Agent: "{shared_state.values["user_agent"]}"'
+                    f"FlareSolverr connection successful: <g>v.{flaresolverr_version_checked}</g>"
+                )
+                debug(
+                    f"Using Flaresolverr's User-Agent: <g>{shared_state.values['user_agent']}</g>"
                 )
             else:
-                info("FlareSolverr check failed - using fallback user agent")
+                error("FlareSolverr check failed - using fallback user agent")
                 # Fallback user agent is already set in main process, but we log it
                 info(f'User Agent (fallback): "{FALLBACK_USER_AGENT}"')
 
     except KeyboardInterrupt:
         pass
     except Exception as e:
-        info(f"An unexpected error occurred in FlareSolverr checker: {e}")
+        error(f"An unexpected error occurred in FlareSolverr checker: {e}")
 
 
 def update_checker(shared_state_dict, shared_state_lock):
@@ -359,8 +370,9 @@ def update_checker(shared_state_dict, shared_state_lock):
             try:
                 update_available = version.newer_version_available()
             except Exception as e:
-                info(f"Error getting latest version: {e}")
-                info(f'Please manually check: "{link}" for more information!')
+                error(
+                    f"Error getting latest version: {e}!\nPlease manually check: <blue>{link}</blue> for more information!"
+                )
                 update_available = None
 
             if (
@@ -392,27 +404,25 @@ def jdownloader_connection(shared_state_dict, shared_state_lock):
             device = shared_state.get_device()
 
             try:
-                info(
-                    f'Connection to JDownloader successful. Device name: "{device.name}"'
-                )
+                info(f"Connection to JDownloader successful: <g>{device.name}</g>")
             except Exception as e:
-                info(f"Error connecting to JDownloader: {e}! Stopping Quasarr...")
+                crit(f"Error connecting to JDownloader: {e}! Stopping Quasarr...")
                 sys.exit(1)
 
             try:
                 shared_state.set_device_settings()
             except Exception as e:
-                print(f"Error checking settings: {e}")
+                error(f"Error checking settings: {e}")
 
             try:
                 shared_state.update_jdownloader()
             except Exception as e:
-                print(f"Error updating JDownloader: {e}")
+                error(f"Error updating JDownloader: {e}")
 
             try:
                 shared_state.start_downloads()
             except Exception as e:
-                print(f"Error starting downloads: {e}")
+                error(f"Error starting downloads: {e}")
 
             while True:
                 time.sleep(300)
@@ -420,7 +430,7 @@ def jdownloader_connection(shared_state_dict, shared_state_lock):
                     shared_state.values.get("device")
                 )
                 if not device_state:
-                    info("Lost connection to JDownloader. Reconnecting...")
+                    error("Lost connection to JDownloader. Reconnecting...")
                     shared_state.update("device", False)
                     break
 

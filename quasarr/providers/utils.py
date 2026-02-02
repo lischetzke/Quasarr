@@ -13,6 +13,8 @@ from urllib.parse import urlparse
 import requests
 from PIL import Image
 
+from quasarr.providers.log import crit, error
+
 # Fallback user agent when FlareSolverr is not available
 FALLBACK_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
 
@@ -95,7 +97,7 @@ def check_ip():
 def check_flaresolverr(shared_state, flaresolverr_url):
     # Ensure it ends with /v<digit+>
     if not re.search(r"/v\d+$", flaresolverr_url):
-        print(f"FlareSolverr URL does not end with /v#: {flaresolverr_url}")
+        error(f"FlareSolverr URL does not end with /v#: {flaresolverr_url}")
         return False
 
     # Try sending a simple test request
@@ -115,25 +117,32 @@ def check_flaresolverr(shared_state, flaresolverr_url):
             solution_ua = solution.get("userAgent", None)
             if solution_ua:
                 shared_state.update("user_agent", solution_ua)
-            return True
+            try:
+                flaresolverr_version = json_data.get("version")
+            except Exception as e:
+                error(f"Could not grab Flaresolverr version: {str(e)}")
+                return False
+            return flaresolverr_version
         else:
-            print(f"Unexpected FlareSolverr response: {json_data}")
+            error(f"Unexpected FlareSolverr response: {json_data}")
             return False
 
     except Exception as e:
-        print(f"Failed to connect to FlareSolverr: {e}")
+        error(f"Failed to connect to FlareSolverr: {e}")
         return False
 
 
 def validate_address(address, name):
     if not address.startswith("http"):
-        sys.exit(f"Error: {name} '{address}' is invalid. It must start with 'http'.")
+        crit(f"Error: {name} '{address}' is invalid. It must start with 'http'.")
+        sys.exit(1)
 
     colon_count = address.count(":")
     if colon_count < 1 or colon_count > 2:
-        sys.exit(
+        crit(
             f"Error: {name} '{address}' is invalid. It must contain 1 or 2 colons, but it has {colon_count}."
         )
+        sys.exit(1)
 
 
 def is_flaresolverr_available(shared_state):

@@ -14,9 +14,10 @@ from urllib.parse import quote_plus
 import requests
 from bs4 import BeautifulSoup
 
+from quasarr.providers.cloudflare import ensure_session_cf_bypassed
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.imdb_metadata import get_localized_title
-from quasarr.providers.log import debug, info
+from quasarr.providers.log import debug, info, warn
 
 hostname = "sl"
 supported_mirrors = [
@@ -66,7 +67,13 @@ def sl_feed(shared_state, start_time, request_from, mirror=None):
     headers = {"User-Agent": shared_state.values["user_agent"]}
 
     try:
-        r = requests.get(url, headers=headers, timeout=30)
+        session = requests.Session()
+        session, headers, r = ensure_session_cf_bypassed(
+            info, shared_state, session, url, headers
+        )
+        if not r:
+            raise requests.RequestException("Cloudflare bypass failed")
+
         r.raise_for_status()
         root = ET.fromstring(r.text)
 
@@ -122,20 +129,20 @@ def sl_feed(shared_state, start_time, request_from, mirror=None):
                 )
 
             except Exception as e:
-                info(f"Error parsing {hostname.upper()} feed item: {e}")
+                warn(f"Error parsing {hostname.upper()} feed item: {e}")
                 mark_hostname_issue(
                     hostname, "feed", str(e) if "e" in dir() else "Error occurred"
                 )
                 continue
 
     except Exception as e:
-        info(f"Error loading {hostname.upper()} feed: {e}")
+        warn(f"Error loading {hostname.upper()} feed: {e}")
         mark_hostname_issue(
             hostname, "feed", str(e) if "e" in dir() else "Error occurred"
         )
 
     elapsed = time.time() - start_time
-    debug(f"Time taken: {elapsed:.2f}s ({hostname})")
+    debug(f"Time taken: {elapsed:.2f}s")
 
     if releases:
         clear_hostname_issue(hostname)
@@ -188,12 +195,17 @@ def sl_search(
         # Fetch pages in parallel (so we don't double the slow site latency)
         def fetch(url):
             try:
-                debug(f"Fetching {url} ({hostname})")
-                r = requests.get(url, headers=headers, timeout=10)
+                debug(f"Fetching {url}")
+                session = requests.Session()
+                session, _, r = ensure_session_cf_bypassed(
+                    info, shared_state, session, url, headers
+                )
+                if not r:
+                    raise requests.RequestException("Cloudflare bypass failed")
                 r.raise_for_status()
                 return r.text
             except Exception as e:
-                info(f"Error fetching {hostname} url {url}: {e}")
+                info(f"Error fetching url {url}: {e}")
                 mark_hostname_issue(
                     hostname, "search", str(e) if "e" in dir() else "Error occurred"
                 )
@@ -206,7 +218,7 @@ def sl_search(
                 try:
                     html_texts.append(future.result())
                 except Exception as e:
-                    info(f"Error fetching {hostname} search page: {e}")
+                    warn(f"Error fetching search page: {e}")
                     mark_hostname_issue(
                         hostname, "search", str(e) if "e" in dir() else "Error occurred"
                     )
@@ -234,6 +246,7 @@ def sl_search(
 
                         if "lazylibrarian" in request_from.lower():
                             title = shared_state.normalize_magazine_title(title)
+                            imdb_id = None
 
                         source = a["href"]
                         # dedupe
@@ -252,7 +265,6 @@ def sl_search(
                         )
 
                         size = 0
-                        imdb_id = None
 
                         payload = urlsafe_b64encode(
                             f"{title}|{source}|{mirror}|0|{password}|{imdb_id}|{hostname}".encode(
@@ -277,7 +289,7 @@ def sl_search(
                             }
                         )
                     except Exception as e:
-                        info(f"Error parsing {hostname.upper()} search item: {e}")
+                        warn(f"Error parsing {hostname.upper()} search item: {e}")
                         mark_hostname_issue(
                             hostname,
                             "search",
@@ -285,20 +297,20 @@ def sl_search(
                         )
                         continue
             except Exception as e:
-                info(f"Error parsing {hostname.upper()} search HTML: {e}")
+                warn(f"Error parsing {hostname.upper()} search HTML: {e}")
                 mark_hostname_issue(
                     hostname, "search", str(e) if "e" in dir() else "Error occurred"
                 )
                 continue
 
     except Exception as e:
-        info(f"Error loading {hostname.upper()} search page: {e}")
+        warn(f"Error loading {hostname.upper()} search page: {e}")
         mark_hostname_issue(
             hostname, "search", str(e) if "e" in dir() else "Error occurred"
         )
 
     elapsed = time.time() - start_time
-    debug(f"Search time: {elapsed:.2f}s ({hostname})")
+    debug(f"Search time: {elapsed:.2f}s")
 
     if releases:
         clear_hostname_issue(hostname)

@@ -13,7 +13,7 @@ from bs4 import BeautifulSoup
 
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.imdb_metadata import get_localized_title
-from quasarr.providers.log import debug, info
+from quasarr.providers.log import debug, info, trace
 
 hostname = "sj"
 
@@ -32,7 +32,7 @@ def sj_feed(shared_state, start_time, request_from, mirror=None):
 
     if "sonarr" not in request_from.lower():
         debug(
-            f'Skipping {request_from} search on "{hostname.upper()}" (unsupported media type)!'
+            f'<d>Skipping {request_from} search on "{hostname.upper()}" (unsupported media type)!</d>'
         )
         return releases
 
@@ -104,7 +104,7 @@ def sj_feed(shared_state, start_time, request_from, mirror=None):
             debug(f"{hostname.upper()}: feed parse error: {e}")
             continue
 
-    debug(f"Time taken: {time.time() - start_time:.2f}s ({hostname})")
+    debug(f"Time taken: {time.time() - start_time:.2f}s")
 
     if releases:
         clear_hostname_issue(hostname)
@@ -124,7 +124,7 @@ def sj_search(
 
     if "sonarr" not in request_from.lower():
         debug(
-            f'Skipping {request_from} search on "{hostname.upper()}" (unsupported media type)!'
+            f'<d>Skipping {request_from} search on "{hostname.upper()}" (unsupported media type)!</d>'
         )
         return releases
 
@@ -168,12 +168,12 @@ def sj_search(
             if not re.search(
                 rf"\b{re.escape(sanitized_search_string)}\b", sanitized_title
             ):
-                debug(
+                trace(
                     f"Search string '{localized_title}' doesn't match '{result_title}'"
                 )
                 continue
 
-            debug(
+            trace(
                 f"Matched search string '{localized_title}' with result '{result_title}'"
             )
 
@@ -240,7 +240,7 @@ def sj_search(
             debug(f"{hostname.upper()}: search parse error: {e}")
             continue
 
-    debug(f"Time taken: {time.time() - start_time:.2f}s ({hostname})")
+    debug(f"Time taken: {time.time() - start_time:.2f}s")
 
     if releases:
         clear_hostname_issue(hostname)

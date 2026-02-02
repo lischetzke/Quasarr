@@ -11,7 +11,7 @@ import requests
 from bs4 import BeautifulSoup
 
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
-from quasarr.providers.log import debug, info
+from quasarr.providers.log import debug, info, trace, warn
 
 hostname = "dw"
 supported_mirrors = ["1fichier", "rapidgator", "ddownload", "katfile"]
@@ -47,7 +47,7 @@ def convert_to_rss_date(date_str):
         "December",
     ]
 
-    for german, english in zip(german_months, english_months):
+    for german, english in zip(german_months, english_months, strict=False):
         if german in date_str:
             date_str = date_str.replace(german, english)
             break
@@ -84,7 +84,7 @@ def dw_feed(shared_state, start_time, request_from, mirror=None):
 
     if not "arr" in request_from.lower():
         debug(
-            f'Skipping {request_from} search on "{hostname.upper()}" (unsupported media type)!'
+            f'<d>Skipping {request_from} search on "{hostname.upper()}" (unsupported media type)!</d>'
         )
         return releases
 
@@ -159,13 +159,13 @@ def dw_feed(shared_state, start_time, request_from, mirror=None):
             )
 
     except Exception as e:
-        info(f"Error loading {hostname.upper()} feed: {e}")
+        warn(f"Error loading {hostname.upper()} feed: {e}")
         mark_hostname_issue(
             hostname, "feed", str(e) if "e" in dir() else "Error occurred"
         )
 
     elapsed_time = time.time() - start_time
-    debug(f"Time taken: {elapsed_time:.2f}s ({hostname})")
+    debug(f"Time taken: {elapsed_time:.2f}s")
 
     if releases:
         clear_hostname_issue(hostname)
@@ -187,7 +187,7 @@ def dw_search(
 
     if not "arr" in request_from.lower():
         debug(
-            f'Skipping {request_from} search on "{hostname.upper()}" (unsupported media type)!'
+            f'<d>Skipping {request_from} search on "{hostname.upper()}" (unsupported media type)!</d>'
         )
         return releases
 
@@ -214,7 +214,7 @@ def dw_search(
         results = search.find_all("h4")
 
     except Exception as e:
-        info(f"Error loading {hostname.upper()} search feed: {e}")
+        warn(f"Error loading {hostname.upper()} search feed: {e}")
         mark_hostname_issue(
             hostname, "search", str(e) if "e" in dir() else "Error occurred"
         )
@@ -232,11 +232,19 @@ def dw_search(
                 ):
                     continue
 
-                if not imdb_id:
-                    try:
-                        imdb_id = re.search(r"tt\d+", str(result)).group()
-                    except:
-                        imdb_id = None
+                try:
+                    release_imdb_id = re.search(r"tt\d+", str(result)).group()
+                except:
+                    release_imdb_id = None
+
+                if imdb_id and release_imdb_id and release_imdb_id != imdb_id:
+                    trace(
+                        f"{hostname.upper()}: Skipping result '{title}' due to IMDb ID mismatch."
+                    )
+                    continue
+
+                if release_imdb_id is None:
+                    release_imdb_id = imdb_id
 
                 source = result.a["href"]
                 size_info = result.find("span").text.strip()
@@ -248,13 +256,13 @@ def dw_search(
                 ).text.strip()
                 published = convert_to_rss_date(date)
                 payload = urlsafe_b64encode(
-                    f"{title}|{source}|{mirror}|{mb}|{password}|{imdb_id}|{hostname}".encode(
+                    f"{title}|{source}|{mirror}|{mb}|{password}|{release_imdb_id}|{hostname}".encode(
                         "utf-8"
                     )
                 ).decode("utf-8")
                 link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
             except Exception as e:
-                info(f"Error parsing {hostname.upper()} search: {e}")
+                warn(f"Error parsing {hostname.upper()} search: {e}")
                 mark_hostname_issue(
                     hostname, "search", str(e) if "e" in dir() else "Error occurred"
                 )
@@ -265,7 +273,7 @@ def dw_search(
                     "details": {
                         "title": title,
                         "hostname": hostname.lower(),
-                        "imdb_id": imdb_id,
+                        "imdb_id": release_imdb_id,
                         "link": link,
                         "mirror": mirror,
                         "size": size,
@@ -277,7 +285,7 @@ def dw_search(
             )
 
     elapsed_time = time.time() - start_time
-    debug(f"Time taken: {elapsed_time:.2f}s ({hostname})")
+    debug(f"Time taken: {elapsed_time:.2f}s")
 
     if releases:
         clear_hostname_issue(hostname)

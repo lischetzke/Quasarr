@@ -5,6 +5,7 @@
 import requests
 from bs4 import BeautifulSoup
 
+from quasarr.providers.log import debug
 from quasarr.providers.utils import is_flaresolverr_available
 
 
@@ -73,7 +74,7 @@ def update_session_via_flaresolverr(
             "error": f"FlareSolverr request failed: {e}",
         }
     except Exception as e:
-        raise RuntimeError(f"Could not reach FlareSolverr: {e}")
+        raise RuntimeError(f"Could not reach FlareSolverr: {e}") from e
 
     fs_json = resp.json()
     if fs_json.get("status") != "ok" or "solution" not in fs_json:
@@ -116,7 +117,7 @@ def ensure_session_cf_bypassed(info, shared_state, session, url, headers):
             )
             return None, None, None
 
-        info(
+        debug(
             "Encountered Cloudflare protection. Solving challenge with FlareSolverr..."
         )
         flaresolverr_result = update_session_via_flaresolverr(
@@ -198,7 +199,7 @@ def flaresolverr_get(shared_state, url, timeout=60, session_id=None):
         )
         resp.raise_for_status()
     except Exception as e:
-        raise RuntimeError(f"Error communicating with FlareSolverr: {e}")
+        raise RuntimeError(f"Error communicating with FlareSolverr: {e}") from e
 
     data = resp.json()
 

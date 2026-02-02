@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.imdb_metadata import get_localized_title, get_year
-from quasarr.providers.log import debug, info
+from quasarr.providers.log import debug, error, info, warn
 from quasarr.providers.sessions.dd import (
     create_and_persist_session,
     retrieve_and_validate_session,
@@ -48,9 +48,7 @@ def dd_search(
     password = dd
 
     if not "arr" in request_from.lower():
-        debug(
-            f'Skipping {request_from} search on "{hostname.upper()}" (unsupported media type)!'
-        )
+        debug(f"<d>Skipping {request_from} search (unsupported media type)!</d>")
         return releases
 
     try:
@@ -65,7 +63,7 @@ def dd_search(
 
     if mirror and mirror not in supported_mirrors:
         debug(
-            f'Mirror "{mirror}" not supported by "{hostname.upper()}". Supported mirrors: {supported_mirrors}.'
+            f'Mirror "{mirror}" not supported. Supported mirrors: {supported_mirrors}.'
             " Skipping search!"
         )
         return releases
@@ -123,7 +121,7 @@ def dd_search(
             try:
                 if release.get("fake"):
                     debug(
-                        f"{hostname}: Release {release.get('release')} marked as fake. Invalidating {hostname.upper()} session..."
+                        f"Release {release.get('release')} marked as fake. Invalidating session..."
                     )
                     create_and_persist_session(shared_state)
                     return []
@@ -138,7 +136,7 @@ def dd_search(
                     release_imdb = release.get("imdbid", None)
                     if release_imdb and imdb_id and imdb_id != release_imdb:
                         debug(
-                            f"{hostname}: Release {title} IMDb-ID mismatch ({imdb_id} != {release.get('imdbid', None)})"
+                            f"Release {title} IMDb-ID mismatch ({imdb_id} != {release.get('imdbid', None)})"
                         )
                         continue
 
@@ -169,20 +167,20 @@ def dd_search(
                         }
                     )
             except Exception as e:
-                info(f"Error parsing {hostname.upper()} feed: {e}")
+                warn(f"Error parsing feed: {e}")
                 mark_hostname_issue(
                     hostname, "search", str(e) if "e" in dir() else "Error occurred"
                 )
                 continue
 
     except Exception as e:
-        info(f"Error loading {hostname.upper()} {search_type}: {e}")
+        error(f"Error loading feed: {e}")
         mark_hostname_issue(
             hostname, search_type, str(e) if "e" in dir() else "Error occurred"
         )
 
     elapsed_time = time.time() - start_time
-    debug(f"Time taken: {elapsed_time:.2f}s ({hostname})")
+    debug(f"Time taken: {elapsed_time:.2f}s")
 
     if releases:
         clear_hostname_issue(hostname)

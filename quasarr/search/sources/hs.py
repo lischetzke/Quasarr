@@ -14,7 +14,7 @@ from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 
 warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
-from quasarr.providers.log import debug, info
+from quasarr.providers.log import debug, warn
 
 hostname = "hs"
 supported_mirrors = ["rapidgator", "ddownload", "katfile"]
@@ -353,7 +353,7 @@ def hs_feed(shared_state, start_time, request_from, mirror=None):
     # HS only supports movies and series
     if "lazylibrarian" in request_from.lower():
         debug(
-            f'Skipping {request_from} feed on "{hostname.upper()}" (unsupported media type)!'
+            f'<d>Skipping {request_from} feed on "{hostname.upper()}" (unsupported media type)!</d>'
         )
         return releases
 
@@ -431,12 +431,12 @@ def hs_feed(shared_state, start_time, request_from, mirror=None):
                 continue
 
     except Exception as e:
-        info(f"Error loading {hostname.upper()} feed: {e}")
+        warn(f"Error loading {hostname.upper()} feed: {e}")
         mark_hostname_issue(hostname, "feed", str(e))
         return releases
 
     elapsed_time = time.time() - start_time
-    debug(f"Time taken: {elapsed_time:.2f}s ({hostname})")
+    debug(f"Time taken: {elapsed_time:.2f}s")
 
     if releases:
         clear_hostname_issue(hostname)
@@ -463,7 +463,7 @@ def hs_search(
     # HS only supports movies and series
     if "lazylibrarian" in request_from.lower():
         debug(
-            f'Skipping {request_from} search on "{hostname.upper()}" (unsupported media type)!'
+            f'<d>Skipping {request_from} search on "{hostname.upper()}" (unsupported media type)!</d>'
         )
         return releases
 
@@ -503,12 +503,12 @@ def hs_search(
         )
 
     except Exception as e:
-        info(f"Error loading {hostname.upper()} search: {e}")
+        warn(f"Error loading {hostname.upper()} search: {e}")
         mark_hostname_issue(hostname, "search", str(e))
         return releases
 
     elapsed_time = time.time() - start_time
-    debug(f"Time taken: {elapsed_time:.2f}s ({hostname})")
+    debug(f"Time taken: {elapsed_time:.2f}s")
 
     if releases:
         clear_hostname_issue(hostname)
