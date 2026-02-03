@@ -4,9 +4,11 @@
 
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import timezone
+from email.utils import parsedate_to_datetime
 
 from quasarr.providers.imdb_metadata import get_imdb_metadata
-from quasarr.providers.log import debug, info
+from quasarr.providers.log import debug, info, trace
 from quasarr.search.sources.al import al_feed, al_search
 from quasarr.search.sources.by import by_feed, by_search
 from quasarr.search.sources.dd import dd_feed, dd_search
@@ -165,11 +167,29 @@ def get_search_results(
 
     elapsed_time = time.time() - start_time
 
+    # Sort results by date (newest first)
+    def get_date(item):
+        try:
+            dt = parsedate_to_datetime(item.get("details", {}).get("date", ""))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt
+        except Exception:
+            return parsedate_to_datetime("Thu, 01 Jan 1970 00:00:00 +0000")
+
+    results.sort(key=get_date, reverse=True)
+
     # Calculate pagination for logging and return
     total_count = len(results)
 
     # Slicing
     sliced_results = results[offset : offset + limit]
+
+    if sliced_results:
+        trace(f"First {len(sliced_results)} results sorted by date:")
+        for i, res in enumerate(sliced_results):
+            details = res.get("details", {})
+            trace(f"{i + 1}. {details.get('date')} | {details.get('title')}")
 
     # Formatting for log (1-based index for humans)
     log_start = min(offset + 1, total_count) if total_count > 0 else 0
