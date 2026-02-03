@@ -35,6 +35,8 @@ def get_search_results(
     mirror=None,
     season="",
     episode="",
+    offset=0,
+    limit=1000,
 ):
     if imdb_id and not imdb_id.startswith("tt"):
         imdb_id = f"tt{imdb_id}"
@@ -150,25 +152,41 @@ def get_search_results(
 
     # Clean description for Console UI
     if imdb_id:
-        desc_text = f"Searching for IMDb-ID {imdb_id}"
         stype = f"IMDb-ID <b>{imdb_id}</b>"
     elif search_phrase:
-        desc_text = f"Searching for '{search_phrase}'"
         stype = f"Search-Phrase <b>{search_phrase}</b>"
     else:
-        desc_text = "Running Feed Search"
         stype = "<b>feed</b> search"
 
     debug(f"Starting <g>{len(search_executor.searches)}</g> searches for {stype}...")
 
-    results = search_executor.run_all(desc_text)
+    # Unpack the new return values (all_cached, min_ttl)
+    results, status_bar, all_cached, min_ttl = search_executor.run_all()
 
     elapsed_time = time.time() - start_time
+
+    # Calculate pagination for logging and return
+    total_count = len(results)
+
+    # Slicing
+    sliced_results = results[offset : offset + limit]
+
+    # Formatting for log (1-based index for humans)
+    log_start = min(offset + 1, total_count) if total_count > 0 else 0
+    log_end = min(offset + limit, total_count)
+
+    # Logic to switch between "Time taken" and "from cache"
+    if all_cached:
+        time_info = f"from cache ({int(min_ttl)}s left)"
+    else:
+        time_info = f"Time taken: {elapsed_time:.2f} seconds"
+
     info(
-        f"Providing <g>{len(results)} releases</g> to <d>{request_from}</d> for {stype}. <blue>Time taken: {elapsed_time:.2f} seconds</blue>"
+        f"Providing releases <g>{log_start}-{log_end}</g> of <g>{total_count}</g> to <d>{request_from}</d> "
+        f"for {stype}{status_bar} <blue>{time_info}</blue>"
     )
 
-    return results
+    return sliced_results
 
 
 class SearchExecutor:
@@ -182,63 +200,62 @@ class SearchExecutor:
         key = hash((func.__name__, key_args, frozenset(kwargs.items())))
         self.searches.append((key, lambda: func(*args, **kwargs), use_cache))
 
-    def run_all(self, description):
+    def run_all(self):
         results = []
         future_to_meta = {}
+
+        # Track cache state
+        all_cached = len(self.searches) > 0
+        min_ttl = float("inf")
+        bar_str = ""  # Initialize to prevent UnboundLocalError on full cache
 
         with ThreadPoolExecutor() as executor:
             current_index = 0
             pending_futures = []
-            cache_used = False
 
             for key, func, use_cache in self.searches:
                 cached_result = None
+                exp = 0
+
                 if use_cache:
-                    cached_result = search_cache.get(key)
+                    # Get both result and expiry
+                    cached_result, exp = search_cache.get(key)
 
                 if cached_result is not None:
                     debug(f"Using cached result for {key}")
-                    cache_used = True
                     results.extend(cached_result)
+
+                    # Calculate TTL for this cached item
+                    ttl = exp - time.time()
+                    if ttl < min_ttl:
+                        min_ttl = ttl
                 else:
+                    all_cached = False
                     future = executor.submit(func)
                     cache_key = key if use_cache else None
                     future_to_meta[future] = (current_index, cache_key)
                     pending_futures.append(future)
                     current_index += 1
 
-            # Prepare list to track status of each provider
-            # Icons will be filled in as threads complete
-            total_active = len(pending_futures)
-            icons = ["▪️"] * total_active
+            if pending_futures:
+                icons = ["▪️"] * len(pending_futures)
 
-            for future in as_completed(pending_futures):
-                index, cache_key = future_to_meta[future]
-                try:
-                    res = future.result()
-                    if res and len(res) > 0:
-                        status = "✅"
-                    else:
-                        status = "⚪"
+                for future in as_completed(pending_futures):
+                    index, cache_key = future_to_meta[future]
+                    try:
+                        res = future.result()
+                        status = "✅" if res and len(res) > 0 else "⚪"
+                        icons[index] = status
+                        results.extend(res)
+                        if cache_key:
+                            search_cache.set(cache_key, res)
+                    except Exception as e:
+                        icons[index] = "❌"
+                        info(f"Search error: {e}")
 
-                    icons[index] = status
+                bar_str = f" [{''.join(icons)}]"
 
-                    results.extend(res)
-                    if cache_key:
-                        search_cache.set(cache_key, res)
-                except Exception as e:
-                    icons[index] = "❌"
-                    info(f"Search error: {e}")
-
-            # Log the final status summary if any searches were performed
-            if total_active > 0:
-                bar_str = "".join(icons)
-                info(f"{description} [{bar_str}]")
-
-            if cache_used:
-                info("Presenting cached results for some items.")
-
-        return results
+        return results, bar_str, all_cached, min_ttl
 
 
 class SearchCache:
@@ -256,7 +273,8 @@ class SearchCache:
 
     def get(self, key):
         val, exp = self.cache.get(key, (None, 0))
-        return val if time.time() < exp else None
+        # Return tuple (value, expiry) if valid, else (None, 0)
+        return (val, exp) if time.time() < exp else (None, 0)
 
     def set(self, key, value, ttl=300):
         now = time.time()
