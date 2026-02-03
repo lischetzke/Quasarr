@@ -11,6 +11,7 @@ import threading
 import time
 import webbrowser
 import xml.etree.ElementTree as ET
+from datetime import datetime
 
 import requests
 
@@ -139,14 +140,82 @@ class LoadingScreen:
 
 # --- Custom Paginated Selector ---
 class PaginatedSelector:
-    def __init__(self, title, items, page_size=10, initial_index=0, duration=None):
+    def __init__(
+        self,
+        title,
+        items,
+        page_size=10,
+        initial_index=0,
+        duration=None,
+        allowed_sorts=None,
+    ):
         self.title = title
+        self.original_items = list(items)  # Keep a copy of original order
         self.items = items
         self.page_size = page_size
         self.selected_index = min(initial_index, len(items) - 1) if items else 0
         self.result = None
         self.cancelled = False
         self.duration = duration
+
+        # Define all possible sort logic
+        # Key: (Display Label, Sort Function)
+        self.all_sort_logic = {
+            "newest": (
+                "Newest",
+                lambda: self.items[:]
+                if not self.original_items
+                else list(self.original_items),
+            ),
+            "oldest": ("Oldest", lambda: list(reversed(self.original_items))),
+            "a-z": ("A-Z", lambda: sorted(self.items, key=lambda x: x[0])),
+            "z-a": (
+                "Z-A",
+                lambda: sorted(self.items, key=lambda x: x[0], reverse=True),
+            ),
+            "size_desc": (
+                "Size ⬇",
+                lambda: sorted(self.items, key=self._get_size_key, reverse=True),
+            ),
+            "size_asc": ("Size ⬆", lambda: sorted(self.items, key=self._get_size_key)),
+        }
+
+        # If no specific sorts provided, default to full list
+        if allowed_sorts is None:
+            self.allowed_sorts = [
+                "newest",
+                "a-z",
+                "z-a",
+                "size_desc",
+                "size_asc",
+                "oldest",
+            ]
+        else:
+            self.allowed_sorts = allowed_sorts
+
+        self.sort_index = 0
+        # If "newest" isn't available, apply the first allowed sort immediately
+        if self.allowed_sorts and self.allowed_sorts[0] != "newest":
+            self._apply_sort()
+
+    def _get_size_key(self, item_tuple):
+        # item_tuple is (label, dict)
+        try:
+            return float(item_tuple[1].get("size", 0))
+        except (ValueError, TypeError):
+            return 0
+
+    def _apply_sort(self):
+        if not self.allowed_sorts:
+            return
+
+        current_sort_key = self.allowed_sorts[self.sort_index]
+        if current_sort_key in self.all_sort_logic:
+            _, sort_func = self.all_sort_logic[current_sort_key]
+            self.items = sort_func()
+
+        # Reset selection to top
+        self.selected_index = 0
 
     def get_current_page_indices(self):
         page_idx = self.selected_index // self.page_size
@@ -160,9 +229,14 @@ class PaginatedSelector:
 
         lines = []
         lines.append(HTML(f"<b><ansicyan>--- {self.title.upper()} ---</ansicyan></b>"))
+
+        # Header with Sort Info
+        current_sort_key = self.allowed_sorts[self.sort_index]
+        sort_label = self.all_sort_logic.get(current_sort_key, ("Unknown",))[0]
+
         lines.append(
             HTML(
-                "<grey>Keys: [↑/↓] Navigate | [←/→] Page | [Enter] Select | [Backspace] Back</grey>"
+                f"<grey>Keys: [↑/↓] Nav | [Enter] Select | [Tab] Sort: <b>{sort_label}</b> | [Back] Exit</grey>"
             )
         )
 
@@ -226,6 +300,14 @@ class PaginatedSelector:
                 self.selected_index = new_idx
             else:
                 self.selected_index = len(self.items) - 1
+
+        # Tab Binding for Sorting
+        @kb.add(Keys.Tab)
+        def _(event):
+            if not self.allowed_sorts:
+                return
+            self.sort_index = (self.sort_index + 1) % len(self.allowed_sorts)
+            self._apply_sort()
 
         @kb.add(Keys.Enter)
         def _(event):
@@ -346,7 +428,7 @@ class TextInput:
     def run(self):
         kb = KeyBindings()
 
-        @kb.add("escape")
+        @kb.add(Keys.Escape)
         def _(event):
             event.app.exit(result=None)
 
@@ -379,7 +461,7 @@ class TextInput:
         while True:
             try:
                 prompt_text = HTML(
-                    f"<b><ansicyan>--- {self.title.upper()} ---</ansicyan></b>\n<grey>Keys: [Enter] Confirm | [Back] Cancel</grey>\n[{self.default}]: "
+                    f"<b><ansicyan>--- {self.title.upper()} ---</ansicyan></b>\n<grey>Keys: [Enter] Confirm | [Esc] Cancel</grey>\n[{self.default}]: "
                 )
                 result = session.prompt(prompt_text, default=self.default)
 
@@ -526,7 +608,6 @@ class QuasarrClient:
                 f"{self.url}/sponsors_helper/api/fail/",
                 params={"apikey": self.api_key},
                 json={"package_id": package_id},
-                headers={"X-Api-Key": self.api_key},
                 timeout=30,
             ).raise_for_status()
             return True
@@ -554,11 +635,15 @@ def format_size(size_bytes):
 
 def show_downloads(client):
     last_idx = 0
+    # For downloads, we skip "newest/oldest" as API data might be inconsistent for sorting
+    download_sorts = ["a-z", "z-a", "size_desc", "size_asc"]
+
     while True:
         clear_screen()
         results = LoadingScreen("Fetching Downloads", client.get_downloads).run()
+        clear_screen()  # Ensure loading screen is cleared immediately
+
         if results is None:
-            clear_screen()
             return
 
         queue, history = results
@@ -580,20 +665,56 @@ def show_downloads(client):
 
         selector_items = []
         for item in all_items:
-            name = item.get("filename") if item["type"] == "queue" else item.get("name")
+            # Name
+            name = (
+                item.get("filename")
+                if item["type"] == "queue"
+                else item.get("name", "Unknown")
+            )
             status = item.get("status", "Unknown")
+
+            # Size
+            # Queue often has 'size' (total) or 'mb' (total)
+            raw_size = item.get("size", "0")
+            size_str = format_size(raw_size)
+
+            # Time / ETA
+            time_info = ""
+            if item["type"] == "queue":
+                # Queue usually has 'timeleft'
+                eta = item.get("timeleft", "")
+                if eta:
+                    time_info = f" | ETA: {eta}"
+            else:
+                # History usually has completion date
+                completed = item.get("completed", "") or item.get("date", "")
+                if completed:
+                    # Try timestamp conversion if it's a timestamp
+                    try:
+                        ts = int(completed)
+                        dt = datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M")
+                        time_info = f" | {dt}"
+                    except:
+                        time_info = f" | {completed}"
+
             icon = "⬇️" if item["type"] == "queue" else "📜"
-            selector_items.append((f"{icon} {name} [{status}]", item))
+            label = f"{icon} {name} (Size: {size_str}{time_info}) [{status}]"
+            selector_items.append((label, item))
 
         result = PaginatedSelector(
-            "Downloads", selector_items, page_size=10, initial_index=last_idx
+            "Downloads",
+            selector_items,
+            page_size=10,
+            initial_index=last_idx,
+            allowed_sorts=download_sorts,
         ).run()
+
+        clear_screen()  # Clean up the selector UI immediately
+
         if result is None:
-            clear_screen()
             break
 
         item, last_idx = result
-        clear_screen()
         name = item.get("filename") if item["type"] == "queue" else item.get("name")
         nzo_id = item.get("nzo_id")
 
@@ -605,11 +726,12 @@ def show_downloads(client):
             menu.append(("❌ Mark Failed", "fail"))
 
         action = MenuSelector(f"Manage: {name}", menu).run()
+        clear_screen()
+
         if action == "captcha":
             webbrowser.open(f"{client.url}/captcha?package_id={nzo_id}")
             time.sleep(2)
         elif action == "delete":
-            clear_screen()
             if questionary.confirm(f"Delete '{name}'?").ask():
                 if LoadingScreen(
                     f"Deleting {name}", client.delete_download, nzo_id
@@ -619,7 +741,6 @@ def show_downloads(client):
                     console.print("[red]Failed[/red]")
                 time.sleep(1)
         elif action == "fail":
-            clear_screen()
             if questionary.confirm(f"Mark '{name}' failed?").ask():
                 if LoadingScreen(f"Failing {name}", client.fail_download, nzo_id).run():
                     console.print("[green]Marked Failed[/green]")
@@ -638,6 +759,7 @@ def handle_results_pager(client, results, duration=None):
         clear_screen()
         return
 
+    # Default logic for search results includes date sorting
     results.sort(key=lambda x: x.get("pubdate", ""), reverse=True)
     selector_items = [
         (f"{item['title']} ({format_size(item['size'])})", item) for item in results
@@ -653,15 +775,19 @@ def handle_results_pager(client, results, duration=None):
             initial_index=last_idx,
             duration=duration,
         ).run()
+
+        clear_screen()
+
         if result is None:
-            clear_screen()
             break
         item, last_idx = result
-        clear_screen()
 
         success = LoadingScreen(
             f"Adding: {item['title']}", client.add_download, item["title"], item["link"]
         ).run()
+
+        clear_screen()
+
         if success is True:
             console.print(f"[green]✅ Added '{item['title']}'[/green]")
         elif success is False:
@@ -682,15 +808,17 @@ def handle_feeds_menu(client):
                 ("📄 Doc (LazyLib)", "doc"),
             ],
         ).run()
+        clear_screen()
+
         if not choice:
-            clear_screen()
             break
 
-        clear_screen()
         start = time.time()
         results = LoadingScreen(
             f"Fetching {choice} Feed", client.get_feed, choice
         ).run()
+        clear_screen()
+
         if results is not None:
             handle_results_pager(client, results, time.time() - start)
 
@@ -707,11 +835,11 @@ def handle_searches_menu(client):
                 ("📄 Doc (Query)", "doc"),
             ],
         ).run()
+        clear_screen()
+
         if not choice:
-            clear_screen()
             break
 
-        clear_screen()
         if choice == "movie":
             q = TextInput(
                 "Movie: IMDb ID", default=defaults["movie"], validator=validate_imdb
@@ -722,6 +850,7 @@ def handle_searches_menu(client):
                 res = LoadingScreen(
                     f"Searching Movie: {q}", client.search_movie, q
                 ).run()
+                clear_screen()
                 if res is not None:
                     handle_results_pager(client, res, time.time() - start)
         elif choice == "tv":
@@ -731,15 +860,16 @@ def handle_searches_menu(client):
             if q:
                 clear_screen()
                 s = TextInput(f"TV: {q}\nSeason", default="1").run()
-                if s:
+                if s is not None:
                     clear_screen()
                     e = TextInput(f"TV: {q} S{s}\nEpisode", default="1").run()
-                    if e:
+                    if e is not None:
                         clear_screen()
                         start = time.time()
                         res = LoadingScreen(
                             f"Searching TV: {q}", client.search_tv, q, s, e
                         ).run()
+                        clear_screen()
                         if res is not None:
                             handle_results_pager(client, res, time.time() - start)
         elif choice == "doc":
@@ -748,6 +878,7 @@ def handle_searches_menu(client):
                 clear_screen()
                 start = time.time()
                 res = LoadingScreen(f"Searching Doc: {q}", client.search_doc, q).run()
+                clear_screen()
                 if res is not None:
                     handle_results_pager(client, res, time.time() - start)
 
@@ -799,6 +930,7 @@ def run_cli():
                     ("🔍 Searches", "search"),
                     ("🗞️ Feeds", "feeds"),
                     ("⬇️ Downloads", "downloads"),
+                    ("🌐 Open Web UI", "web"),
                 ],
                 allow_back=False,
             ).run()
@@ -808,6 +940,8 @@ def run_cli():
                 handle_searches_menu(client)
             elif choice == "downloads":
                 show_downloads(client)
+            elif choice == "web":
+                webbrowser.open(client.url)
             elif choice is None:
                 sys.exit(0)
         except KeyboardInterrupt:
