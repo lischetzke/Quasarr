@@ -220,9 +220,9 @@ def _parse_search_results(
             # Find the title link
             title_link = article.find(
                 "a",
-                href=lambda h: h
-                and hd_host in h
-                and ("/filme/" in h or "/serien/" in h),
+                href=lambda h: (
+                    h and hd_host in h and ("/filme/" in h or "/serien/" in h)
+                ),
             )
             if not title_link:
                 continue

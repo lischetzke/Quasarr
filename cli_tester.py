@@ -163,9 +163,11 @@ class PaginatedSelector:
         self.all_sort_logic = {
             "newest": (
                 "Newest",
-                lambda: self.items[:]
-                if not self.original_items
-                else list(self.original_items),
+                lambda: (
+                    self.items[:]
+                    if not self.original_items
+                    else list(self.original_items)
+                ),
             ),
             "oldest": ("Oldest", lambda: list(reversed(self.original_items))),
             "a-z": ("A-Z", lambda: sorted(self.items, key=lambda x: x[0])),

@@ -24,6 +24,12 @@ class NoLoggingWSGIRequestHandler(WSGIRequestHandler):
     def log_message(self, format, *args):
         pass
 
+    def handle(self):
+        try:
+            super().handle()
+        except (ConnectionResetError, BrokenPipeError):
+            pass
+
 
 class Server:
     def __init__(self, wsgi_app, listen="127.0.0.1", port=8080):
