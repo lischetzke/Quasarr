@@ -316,7 +316,7 @@ def sf_search(
             # fetch API HTML
             epoch = str(datetime.now().timestamp()).replace(".", "")[:-3]
             api_url = f"https://{sf}/api/v1/{season_id}/season/ALL?lang=ALL&_={epoch}"
-            debug(f"Requesting SF API URL: {api_url}")
+            trace(f"Requesting SF API URL: {api_url}")
             try:
                 r = requests.get(api_url, headers=headers, timeout=10)
                 r.raise_for_status()
