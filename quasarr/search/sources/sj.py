@@ -39,70 +39,73 @@ def sj_feed(shared_state, start_time, request_from, mirror=None):
     sj_host = shared_state.values["config"]("Hostnames").get(hostname)
     password = sj_host
 
-    url = f"https://{sj_host}/api/releases/latest/0"
     headers = {"User-Agent": shared_state.values["user_agent"]}
 
-    try:
-        r = requests.get(url, headers=headers, timeout=30)
-        r.raise_for_status()
-        data = json.loads(r.content)
-    except Exception as e:
-        info(f"{hostname.upper()}: feed load error: {e}")
-        mark_hostname_issue(
-            hostname, "feed", str(e) if "e" in dir() else "Error occurred"
-        )
-        return releases
+    for days in range(4):
+        url = f"https://{sj_host}/api/releases/latest/{days}"
 
-    for release in data:
         try:
-            title = release.get("name").rstrip(".")
-            if not title:
-                continue
-
-            published = convert_to_rss_date(release.get("createdAt"))
-            if not published:
-                continue
-
-            media = release.get("_media", {})
-            slug = media.get("slug")
-            if not slug:
-                continue
-
-            series_url = f"https://{sj_host}/serie/{slug}"
-
-            mb = 0
-            size = 0
-            imdb_id = None
-
-            payload = urlsafe_b64encode(
-                f"{title}|{series_url}|{mirror}|{mb}|{password}|{imdb_id}|{hostname}".encode(
-                    "utf-8"
-                )
-            ).decode("utf-8")
-
-            link = (
-                f"{shared_state.values['internal_address']}/download/?payload={payload}"
-            )
-
-            releases.append(
-                {
-                    "details": {
-                        "title": title,
-                        "hostname": hostname,
-                        "imdb_id": imdb_id,
-                        "link": link,
-                        "mirror": mirror,
-                        "size": size,
-                        "date": published,
-                        "source": series_url,
-                    },
-                    "type": "protected",
-                }
-            )
-
+            r = requests.get(url, headers=headers, timeout=30)
+            r.raise_for_status()
+            data = json.loads(r.content)
         except Exception as e:
-            debug(f"{hostname.upper()}: feed parse error: {e}")
-            continue
+            info(f"{hostname.upper()}: feed load error: {e}")
+            mark_hostname_issue(
+                hostname, "feed", str(e) if "e" in dir() else "Error occurred"
+            )
+            return releases
+
+        for release in data:
+            try:
+                title = release.get("name").rstrip(".")
+                if not title:
+                    continue
+
+                published = convert_to_rss_date(release.get("createdAt"))
+                if not published:
+                    continue
+
+                media = release.get("_media", {})
+                slug = media.get("slug")
+                if not slug:
+                    continue
+
+                series_url = f"https://{sj_host}/serie/{slug}"
+
+                mb = 0
+                size = 0
+                imdb_id = None
+
+                payload = urlsafe_b64encode(
+                    f"{title}|{series_url}|{mirror}|{mb}|{password}|{imdb_id}|{hostname}".encode(
+                        "utf-8"
+                    )
+                ).decode("utf-8")
+
+                link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
+
+                releases.append(
+                    {
+                        "details": {
+                            "title": title,
+                            "hostname": hostname,
+                            "imdb_id": imdb_id,
+                            "link": link,
+                            "mirror": mirror,
+                            "size": size,
+                            "date": published,
+                            "source": series_url,
+                        },
+                        "type": "protected",
+                    }
+                )
+
+            except Exception as e:
+                debug(f"{hostname.upper()}: feed parse error: {e}")
+                continue
+
+        if releases:
+            break
 
     debug(f"Time taken: {time.time() - start_time:.2f}s")
 
