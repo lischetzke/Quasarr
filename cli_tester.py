@@ -17,8 +17,6 @@ import requests
 # Try importing dependencies
 try:
     import questionary
-
-    # prompt_toolkit dependencies
     from prompt_toolkit import Application, PromptSession
     from prompt_toolkit.formatted_text import HTML, to_formatted_text
     from prompt_toolkit.key_binding import KeyBindings
@@ -30,7 +28,7 @@ try:
     from rich.panel import Panel
 except ImportError:
     print("Please install 'rich' and 'questionary' to use this tool.")
-    print("pip install rich questionary")
+    print("uv sync --group dev")
     sys.exit(1)
 
 # --- Configuration & Constants ---
@@ -42,9 +40,8 @@ USER_AGENT_LL = "LazyLibrarian/1.7.0 (Mock Client for Testing)"
 console = Console()
 IS_TTY = sys.stdin.isatty()
 
-# --- Custom Loading Screen (Thread-based Fix) ---
 
-
+# --- Custom Loading Screen ---
 class LoadingScreen:
     def __init__(self, title, func, *args, **kwargs):
         """
@@ -141,8 +138,6 @@ class LoadingScreen:
 
 
 # --- Custom Paginated Selector ---
-
-
 class PaginatedSelector:
     def __init__(self, title, items, page_size=10, initial_index=0, duration=None):
         self.title = title
@@ -257,8 +252,6 @@ class PaginatedSelector:
 
 
 # --- Custom Menu Selector ---
-
-
 class MenuSelector:
     def __init__(self, title, items, allow_back=True):
         self.title = title
@@ -344,8 +337,6 @@ class MenuSelector:
 
 
 # --- Custom Text Input ---
-
-
 class TextInput:
     def __init__(self, title, default="", validator=None):
         self.title = title
@@ -417,8 +408,6 @@ def validate_imdb(text):
 
 
 # --- API Client ---
-
-
 class QuasarrClient:
     def __init__(self, url, api_key):
         self.url = url.rstrip("/")
@@ -546,8 +535,6 @@ class QuasarrClient:
 
 
 # --- UI Logic ---
-
-
 def clear_screen():
     console.clear()
 
