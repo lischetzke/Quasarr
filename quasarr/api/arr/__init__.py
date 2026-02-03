@@ -15,7 +15,7 @@ from quasarr.downloads import download
 from quasarr.downloads.packages import delete_package, get_packages
 from quasarr.providers import shared_state
 from quasarr.providers.auth import require_api_key
-from quasarr.providers.log import debug, info
+from quasarr.providers.log import debug, error, info, warn
 from quasarr.providers.version import get_version
 from quasarr.search import get_search_results
 
@@ -420,9 +420,8 @@ def setup_arr_routes(app):
                                     </channel>
                                 </rss>"""
             except Exception as e:
-                info(f"Error loading search results: {e}")
-                info(traceback.format_exc())
-            info(f"[ERROR] Unknown indexer request: {dict(request.query)}")
+                error(f"Error loading search results: {e} " + traceback.format_exc())
+            warn(f"Unknown indexer request: {dict(request.query)}")
             return """<?xml version="1.0" encoding="UTF-8"?>
                         <rss>
                             <channel>
@@ -432,5 +431,5 @@ def setup_arr_routes(app):
                             </channel>
                         </rss>"""
 
-        info(f"[ERROR] Unknown general request: {dict(request.query)}")
+        warn(f"[ERROR] Unknown general request: {dict(request.query)}")
         return {"error": True}

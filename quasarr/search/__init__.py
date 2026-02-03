@@ -4,9 +4,11 @@
 
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import timezone
+from email.utils import parsedate_to_datetime
 
 from quasarr.providers.imdb_metadata import get_imdb_metadata
-from quasarr.providers.log import debug, info
+from quasarr.providers.log import debug, info, trace
 from quasarr.search.sources.al import al_feed, al_search
 from quasarr.search.sources.by import by_feed, by_search
 from quasarr.search.sources.dd import dd_feed, dd_search
@@ -72,54 +74,54 @@ def get_search_results(
 
     # Mappings
     imdb_map = [
-        (al, al_search),
-        (by, by_search),
-        (dd, dd_search),
-        (dl, dl_search),
-        (dt, dt_search),
-        (dj, dj_search),
-        (dw, dw_search),
-        (fx, fx_search),
-        (he, he_search),
-        (hs, hs_search),
-        (mb, mb_search),
-        (nk, nk_search),
-        (nx, nx_search),
-        (sf, sf_search),
-        (sj, sj_search),
-        (sl, sl_search),
-        (wd, wd_search),
-        (wx, wx_search),
+        ("al", al, al_search),
+        ("by", by, by_search),
+        ("dd", dd, dd_search),
+        ("dl", dl, dl_search),
+        ("dt", dt, dt_search),
+        ("dj", dj, dj_search),
+        ("dw", dw, dw_search),
+        ("fx", fx, fx_search),
+        ("he", he, he_search),
+        ("hs", hs, hs_search),
+        ("mb", mb, mb_search),
+        ("nk", nk, nk_search),
+        ("nx", nx, nx_search),
+        ("sf", sf, sf_search),
+        ("sj", sj, sj_search),
+        ("sl", sl, sl_search),
+        ("wd", wd, wd_search),
+        ("wx", wx, wx_search),
     ]
 
     phrase_map = [
-        (by, by_search),
-        (dl, dl_search),
-        (dt, dt_search),
-        (nx, nx_search),
-        (sl, sl_search),
-        (wd, wd_search),
+        ("by", by, by_search),
+        ("dl", dl, dl_search),
+        ("dt", dt, dt_search),
+        ("nx", nx, nx_search),
+        ("sl", sl, sl_search),
+        ("wd", wd, wd_search),
     ]
 
     feed_map = [
-        (al, al_feed),
-        (by, by_feed),
-        (dd, dd_feed),
-        (dj, dj_feed),
-        (dl, dl_feed),
-        (dt, dt_feed),
-        (dw, dw_feed),
-        (fx, fx_feed),
-        (he, he_feed),
-        (hs, hs_feed),
-        (mb, mb_feed),
-        (nk, nk_feed),
-        (nx, nx_feed),
-        (sf, sf_feed),
-        (sj, sj_feed),
-        (sl, sl_feed),
-        (wd, wd_feed),
-        (wx, wx_feed),
+        ("al", al, al_feed),
+        ("by", by, by_feed),
+        ("dd", dd, dd_feed),
+        ("dj", dj, dj_feed),
+        ("dl", dl, dl_feed),
+        ("dt", dt, dt_feed),
+        ("dw", dw, dw_feed),
+        ("fx", fx, fx_feed),
+        ("he", he, he_feed),
+        ("hs", hs, hs_feed),
+        ("mb", mb, mb_feed),
+        ("nk", nk, nk_feed),
+        ("nx", nx, nx_feed),
+        ("sf", sf, sf_feed),
+        ("sj", sj, sj_feed),
+        ("sl", sl, sl_feed),
+        ("wd", wd, wd_feed),
+        ("wx", wx, wx_feed),
     ]
 
     # Add searches
@@ -128,27 +130,27 @@ def get_search_results(
             (shared_state, start_time, request_from, imdb_id),
             {"mirror": mirror, "season": season, "episode": episode},
         )
-        for flag, func in imdb_map:
-            if flag:
-                search_executor.add(func, args, kwargs, True)
+        for name, url, func in imdb_map:
+            if url:
+                search_executor.add(func, args, kwargs, True, name.upper())
 
     elif search_phrase and docs_search:
         args, kwargs = (
             (shared_state, start_time, request_from, search_phrase),
             {"mirror": mirror, "season": season, "episode": episode},
         )
-        for flag, func in phrase_map:
-            if flag:
-                search_executor.add(func, args, kwargs)
+        for name, url, func in phrase_map:
+            if url:
+                search_executor.add(func, args, kwargs, source_name=name.upper())
 
     elif search_phrase:
         debug(f"Search phrase '{search_phrase}' is not supported for {request_from}.")
 
     else:
         args, kwargs = ((shared_state, start_time, request_from), {"mirror": mirror})
-        for flag, func in feed_map:
-            if flag:
-                search_executor.add(func, args, kwargs)
+        for name, url, func in feed_map:
+            if url:
+                search_executor.add(func, args, kwargs, source_name=name.upper())
 
     # Clean description for Console UI
     if imdb_id:
@@ -165,11 +167,29 @@ def get_search_results(
 
     elapsed_time = time.time() - start_time
 
+    # Sort results by date (newest first)
+    def get_date(item):
+        try:
+            dt = parsedate_to_datetime(item.get("details", {}).get("date", ""))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt
+        except Exception:
+            return parsedate_to_datetime("Thu, 01 Jan 1970 00:00:00 +0000")
+
+    results.sort(key=get_date, reverse=True)
+
     # Calculate pagination for logging and return
     total_count = len(results)
 
     # Slicing
     sliced_results = results[offset : offset + limit]
+
+    if sliced_results:
+        trace(f"First {len(sliced_results)} results sorted by date:")
+        for i, res in enumerate(sliced_results):
+            details = res.get("details", {})
+            trace(f"{i + 1}. {details.get('date')} | {details.get('title')}")
 
     # Formatting for log (1-based index for humans)
     log_start = min(offset + 1, total_count) if total_count > 0 else 0
@@ -193,12 +213,19 @@ class SearchExecutor:
     def __init__(self):
         self.searches = []
 
-    def add(self, func, args, kwargs, use_cache=False):
+    def add(self, func, args, kwargs, use_cache=False, source_name=None):
         key_args = list(args)
         key_args[1] = None
         key_args = tuple(key_args)
         key = hash((func.__name__, key_args, frozenset(kwargs.items())))
-        self.searches.append((key, lambda: func(*args, **kwargs), use_cache))
+        self.searches.append(
+            (
+                key,
+                lambda: func(*args, **kwargs),
+                use_cache,
+                source_name or func.__name__,
+            )
+        )
 
     def run_all(self):
         results = []
@@ -213,7 +240,7 @@ class SearchExecutor:
             current_index = 0
             pending_futures = []
 
-            for key, func, use_cache in self.searches:
+            for key, func, use_cache, source_name in self.searches:
                 cached_result = None
                 exp = 0
 
@@ -233,27 +260,34 @@ class SearchExecutor:
                     all_cached = False
                     future = executor.submit(func)
                     cache_key = key if use_cache else None
-                    future_to_meta[future] = (current_index, cache_key)
+                    future_to_meta[future] = (current_index, cache_key, source_name)
                     pending_futures.append(future)
                     current_index += 1
 
             if pending_futures:
-                icons = ["▪️"] * len(pending_futures)
+                results_badges = [""] * len(pending_futures)
 
                 for future in as_completed(pending_futures):
-                    index, cache_key = future_to_meta[future]
+                    index, cache_key, source_name = future_to_meta[future]
                     try:
                         res = future.result()
-                        status = "✅" if res and len(res) > 0 else "⚪"
-                        icons[index] = status
+                        if res and len(res) > 0:
+                            badge = f"<bg green><black>{source_name}</black></bg green>"
+                        else:
+                            debug(f"❌ No results returned by {source_name}")
+                            badge = f"<bg black><white>{source_name}</white></bg black>"
+
+                        results_badges[index] = badge
                         results.extend(res)
                         if cache_key:
                             search_cache.set(cache_key, res)
                     except Exception as e:
-                        icons[index] = "❌"
+                        results_badges[index] = (
+                            f"<bg red><white>{source_name}</white></bg red>"
+                        )
                         info(f"Search error: {e}")
 
-                bar_str = f" [{''.join(icons)}]"
+                bar_str = f" [{' '.join(results_badges)}]"
 
         return results, bar_str, all_cached, min_ttl
 

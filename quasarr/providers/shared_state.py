@@ -118,7 +118,7 @@ def extract_valid_hostname(url, shorthand):
         message = f"Error: {e}. Please provide a valid URL."
         domain = None
 
-    print(message)
+    debug(message)
     return {"domain": domain, "message": message}
 
 

@@ -12,7 +12,7 @@ import requests
 from bs4 import BeautifulSoup
 
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
-from quasarr.providers.log import debug, warn
+from quasarr.providers.log import debug, error, warn
 
 hostname = "mb"
 supported_mirrors = ["rapidgator", "ddownload"]
@@ -104,21 +104,9 @@ def _parse_posts(
                 if " " in title:
                     continue
 
-                # can't check for mirrors in search context
-                if mirror_filter and mirror_filter not in supported_mirrors:
-                    continue
-            else:
-                mirror_candidates = []
-                for strong in post.find_all(
-                    "strong", string=re.compile(r"^Download", re.I)
-                ):
-                    link_tag = strong.find_next_sibling("a")
-                    if link_tag and link_tag.get_text(strip=True):
-                        host = link_tag.get_text(strip=True).split(".")[0].lower()
-                        mirror_candidates.append(host)
-                valid = [m for m in mirror_candidates if m in supported_mirrors]
-                if not valid or (mirror_filter and mirror_filter not in valid):
-                    continue
+            # can't check for mirrors in soup, so we use the hardcoded list
+            if mirror_filter and mirror_filter not in supported_mirrors:
+                continue
 
             # extract IMDb ID
             imdb_id = None
@@ -128,9 +116,18 @@ def _parse_posts(
                     imdb_id = m.group(1)
                     break
 
+            if not imdb_id:
+                m = IMDB_REGEX.search(post.get_text())
+                if m:
+                    imdb_id = m.group(1)
+
             # size extraction
             mb = size_bytes = 0
-            size_match = re.search(r"Größe:\s*([\d\.]+)\s*([GMK]B)", post.get_text())
+            size_match = re.search(
+                r"(?:Größe|Size).*?:\s*([\d\.]+)\s*([GMK]B)",
+                post.get_text(),
+                re.IGNORECASE,
+            )
             if size_match:
                 sz = {"size": size_match.group(1), "sizeunit": size_match.group(2)}
                 mb = shared_state.convert_to_mb(sz)
@@ -159,7 +156,7 @@ def _parse_posts(
                 }
             )
         except Exception as e:
-            debug(f"Error parsing {hostname.upper()} post: {e}")
+            error(f"Error parsing {hostname.upper()} post: {e}")
             continue
     return releases
 
