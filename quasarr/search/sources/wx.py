@@ -158,7 +158,7 @@ def wx_search(
 
     imdb_id = shared_state.is_imdb_id(search_string)
     if imdb_id:
-        debug(f"Received IMDb ID: {imdb_id}")
+        debug(f"Received IMDb ID: <y>{imdb_id}</y>")
         title = get_localized_title(shared_state, imdb_id, "de")
         if not title:
             error(f"No title found for IMDb '{imdb_id}'")

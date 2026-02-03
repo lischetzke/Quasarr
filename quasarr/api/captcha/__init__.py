@@ -1119,7 +1119,7 @@ def setup_captcha_routes(app):
                 links.append(link)
 
             debug(
-                f"Quick transfer received {len(links)} links for package {package_id}"
+                f"Quick transfer received <green>{len(links)}</green> links for package <y>{package_id}</y>"
             )
 
             # Get package info
@@ -1597,8 +1597,8 @@ def setup_captcha_routes(app):
                 ]
 
                 info(
-                    f"Received {len(links)} valid direct download links "
-                    f"(from {len(raw_links)} provided)"
+                    f"Received <green>{len(links)}</green> valid direct download links "
+                    f"(from <y>{len(raw_links)}</y> provided)"
                 )
 
             # Process DLC file
@@ -1706,7 +1706,9 @@ def setup_captcha_routes(app):
             mirror = None if (mirror := data.get("mirror")) == "None" else mirror
 
             if token:
-                info(f"Received token: {token} to decrypt links for {title}")
+                info(
+                    f"Received token: <green>{token}</green> to decrypt links for <y>{title}</y>"
+                )
                 decrypted = get_filecrypt_links(
                     shared_state, token, title, link, password=password, mirror=mirror
                 )

@@ -77,7 +77,9 @@ def setup_sponsors_helper_routes(app):
             download_links = data.get("urls")
             password = data.get("password")
 
-            info(f"Received {len(download_links)} download links for {title}")
+            info(
+                f"Received <green>{len(download_links)}</green> download links for <y>{title}</y>"
+            )
 
             if download_links:
                 downloaded = shared_state.download_package(
@@ -90,12 +92,12 @@ def setup_sponsors_helper_routes(app):
                     StatsHelper(shared_state).increment_captcha_decryptions_automatic()
                     shared_state.get_db("protected").delete(package_id)
                     send_discord_message(shared_state, title=title, case="solved")
-                    info(f"Download successfully started for {title}")
+                    info(f"Download successfully started for <y>{title}</y>")
                     return (
                         f"Downloaded {len(download_links)} download links for {title}"
                     )
                 else:
-                    info(f"Download failed for {title}")
+                    info(f"Download failed for <y>{title}</y>")
 
         except Exception as e:
             info(f"Error decrypting: {e}")
@@ -131,7 +133,7 @@ def setup_sponsors_helper_routes(app):
 
             send_discord_message(shared_state, title=title, case="disabled")
 
-            return f"Package {title} disabled"
+            return f"Package <y>{title}</y> disabled"
 
         except Exception as e:
             info(f"Error handling disable: {e}")
@@ -150,7 +152,9 @@ def setup_sponsors_helper_routes(app):
             title = data.get("title")
 
             if package_id:
-                info(f'Marking package "{title}" with ID "{package_id}" as failed')
+                info(
+                    f"Marking package <y>{title}</y> with ID <y>{package_id}</y> as failed"
+                )
                 failed = fail(
                     title,
                     package_id,
@@ -160,7 +164,7 @@ def setup_sponsors_helper_routes(app):
                 if failed:
                     shared_state.get_db("protected").delete(package_id)
                     send_discord_message(shared_state, title=title, case="failed")
-                    return f'Package "{title}" with ID "{package_id} marked as failed!"'
+                    return f'Package <y>{title}</y> with ID <y>{package_id}</y> marked as failed!"'
         except Exception as e:
             info(f"Error moving to failed: {e}")
 
