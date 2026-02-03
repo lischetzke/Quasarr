@@ -132,7 +132,7 @@ def get_search_results(
         )
         for flag, func in imdb_map:
             if flag:
-                search_executor.add(func, args, kwargs, True)
+                search_executor.add(func, args, kwargs, True, flag)
 
     elif search_phrase and docs_search:
         args, kwargs = (
@@ -141,7 +141,7 @@ def get_search_results(
         )
         for flag, func in phrase_map:
             if flag:
-                search_executor.add(func, args, kwargs)
+                search_executor.add(func, args, kwargs, source_name=flag)
 
     elif search_phrase:
         debug(f"Search phrase '{search_phrase}' is not supported for {request_from}.")
@@ -150,7 +150,7 @@ def get_search_results(
         args, kwargs = ((shared_state, start_time, request_from), {"mirror": mirror})
         for flag, func in feed_map:
             if flag:
-                search_executor.add(func, args, kwargs)
+                search_executor.add(func, args, kwargs, source_name=flag)
 
     # Clean description for Console UI
     if imdb_id:
@@ -213,12 +213,19 @@ class SearchExecutor:
     def __init__(self):
         self.searches = []
 
-    def add(self, func, args, kwargs, use_cache=False):
+    def add(self, func, args, kwargs, use_cache=False, source_name=None):
         key_args = list(args)
         key_args[1] = None
         key_args = tuple(key_args)
         key = hash((func.__name__, key_args, frozenset(kwargs.items())))
-        self.searches.append((key, lambda: func(*args, **kwargs), use_cache))
+        self.searches.append(
+            (
+                key,
+                lambda: func(*args, **kwargs),
+                use_cache,
+                source_name or func.__name__,
+            )
+        )
 
     def run_all(self):
         results = []
@@ -233,7 +240,7 @@ class SearchExecutor:
             current_index = 0
             pending_futures = []
 
-            for key, func, use_cache in self.searches:
+            for key, func, use_cache, source_name in self.searches:
                 cached_result = None
                 exp = 0
 
@@ -253,7 +260,7 @@ class SearchExecutor:
                     all_cached = False
                     future = executor.submit(func)
                     cache_key = key if use_cache else None
-                    future_to_meta[future] = (current_index, cache_key)
+                    future_to_meta[future] = (current_index, cache_key, source_name)
                     pending_futures.append(future)
                     current_index += 1
 
@@ -261,10 +268,12 @@ class SearchExecutor:
                 icons = ["▪️"] * len(pending_futures)
 
                 for future in as_completed(pending_futures):
-                    index, cache_key = future_to_meta[future]
+                    index, cache_key, source_name = future_to_meta[future]
                     try:
                         res = future.result()
                         status = "✅" if res and len(res) > 0 else "⚪"
+                        if status == "⚪":
+                            debug(f"No results returned by {source_name}")
                         icons[index] = status
                         results.extend(res)
                         if cache_key:
