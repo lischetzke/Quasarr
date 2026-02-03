@@ -197,8 +197,9 @@ def get_filecrypt_links(shared_state, token, title, url, password=None, mirror=N
             input_elem = soup.find(
                 "input",
                 attrs={
-                    "name": lambda v: v
-                    and ("pass" in v.lower() or "password" in v.lower())
+                    "name": lambda v: (
+                        v and ("pass" in v.lower() or "password" in v.lower())
+                    )
                 },
             )
         if input_elem and input_elem.has_attr("name"):
