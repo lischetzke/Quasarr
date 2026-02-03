@@ -16,14 +16,11 @@ Install the pre-commit hook that ensures linting, formatting and version upgrade
 uv run pre-commit install
 ```
 
-**2. Run Quasarr with the `--internal_address` parameter**
+**2. Run Quasarr**
 
 ```bash
-uv run Quasarr.py --internal_address=http://<host-ip>:<port>
+uv run Quasarr.py
 ```
-
-Replace `<host-ip>` and `<port>` with the scheme, IP, and port of your host machine.
-The `--internal_address` parameter is **mandatory**.
 
 **3. Start the required services using the `dev-services-compose.yml` file**
 
@@ -34,12 +31,24 @@ CONFIG_VOLUMES=/path/to/config docker-compose -f docker/dev-services-compose.yml
 Replace `/path/to/config` with your desired configuration location.
 The `CONFIG_VOLUMES` environment variable is **mandatory**.
 
+By default only JDownloader and Flaresolverr are enabled. See next step how to emulate supported *arr services.
+
+**4. Validate your changes**
+
+Use the `cli_tester.py` script to simulate Radarr, Sonarr, and LazyLibrarian interactions.
+
+```bash
+uv run cli_tester.py
+```
+
+This tool allows you to test searches, feeds, and downloads without needing the full stack of services running.
+
 ---
 
 ### Code Quality & Maintenance
 
 The CI pipeline enforces strict code styling and import optimization. Please run this commands before pushing your
-changes. Alternatively, you should just set up the pre-commit hook as described above.
+changes. Alternatively, set up the pre-commit hook as described above.
 
 **Format code AND upgrade dependencie manually:**
 

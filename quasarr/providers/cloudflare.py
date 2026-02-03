@@ -169,7 +169,7 @@ class FlareSolverrResponse:
             raise requests.HTTPError(f"{self.status_code} Error at {self.url}")
 
 
-def flaresolverr_get(shared_state, url, timeout=60, session_id=None):
+def flaresolverr_get(shared_state, url, timeout=30, session_id=None):
     """
     Core function for performing a GET request via FlareSolverr only.
     Used internally by FlareSolverrSession.get()

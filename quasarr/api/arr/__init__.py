@@ -2,7 +2,6 @@
 # Quasarr
 # Project by https://github.com/rix1337
 
-import time
 import traceback
 import xml.sax.saxutils as sax_utils
 from base64 import urlsafe_b64decode
@@ -304,38 +303,29 @@ def setup_arr_routes(app):
                                 </caps>"""
                 elif mode in ["movie", "tvsearch", "book", "search"]:
                     releases = []
-                    cache_key = None
 
                     try:
-                        offset = int(getattr(request.query, "offset", 0))
+                        offset = int(getattr(request.query, "offset", 0) or 0)
                     except (AttributeError, ValueError) as e:
                         debug(f"Error parsing offset parameter: {e}")
                         offset = 0
 
                     try:
-                        limit = int(getattr(request.query, "limit", 100))
+                        limit = int(getattr(request.query, "limit", 9999) or 9999)
                     except (AttributeError, ValueError) as e:
                         debug(f"Error parsing limit parameter: {e}")
-                        limit = 100
+                        limit = 1000
 
                     if mode == "movie":
                         # supported params: imdbid
                         imdb_id = getattr(request.query, "imdbid", "")
-
-                        if imdb_id != "":
-                            cache_key = f"{request_from}::{imdb_id}::${mirror}"
-
-                            if result := results_cache.get(cache_key, offset, limit):
-                                debug(
-                                    f"Returning offset {offset}, limit {limit} for {cache_key}"
-                                )
-                                return result
-
                         releases = get_search_results(
                             shared_state,
                             request_from,
                             imdb_id=imdb_id,
                             mirror=mirror,
+                            offset=offset,
+                            limit=limit,
                         )
 
                     elif mode == "tvsearch":
@@ -343,16 +333,6 @@ def setup_arr_routes(app):
                         imdb_id = getattr(request.query, "imdbid", "")
                         season = getattr(request.query, "season", None)
                         episode = getattr(request.query, "ep", None)
-
-                        if imdb_id != "":
-                            cache_key = f"{request_from}::{imdb_id}::${mirror}::{season}::{episode}"
-
-                            if result := results_cache.get(cache_key, offset, limit):
-                                debug(
-                                    f"Returning offset {offset}, limit {limit} for {cache_key}"
-                                )
-                                return result
-
                         releases = get_search_results(
                             shared_state,
                             request_from,
@@ -360,7 +340,10 @@ def setup_arr_routes(app):
                             mirror=mirror,
                             season=season,
                             episode=episode,
+                            offset=offset,
+                            limit=limit,
                         )
+
                     elif mode == "book":
                         author = getattr(request.query, "author", "")
                         title = getattr(request.query, "title", "")
@@ -370,6 +353,8 @@ def setup_arr_routes(app):
                             request_from,
                             search_phrase=search_phrase,
                             mirror=mirror,
+                            offset=offset,
+                            limit=limit,
                         )
 
                     elif mode == "search":
@@ -380,6 +365,8 @@ def setup_arr_routes(app):
                                 request_from,
                                 search_phrase=search_phrase,
                                 mirror=mirror,
+                                offset=offset,
+                                limit=limit,
                             )
                         else:
                             # sonarr expects this but we will not support non-imdbid searches
@@ -387,9 +374,8 @@ def setup_arr_routes(app):
                                 f"Ignoring search request from {request_from} - only imdbid searches are supported"
                             )
 
+                    # XML Generation (releases are already sliced)
                     items = ""
-                    items_amount = 0
-                    items_processed = 0
                     for release in releases:
                         release = release.get("details", {})
 
@@ -412,43 +398,6 @@ def setup_arr_routes(app):
                             <pubDate>{pub_date}</pubDate>
                             <enclosure url="{release.get("link", "")}" length="{release.get("size", 0)}" type="application/x-nzb" />
                         </item>'''
-                        items_amount += 1
-
-                        if cache_key and items_amount == limit:
-                            items_processed += items_amount
-                            debug(
-                                f"Processed {items_processed}/{len(releases)} releases"
-                            )
-                            results_cache.set(
-                                cache_key,
-                                f"""<?xml version="1.0" encoding="UTF-8"?>
-                                <rss>
-                                    <channel>
-                                        {items}
-                                    </channel>
-                                </rss>""",
-                                items_processed - items_amount,
-                                limit,
-                            )
-                            items = ""
-                            items_amount = 0
-
-                    if cache_key and items_amount > 0:
-                        items_processed += items_amount
-                        debug(f"Processed {items_processed}/{len(releases)} releases")
-                        results_cache.set(
-                            cache_key,
-                            f"""<?xml version="1.0" encoding="UTF-8"?>
-                                <rss>
-                                    <channel>
-                                        {items}
-                                    </channel>
-                                </rss>""",
-                            items_processed - items_amount,
-                            limit,
-                        )
-                        items = ""
-                        items_amount = 0
 
                     requires_placeholder_item = not getattr(
                         request.query, "imdbid", ""
@@ -463,13 +412,6 @@ def setup_arr_routes(app):
                             <pubDate>{datetime.now().strftime("%a, %d %b %Y %H:%M:%S +0000")}</pubDate>
                             <enclosure url="https://github.com/rix1337/Quasarr" length="0" type="application/x-nzb" />
                         </item>"""
-
-                    if cache_key:
-                        if result := results_cache.get(cache_key, offset, limit):
-                            debug(
-                                f"Returning offset {offset}, limit {limit} for {cache_key}"
-                            )
-                            return result
 
                     return f"""<?xml version="1.0" encoding="UTF-8"?>
                                 <rss>
@@ -492,39 +434,3 @@ def setup_arr_routes(app):
 
         info(f"[ERROR] Unknown general request: {dict(request.query)}")
         return {"error": True}
-
-
-class ResultsCache:
-    def __init__(self):
-        self.last_cleaned = time.time()
-        self.cache = {}
-
-    def clean(self, now):
-        if now - self.last_cleaned < 60:
-            return
-
-        keys_to_delete = [
-            key for key, (_, expiry) in self.cache.items() if now >= expiry
-        ]
-
-        for key in keys_to_delete:
-            del self.cache[key]
-
-        self.last_cleaned = now
-
-    def get(self, key, offset, limit):
-        key = key + f"::{offset}::{limit}"
-        value, expiry = self.cache.get(key, (None, 0))
-        if time.time() < expiry:
-            return value
-
-        return None
-
-    def set(self, key, value, offset, limit, ttl=300):
-        now = time.time()
-        key = key + f"::{offset}::{limit}"
-        self.cache[key] = (value, now + ttl)
-        self.clean(now)
-
-
-results_cache = ResultsCache()

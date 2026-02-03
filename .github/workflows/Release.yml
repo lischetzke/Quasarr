@@ -157,8 +157,10 @@ jobs:
           tags: |
             ${{ env.ENDPOINT }}:latest-amd64
             ${{ env.ENDPOINT }}:${{ needs.version.outputs.version }}-amd64
+            ${{ env.ENDPOINT }}:beta-amd64
             ${{ env.GHCR_ENDPOINT }}:latest-amd64
             ${{ env.GHCR_ENDPOINT }}:${{ needs.version.outputs.version }}-amd64
+            ${{ env.GHCR_ENDPOINT }}:beta-amd64
           build-args: VS=${{ needs.version.outputs.version }}
           cache-from: type=gha,scope=amd64
           cache-to: type=gha,mode=max,scope=amd64
@@ -197,8 +199,10 @@ jobs:
           tags: |
             ${{ env.ENDPOINT }}:latest-arm64
             ${{ env.ENDPOINT }}:${{ needs.version.outputs.version }}-arm64
+            ${{ env.ENDPOINT }}:beta-arm64
             ${{ env.GHCR_ENDPOINT }}:latest-arm64
             ${{ env.GHCR_ENDPOINT }}:${{ needs.version.outputs.version }}-arm64
+            ${{ env.GHCR_ENDPOINT }}:beta-arm64
           build-args: VS=${{ needs.version.outputs.version }}
           cache-from: type=gha,scope=arm64
           cache-to: type=gha,mode=max,scope=arm64
@@ -227,8 +231,10 @@ jobs:
           ANNOTATION="index:org.opencontainers.image.description=$DESCRIPTION"
           docker buildx imagetools create -t ${{ env.ENDPOINT }}:latest ${{ env.ENDPOINT }}:latest-amd64 ${{ env.ENDPOINT }}:latest-arm64
           docker buildx imagetools create -t ${{ env.ENDPOINT }}:${{ needs.version.outputs.version }} ${{ env.ENDPOINT }}:${TAG_AMD64} ${{ env.ENDPOINT }}:${TAG_ARM64}
+          docker buildx imagetools create -t ${{ env.ENDPOINT }}:beta ${{ env.ENDPOINT }}:beta-amd64 ${{ env.ENDPOINT }}:beta-arm64
           docker buildx imagetools create -t ${{ env.GHCR_ENDPOINT }}:latest --annotation "$ANNOTATION" ${{ env.GHCR_ENDPOINT }}:latest-amd64 ${{ env.GHCR_ENDPOINT }}:latest-arm64
           docker buildx imagetools create -t ${{ env.GHCR_ENDPOINT }}:${{ needs.version.outputs.version }} --annotation "$ANNOTATION" ${{ env.GHCR_ENDPOINT }}:${TAG_AMD64} ${{ env.GHCR_ENDPOINT }}:${TAG_ARM64}
+          docker buildx imagetools create -t ${{ env.GHCR_ENDPOINT }}:beta --annotation "$ANNOTATION" ${{ env.GHCR_ENDPOINT }}:beta-amd64 ${{ env.GHCR_ENDPOINT }}:beta-arm64
 
   release:
     name: Create Release
