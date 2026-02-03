@@ -124,6 +124,8 @@ def get_search_results(
         ("wx", wx, wx_feed),
     ]
 
+    use_pagination = True
+
     # Add searches
     if imdb_id:
         args, kwargs = (
@@ -132,7 +134,9 @@ def get_search_results(
         )
         for name, url, func in imdb_map:
             if url:
-                search_executor.add(func, args, kwargs, True, name.upper())
+                search_executor.add(
+                    func, args, kwargs, use_cache=True, source_name=name.upper()
+                )
 
     elif search_phrase and docs_search:
         args, kwargs = (
@@ -148,6 +152,7 @@ def get_search_results(
 
     else:
         args, kwargs = ((shared_state, start_time, request_from), {"mirror": mirror})
+        use_pagination = False
         for name, url, func in feed_map:
             if url:
                 search_executor.add(func, args, kwargs, source_name=name.upper())
@@ -183,7 +188,10 @@ def get_search_results(
     total_count = len(results)
 
     # Slicing
-    sliced_results = results[offset : offset + limit]
+    if use_pagination:
+        sliced_results = results[offset : offset + limit]
+    else:
+        sliced_results = results
 
     if sliced_results:
         trace(f"First {len(sliced_results)} results sorted by date:")
@@ -193,7 +201,7 @@ def get_search_results(
 
     # Formatting for log (1-based index for humans)
     log_start = min(offset + 1, total_count) if total_count > 0 else 0
-    log_end = min(offset + limit, total_count)
+    log_end = min(offset + limit, total_count) if use_pagination else total_count
 
     # Logic to switch between "Time taken" and "from cache"
     if all_cached:
