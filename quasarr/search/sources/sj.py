@@ -5,7 +5,6 @@
 import json
 import re
 import time
-from base64 import urlsafe_b64encode
 from datetime import datetime, timedelta
 
 import requests
@@ -14,6 +13,7 @@ from bs4 import BeautifulSoup
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.imdb_metadata import get_localized_title
 from quasarr.providers.log import debug, info, trace
+from quasarr.providers.utils import generate_download_link
 
 hostname = "sj"
 
@@ -27,7 +27,7 @@ def convert_to_rss_date(date_str):
         return ""
 
 
-def sj_feed(shared_state, start_time, request_from, mirror=None):
+def sj_feed(shared_state, start_time, request_from):
     releases = []
 
     if "sonarr" not in request_from.lower():
@@ -76,13 +76,15 @@ def sj_feed(shared_state, start_time, request_from, mirror=None):
                 size = 0
                 imdb_id = None
 
-                payload = urlsafe_b64encode(
-                    f"{title}|{series_url}|{mirror}|{mb}|{password}|{imdb_id}|{hostname}".encode(
-                        "utf-8"
-                    )
-                ).decode("utf-8")
-
-                link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
+                link = generate_download_link(
+                    shared_state,
+                    title,
+                    series_url,
+                    mb,
+                    password,
+                    imdb_id,
+                    hostname,
+                )
 
                 releases.append(
                     {
@@ -91,7 +93,6 @@ def sj_feed(shared_state, start_time, request_from, mirror=None):
                             "hostname": hostname,
                             "imdb_id": imdb_id,
                             "link": link,
-                            "mirror": mirror,
                             "size": size,
                             "date": published,
                             "source": series_url,
@@ -119,7 +120,6 @@ def sj_search(
     start_time,
     request_from,
     search_string,
-    mirror=None,
     season=None,
     episode=None,
 ):
@@ -215,13 +215,15 @@ def sj_search(
                     mb = 0
                     size = 0
 
-                    payload = urlsafe_b64encode(
-                        f"{title}|{series_url}|{mirror}|{mb}|{password}|{imdb_id}|{hostname}".encode(
-                            "utf-8"
-                        )
-                    ).decode("utf-8")
-
-                    link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
+                    link = generate_download_link(
+                        shared_state,
+                        title,
+                        series_url,
+                        mb,
+                        password,
+                        imdb_id,
+                        hostname,
+                    )
 
                     releases.append(
                         {
@@ -230,7 +232,6 @@ def sj_search(
                                 "hostname": hostname,
                                 "imdb_id": imdb_id,
                                 "link": link,
-                                "mirror": mirror,
                                 "size": size,
                                 "date": published,
                                 "source": series_url,

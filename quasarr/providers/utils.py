@@ -6,6 +6,7 @@ import os
 import re
 import socket
 import sys
+from base64 import urlsafe_b64decode, urlsafe_b64encode
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from io import BytesIO
 from urllib.parse import urlparse
@@ -14,9 +15,10 @@ import requests
 from PIL import Image
 
 from quasarr.providers.log import crit, error
+from quasarr.storage.categories import category_exists
 
 # Fallback user agent when FlareSolverr is not available
-FALLBACK_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+FALLBACK_USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"
 
 
 class Unbuffered(object):
@@ -202,6 +204,41 @@ def is_site_usable(shared_state, shorthand):
     return bool(user and password)
 
 
+def generate_download_link(
+    shared_state, title, url, size_mb, password, imdb_id, source_key
+):
+    """
+    Generate a download link with a base64 encoded payload.
+    The payload format is: title|url|size_mb|password|imdb_id|source_key
+
+    Args:
+        shared_state: Shared state object
+        title: Release title
+        url: Source URL
+        size_mb: Size in MB (int or float)
+        password: Password for the release (or empty string)
+        imdb_id: IMDb ID (or None/empty string)
+        source_key: Source shorthand (e.g., 'al', 'dd')
+
+    Returns:
+        str: Full download URL
+    """
+    # Ensure all fields are strings and handle None
+    title = str(title) if title else ""
+    url = str(url) if url else ""
+    size_mb = str(size_mb) if size_mb is not None else "0"
+    password = str(password) if password else ""
+    imdb_id = str(imdb_id) if imdb_id else ""
+    source_key = str(source_key) if source_key else ""
+
+    raw_payload = f"{title}|{url}|{size_mb}|{password}|{imdb_id}|{source_key}"
+    encoded_payload = urlsafe_b64encode(raw_payload.encode("utf-8")).decode("utf-8")
+
+    return (
+        f"{shared_state.values['internal_address']}/download/?payload={encoded_payload}"
+    )
+
+
 # =============================================================================
 # LINK STATUS CHECKING
 # =============================================================================
@@ -379,3 +416,70 @@ def filter_offline_links(links, shared_state=None, log_func=None):
         log_func(f"Filtered out {offline_count} offline link(s)")
 
     return online_links
+
+
+def parse_payload(payload_str):
+    """
+    Parse the base64-encoded payload string into its components.
+
+    Format: title|url|size_mb|password|imdb_id|source_key
+
+    Returns:
+        dict with keys: title, url, size_mb, password, imdb_id, source_key
+    """
+    decoded = urlsafe_b64decode(payload_str.encode()).decode()
+    parts = decoded.split("|")
+
+    if len(parts) == 6:
+        title, url, size_mb, password, imdb_id, source_key = parts
+    else:
+        raise ValueError(f"expected 6 fields, got {len(parts)}")
+
+    return {
+        "title": title,
+        "url": url,
+        "size_mb": size_mb,
+        "password": password if password else None,
+        "imdb_id": imdb_id if imdb_id else None,
+        "source_key": source_key if source_key else None,
+    }
+
+
+def determine_category(request_from, category=None):
+    """
+    Determine the category based on the provided category or the client type.
+    If category is not provided or invalid, falls back to default mapping based on request_from.
+    """
+    if category and category_exists(category):
+        return category
+
+    client_type = extract_client_type(request_from)
+    # Default mapping
+    category_map = {"lazylibrarian": "docs", "radarr": "movies", "sonarr": "tv"}
+    return category_map.get(client_type, "tv")
+
+
+def extract_client_type(request_from):
+    """
+    Extract client type from User-Agent, stripping version info.
+
+    Examples:
+        "Radarr/6.0.4.10291 (alpine 3.23.2)" → "radarr"
+        "Sonarr/4.0.0.123" → "sonarr"
+        "LazyLibrarian/1.0" → "lazylibrarian"
+    """
+    if not request_from:
+        return "unknown"
+
+    # Extract the client name before the version (first part before '/')
+    client = request_from.split("/")[0].lower().strip()
+
+    # Normalize known clients
+    if "radarr" in client:
+        return "radarr"
+    elif "sonarr" in client:
+        return "sonarr"
+    elif "lazylibrarian" in client:
+        return "lazylibrarian"
+
+    return client

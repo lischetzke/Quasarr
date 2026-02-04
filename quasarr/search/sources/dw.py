@@ -5,16 +5,15 @@
 import datetime
 import re
 import time
-from base64 import urlsafe_b64encode
 
 import requests
 from bs4 import BeautifulSoup
 
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.log import debug, info, trace, warn
+from quasarr.providers.utils import generate_download_link
 
 hostname = "dw"
-supported_mirrors = ["1fichier", "rapidgator", "ddownload", "katfile"]
 
 
 def convert_to_rss_date(date_str):
@@ -77,7 +76,7 @@ def extract_size(text):
     raise ValueError(f"Invalid size format: {text}")
 
 
-def dw_feed(shared_state, start_time, request_from, mirror=None):
+def dw_feed(shared_state, start_time, request_from):
     releases = []
     dw = shared_state.values["config"]("Hostnames").get(hostname.lower())
     password = dw
@@ -92,13 +91,6 @@ def dw_feed(shared_state, start_time, request_from, mirror=None):
         feed_type = "videos/filme/"
     else:
         feed_type = "videos/serien/"
-
-    if mirror and mirror not in supported_mirrors:
-        debug(
-            f'Mirror "{mirror}" not supported by "{hostname.upper()}". Supported mirrors: {supported_mirrors}.'
-            " Skipping search!"
-        )
-        return releases
 
     url = f"https://{dw}/{feed_type}"
     headers = {
@@ -129,12 +121,16 @@ def dw_feed(shared_state, start_time, request_from, mirror=None):
                     "span", {"class": "date updated"}
                 ).text.strip()
                 published = convert_to_rss_date(date)
-                payload = urlsafe_b64encode(
-                    f"{title}|{source}|{mirror}|{mb}|{password}|{imdb_id}|{hostname}".encode(
-                        "utf-8"
-                    )
-                ).decode("utf-8")
-                link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
+
+                link = generate_download_link(
+                    shared_state,
+                    title,
+                    source,
+                    mb,
+                    password,
+                    imdb_id,
+                    hostname,
+                )
             except Exception as e:
                 info(f"Error parsing {hostname.upper()} feed: {e}")
                 mark_hostname_issue(
@@ -149,7 +145,6 @@ def dw_feed(shared_state, start_time, request_from, mirror=None):
                         "hostname": hostname.lower(),
                         "imdb_id": imdb_id,
                         "link": link,
-                        "mirror": mirror,
                         "size": size,
                         "date": published,
                         "source": source,
@@ -177,7 +172,6 @@ def dw_search(
     start_time,
     request_from,
     search_string,
-    mirror=None,
     season=None,
     episode=None,
 ):
@@ -195,12 +189,6 @@ def dw_search(
         search_type = "videocategory=filme"
     else:
         search_type = "videocategory=serien"
-
-    if mirror and mirror not in ["1fichier", "rapidgator", "ddownload", "katfile"]:
-        debug(
-            f'Mirror "{mirror}" not not supported by {hostname.upper()}. Skipping search!'
-        )
-        return releases
 
     url = f"https://{dw}/?s={search_string}&{search_type}"
     headers = {
@@ -255,12 +243,16 @@ def dw_search(
                     "span", {"class": "date updated"}
                 ).text.strip()
                 published = convert_to_rss_date(date)
-                payload = urlsafe_b64encode(
-                    f"{title}|{source}|{mirror}|{mb}|{password}|{release_imdb_id}|{hostname}".encode(
-                        "utf-8"
-                    )
-                ).decode("utf-8")
-                link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
+
+                link = generate_download_link(
+                    shared_state,
+                    title,
+                    source,
+                    mb,
+                    password,
+                    release_imdb_id,
+                    hostname,
+                )
             except Exception as e:
                 warn(f"Error parsing {hostname.upper()} search: {e}")
                 mark_hostname_issue(
@@ -275,7 +267,6 @@ def dw_search(
                         "hostname": hostname.lower(),
                         "imdb_id": release_imdb_id,
                         "link": link,
-                        "mirror": mirror,
                         "size": size,
                         "date": published,
                         "source": source,

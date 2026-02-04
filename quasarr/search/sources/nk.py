@@ -4,7 +4,6 @@
 
 import re
 import time
-from base64 import urlsafe_b64encode
 from datetime import datetime
 from html import unescape
 from urllib.parse import urljoin
@@ -15,9 +14,9 @@ from bs4 import BeautifulSoup
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.imdb_metadata import get_localized_title, get_year
 from quasarr.providers.log import debug, info, trace
+from quasarr.providers.utils import generate_download_link
 
 hostname = "nk"
-supported_mirrors = ["rapidgator", "ddownload"]
 
 
 def convert_to_rss_date(date_str: str) -> str:
@@ -65,7 +64,6 @@ def nk_search(
     start_time,
     request_from,
     search_string="",
-    mirror=None,
     season=None,
     episode=None,
 ):
@@ -76,10 +74,6 @@ def nk_search(
         debug(
             f'<d>Skipping {request_from} search on "{hostname.upper()}" (unsupported media type)!</d>'
         )
-        return releases
-
-    if mirror and mirror not in supported_mirrors:
-        debug(f'Mirror "{mirror}" not supported.')
         return releases
 
     source_search = ""
@@ -204,13 +198,14 @@ def nk_search(
 
             published = convert_to_rss_date(date_text) if date_text else ""
 
-            payload = urlsafe_b64encode(
-                f"{title}|{source}|{mirror}|{mb}|{password}|{release_imdb_id}|{hostname}".encode(
-                    "utf-8"
-                )
-            ).decode()
-            link = (
-                f"{shared_state.values['internal_address']}/download/?payload={payload}"
+            link = generate_download_link(
+                shared_state,
+                title,
+                source,
+                mb,
+                password,
+                release_imdb_id,
+                hostname,
             )
 
             releases.append(
@@ -220,7 +215,6 @@ def nk_search(
                         "hostname": hostname,
                         "imdb_id": release_imdb_id,
                         "link": link,
-                        "mirror": mirror,
                         "size": size,
                         "date": published,
                         "source": source,

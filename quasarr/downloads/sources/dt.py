@@ -28,7 +28,7 @@ def derive_mirror_from_url(url):
         return "unknown"
 
 
-def get_dt_download_links(shared_state, url, mirror, title, password):
+def get_dt_download_links(shared_state, url, mirrors, title, password):
     """
     KEEP THE SIGNATURE EVEN IF SOME PARAMETERS ARE UNUSED!
 
@@ -73,7 +73,7 @@ def get_dt_download_links(shared_state, url, mirror, title, password):
         lower = href.lower()
         if "imdb.com" in lower or "?ref=" in lower:
             continue
-        if mirror and mirror not in href:
+        if mirrors and not any(m in href for m in mirrors):
             continue
 
         mirror_name = derive_mirror_from_url(href)
@@ -94,7 +94,7 @@ def get_dt_download_links(shared_state, url, mirror, title, password):
                     and "imdb.com" not in low
                     and "?ref=" not in low
                 ):
-                    if not mirror or mirror in u:
+                    if not mirrors or any(m in u for m in mirrors):
                         mirror_name = derive_mirror_from_url(u)
                         filtered.append([u, mirror_name])
 

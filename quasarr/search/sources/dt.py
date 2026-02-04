@@ -6,7 +6,6 @@ import datetime
 import html
 import re
 import time
-from base64 import urlsafe_b64encode
 from datetime import timedelta, timezone
 from urllib.parse import quote_plus
 
@@ -16,9 +15,9 @@ from bs4 import BeautifulSoup
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.imdb_metadata import get_localized_title
 from quasarr.providers.log import debug, error, info, warn
+from quasarr.providers.utils import generate_download_link
 
 hostname = "dt"
-supported_mirrors = ["rapidgator", "nitroflare", "ddownload"]
 
 
 def extract_size(text):
@@ -56,7 +55,7 @@ def parse_published_datetime(article):
     return dt.isoformat()
 
 
-def dt_feed(shared_state, start_time, request_from, mirror=None):
+def dt_feed(shared_state, start_time, request_from):
     releases = []
     dt = shared_state.values["config"]("Hostnames").get(hostname.lower())
     password = dt
@@ -67,12 +66,6 @@ def dt_feed(shared_state, start_time, request_from, mirror=None):
         feed_type = "media/videos/"
     else:
         feed_type = "media/tv-show/"
-
-    if mirror and mirror not in supported_mirrors:
-        error(
-            f'Mirror "{mirror}" not supported. Supported: {supported_mirrors}. Skipping!'
-        )
-        return releases
 
     url = f"https://{dt}/{feed_type}"
     headers = {"User-Agent": shared_state.values["user_agent"]}
@@ -121,12 +114,15 @@ def dt_feed(shared_state, start_time, request_from, mirror=None):
 
                 published = parse_published_datetime(article)
 
-                payload = urlsafe_b64encode(
-                    f"{title}|{source}|{mirror}|{mb}|{password}|{imdb_id}|{hostname}".encode(
-                        "utf-8"
-                    )
-                ).decode("utf-8")
-                link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
+                link = generate_download_link(
+                    shared_state,
+                    title,
+                    source,
+                    mb,
+                    password,
+                    imdb_id,
+                    hostname,
+                )
 
             except Exception as e:
                 warn(f"Error parsing feed: {e}")
@@ -142,7 +138,6 @@ def dt_feed(shared_state, start_time, request_from, mirror=None):
                         "hostname": hostname.lower(),
                         "imdb_id": imdb_id,
                         "link": link,
-                        "mirror": mirror,
                         "size": size,
                         "date": published,
                         "source": source,
@@ -170,7 +165,6 @@ def dt_search(
     start_time,
     request_from,
     search_string,
-    mirror=None,
     season=None,
     episode=None,
 ):
@@ -184,12 +178,6 @@ def dt_search(
         cat_id = "9"
     else:
         cat_id = "64"
-
-    if mirror and mirror not in supported_mirrors:
-        error(
-            f'Mirror "{mirror}" not supported. Supported: {supported_mirrors}. Skipping search!'
-        )
-        return releases
 
     try:
         imdb_id = shared_state.is_imdb_id(search_string)
@@ -268,12 +256,15 @@ def dt_search(
 
                 published = parse_published_datetime(article)
 
-                payload = urlsafe_b64encode(
-                    f"{title}|{source}|{mirror}|{mb}|{password}|{imdb_id}".encode(
-                        "utf-8"
-                    )
-                ).decode("utf-8")
-                link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
+                link = generate_download_link(
+                    shared_state,
+                    title,
+                    source,
+                    mb,
+                    password,
+                    imdb_id,
+                    hostname,
+                )
 
             except Exception as e:
                 warn(f"Error parsing search item: {e}")
@@ -289,7 +280,6 @@ def dt_search(
                         "hostname": hostname.lower(),
                         "imdb_id": imdb_id,
                         "link": link,
-                        "mirror": mirror,
                         "size": size,
                         "date": published,
                         "source": source,

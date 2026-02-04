@@ -5,19 +5,18 @@
 import re
 import time
 import warnings
-from base64 import urlsafe_b64encode
 from datetime import datetime
 
 import requests
 from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning
 
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
+from quasarr.providers.utils import generate_download_link
 
 warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
 from quasarr.providers.log import debug, warn
 
 hostname = "hs"
-supported_mirrors = ["rapidgator", "ddownload", "katfile"]
 
 FILECRYPT_REGEX = re.compile(r"filecrypt\.(?:cc|co|to)/container/", re.I)
 SIZE_REGEX = re.compile(r"Größe[:\s]*(\d+(?:[.,]\d+)?)\s*(MB|GB|TB)", re.I)
@@ -135,18 +134,6 @@ def extract_episode_size_mb(text):
     return episode_size_mb
 
 
-def normalize_mirror_name(name):
-    """Normalize mirror names - ddlto/ddl.to -> ddownload"""
-    name_lower = name.lower().strip()
-    if "ddlto" in name_lower or "ddl.to" in name_lower or "ddownload" in name_lower:
-        return "ddownload"
-    if "rapidgator" in name_lower:
-        return "rapidgator"
-    if "katfile" in name_lower:
-        return "katfile"
-    return name_lower
-
-
 def build_search_url(base_url, search_term):
     """Build the ASP search URL with all required parameters"""
     params = {
@@ -197,7 +184,6 @@ def _parse_search_results(
     shared_state,
     hd_host,
     password,
-    mirror_filter,
     request_from,
     search_string,
     season,
@@ -287,10 +273,15 @@ def _parse_search_results(
                 ep_mb = episode_mb if episode_mb else total_mb
                 ep_size = episode_size_bytes if episode_size_bytes else total_size_bytes
 
-                payload = urlsafe_b64encode(
-                    f"{title}|{source}|{mirror_filter}|{ep_mb}|{password}|{imdb_id}|{hostname}".encode()
-                ).decode()
-                link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
+                link = generate_download_link(
+                    shared_state,
+                    title,
+                    source,
+                    ep_mb,
+                    password,
+                    imdb_id,
+                    hostname,
+                )
 
                 releases.append(
                     {
@@ -299,7 +290,6 @@ def _parse_search_results(
                             "hostname": hostname,
                             "imdb_id": imdb_id,
                             "link": link,
-                            "mirror": mirror_filter,
                             "size": ep_size,
                             "date": published,
                             "source": source,
@@ -313,10 +303,15 @@ def _parse_search_results(
                 if shared_state.is_valid_release(
                     main_title, request_from, search_string, season, episode
                 ):
-                    payload = urlsafe_b64encode(
-                        f"{main_title}|{source}|{mirror_filter}|{total_mb}|{password}|{imdb_id}|{hostname}".encode()
-                    ).decode()
-                    link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
+                    link = generate_download_link(
+                        shared_state,
+                        main_title,
+                        source,
+                        total_mb,
+                        password,
+                        imdb_id,
+                        hostname,
+                    )
 
                     releases.append(
                         {
@@ -325,7 +320,6 @@ def _parse_search_results(
                                 "hostname": hostname,
                                 "imdb_id": imdb_id,
                                 "link": link,
-                                "mirror": mirror_filter,
                                 "size": total_size_bytes,
                                 "date": published,
                                 "source": source,
@@ -341,7 +335,7 @@ def _parse_search_results(
     return releases
 
 
-def hs_feed(shared_state, start_time, request_from, mirror=None):
+def hs_feed(shared_state, start_time, request_from):
     """Return recent releases from HS feed"""
     releases = []
     hs = shared_state.values["config"]("Hostnames").get(hostname)
@@ -354,12 +348,6 @@ def hs_feed(shared_state, start_time, request_from, mirror=None):
     if "lazylibrarian" in request_from.lower():
         debug(
             f'<d>Skipping {request_from} feed on "{hostname.upper()}" (unsupported media type)!</d>'
-        )
-        return releases
-
-    if mirror and mirror.lower() not in supported_mirrors:
-        debug(
-            f'Mirror "{mirror}" not supported by "{hostname.upper()}". Skipping feed!'
         )
         return releases
 
@@ -405,10 +393,15 @@ def hs_feed(shared_state, start_time, request_from, mirror=None):
                 size_bytes = 0
                 imdb_id = None
 
-                payload = urlsafe_b64encode(
-                    f"{title}|{source}|{mirror}|{mb}|{password}|{imdb_id}|{hostname}".encode()
-                ).decode()
-                link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
+                link = generate_download_link(
+                    shared_state,
+                    title,
+                    source,
+                    mb,
+                    password,
+                    imdb_id,
+                    hostname,
+                )
 
                 releases.append(
                     {
@@ -417,7 +410,6 @@ def hs_feed(shared_state, start_time, request_from, mirror=None):
                             "hostname": hostname,
                             "imdb_id": imdb_id,
                             "link": link,
-                            "mirror": mirror,
                             "size": size_bytes,
                             "date": published,
                             "source": source,
@@ -435,8 +427,8 @@ def hs_feed(shared_state, start_time, request_from, mirror=None):
         mark_hostname_issue(hostname, "feed", str(e))
         return releases
 
-    elapsed_time = time.time() - start_time
-    debug(f"Time taken: {elapsed_time:.2f}s")
+    elapsed = time.time() - start_time
+    debug(f"Time taken: {elapsed:.2f}s")
 
     if releases:
         clear_hostname_issue(hostname)
@@ -448,7 +440,6 @@ def hs_search(
     start_time,
     request_from,
     search_string,
-    mirror=None,
     season=None,
     episode=None,
 ):
@@ -464,12 +455,6 @@ def hs_search(
     if "lazylibrarian" in request_from.lower():
         debug(
             f'<d>Skipping {request_from} search on "{hostname.upper()}" (unsupported media type)!</d>'
-        )
-        return releases
-
-    if mirror and mirror.lower() not in supported_mirrors:
-        debug(
-            f'Mirror "{mirror}" not supported by "{hostname.upper()}". Skipping search!'
         )
         return releases
 
@@ -495,7 +480,6 @@ def hs_search(
             shared_state,
             hs,
             password,
-            mirror,
             request_from,
             search_string,
             season,

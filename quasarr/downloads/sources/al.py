@@ -604,7 +604,7 @@ def extract_episode(title: str) -> int | None:
     return None
 
 
-def get_al_download_links(shared_state, url, mirror, title, password):
+def get_al_download_links(shared_state, url, mirrors, title, password):
     """
     KEEP THE SIGNATURE EVEN IF SOME PARAMETERS ARE UNUSED!
 
@@ -801,7 +801,7 @@ def get_al_download_links(shared_state, url, mirror, title, password):
                 return {}
 
             try:
-                links = decrypt_content(content_items, mirror)
+                links = decrypt_content(content_items, mirrors)
                 debug(f"Decrypted URLs: {links}")
             except Exception as e:
                 info(f"Error during decryption: {e}")

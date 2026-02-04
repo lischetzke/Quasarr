@@ -102,6 +102,7 @@ _context_replace = {
     "sessions": "🍪",  # /quasarr/providers/sessions/*
     "search": "🔍",  # /quasarr/search/*
     "storage": "💽",  # /quasarr/storage/*
+    "categories": "🔠",  # /quasarr/storage/categories.py
     "setup": "🛠️",  # /quasarr/storage/setup.py
     "sqlite_database": "🗃️",  # /quasarr/storage/sqlite_database.py
     "sources": "🧲",  # /quasarr/*/sources/*

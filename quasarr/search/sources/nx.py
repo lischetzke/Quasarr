@@ -4,40 +4,30 @@
 
 import html
 import time
-from base64 import urlsafe_b64encode
 
 import requests
 
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.imdb_metadata import get_localized_title, get_year
 from quasarr.providers.log import debug, info, trace, warn
+from quasarr.providers.utils import generate_download_link
 
 hostname = "nx"
-supported_mirrors = ["filer"]
 
 
-def nx_feed(shared_state, start_time, request_from, mirror=None):
+def nx_feed(shared_state, start_time, request_from):
     releases = []
     nx = shared_state.values["config"]("Hostnames").get(hostname.lower())
     password = nx
 
     if "lazylibrarian" in request_from.lower():
-        category = "ebook"
+        stype = "ebook"
     elif "radarr" in request_from.lower():
-        category = "movie"
+        stype = "movie"
     else:
-        category = "episode"
+        stype = "episode"
 
-    if mirror and mirror not in supported_mirrors:
-        debug(
-            f'Mirror "{mirror}" not supported by "{hostname.upper()}". Supported mirrors: {supported_mirrors}. '
-            "Skipping search!"
-        )
-        return releases
-
-    url = (
-        f"https://{nx}/api/frontend/releases/category/{category}/tag/all/1/51?sort=date"
-    )
+    url = f"https://{nx}/api/frontend/releases/category/{stype}/tag/all/1/51?sort=date"
     headers = {
         "User-Agent": shared_state.values["user_agent"],
     }
@@ -67,12 +57,16 @@ def nx_feed(shared_state, start_time, request_from, mirror=None):
                     source = f"https://{nx}/release/{item['slug']}"
                     imdb_id = item.get("_media", {}).get("imdbid", None)
                     mb = shared_state.convert_to_mb(item)
-                    payload = urlsafe_b64encode(
-                        f"{title}|{source}|{mirror}|{mb}|{password}|{imdb_id}|{hostname}".encode(
-                            "utf-8"
-                        )
-                    ).decode("utf-8")
-                    link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
+
+                    link = generate_download_link(
+                        shared_state,
+                        title,
+                        source,
+                        mb,
+                        password,
+                        imdb_id,
+                        hostname,
+                    )
                 except:
                     continue
 
@@ -93,7 +87,6 @@ def nx_feed(shared_state, start_time, request_from, mirror=None):
                             "hostname": hostname.lower(),
                             "imdb_id": imdb_id,
                             "link": link,
-                            "mirror": mirror,
                             "size": size,
                             "date": published,
                             "source": source,
@@ -121,10 +114,13 @@ def nx_search(
     start_time,
     request_from,
     search_string,
-    mirror=None,
     season=None,
     episode=None,
 ):
+    """
+    Search using internal API.
+    Deduplicates results by fulltitle - each unique release appears only once.
+    """
     releases = []
     nx = shared_state.values["config"]("Hostnames").get(hostname.lower())
     password = nx
@@ -135,13 +131,6 @@ def nx_search(
         valid_type = "movie"
     else:
         valid_type = "episode"
-
-    if mirror and mirror not in supported_mirrors:
-        debug(
-            f'Mirror "{mirror}" not supported by "{hostname.upper()}". Supported mirrors: {supported_mirrors}. '
-            "Skipping search!"
-        )
-        return releases
 
     imdb_id = shared_state.is_imdb_id(search_string)
     if imdb_id:
@@ -198,12 +187,16 @@ def nx_search(
                             release_imdb_id = imdb_id
 
                         mb = shared_state.convert_to_mb(item)
-                        payload = urlsafe_b64encode(
-                            f"{title}|{source}|{mirror}|{mb}|{password}|{release_imdb_id}".encode(
-                                "utf-8"
-                            )
-                        ).decode("utf-8")
-                        link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
+
+                        link = generate_download_link(
+                            shared_state,
+                            title,
+                            source,
+                            mb,
+                            password,
+                            release_imdb_id,
+                            hostname,
+                        )
                     except:
                         continue
 
@@ -224,7 +217,6 @@ def nx_search(
                                 "hostname": hostname.lower(),
                                 "imdb_id": release_imdb_id,
                                 "link": link,
-                                "mirror": mirror,
                                 "size": size,
                                 "date": published,
                                 "source": source,

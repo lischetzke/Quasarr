@@ -264,6 +264,21 @@ def render_centered_html(inner_content, footer_content=""):
                 border-color: #41464b;
                 box-shadow: 0 2px 6px rgba(108, 117, 125, 0.4);
             }
+            .btn-danger {
+                background-color: var(--error-color);
+                color: #fff;
+                border: 1.5px solid var(--error-border);
+            }
+            .btn-danger:hover {
+                background-color: #c82333;
+                border-color: #bd2130;
+                box-shadow: 0 2px 6px rgba(220, 53, 69, 0.4);
+            }
+            .btn-sm {
+                padding: 0.25rem 0.5rem;
+                font-size: 0.875rem;
+                margin-top: 0;
+            }
             a {
                 color: var(--link-color);
                 text-decoration: none;

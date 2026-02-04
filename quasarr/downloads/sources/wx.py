@@ -13,7 +13,7 @@ from quasarr.providers.utils import check_links_online_status
 hostname = "wx"
 
 
-def get_wx_download_links(shared_state, url, mirror, title, password):
+def get_wx_download_links(shared_state, url, mirrors, title, password):
     """
     KEEP THE SIGNATURE EVEN IF SOME PARAMETERS ARE UNUSED!
 
@@ -88,6 +88,10 @@ def get_wx_download_links(shared_state, url, mirror, title, password):
             other_links = []
 
             for hoster, container_url in crypted_links.items():
+                # Filter by requested mirrors if specified
+                if mirrors and not any(m.lower() in hoster.lower() for m in mirrors):
+                    continue
+
                 state_url = check_urls.get(hoster)
                 if re.search(r"hide\.", container_url, re.IGNORECASE):
                     hide_links.append([container_url, hoster, state_url])

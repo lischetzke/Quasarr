@@ -4,7 +4,6 @@
 
 import html
 import time
-from base64 import urlsafe_b64encode
 from datetime import datetime, timezone
 
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
@@ -14,9 +13,9 @@ from quasarr.providers.sessions.dd import (
     create_and_persist_session,
     retrieve_and_validate_session,
 )
+from quasarr.providers.utils import generate_download_link
 
 hostname = "dd"
-supported_mirrors = ["ironfiles", "rapidgator", "filefactory"]
 
 
 def convert_to_rss_date(unix_timestamp):
@@ -39,7 +38,6 @@ def dd_search(
     start_time,
     request_from,
     search_string="",
-    mirror=None,
     season=None,
     episode=None,
 ):
@@ -59,13 +57,6 @@ def dd_search(
 
     if not dd_session:
         info(f"Could not retrieve valid session for {dd}")
-        return releases
-
-    if mirror and mirror not in supported_mirrors:
-        debug(
-            f'Mirror "{mirror}" not supported. Supported mirrors: {supported_mirrors}.'
-            " Skipping search!"
-        )
         return releases
 
     imdb_id = shared_state.is_imdb_id(search_string)
@@ -144,12 +135,16 @@ def dd_search(
                     size_item = extract_size(release.get("size"))
                     mb = shared_state.convert_to_mb(size_item) * 1024 * 1024
                     published = convert_to_rss_date(release.get("when"))
-                    payload = urlsafe_b64encode(
-                        f"{title}|{source}|{mirror}|{mb}|{password}|{release_imdb}|{hostname}".encode(
-                            "utf-8"
-                        )
-                    ).decode("utf-8")
-                    link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
+
+                    link = generate_download_link(
+                        shared_state,
+                        title,
+                        source,
+                        mb,
+                        password,
+                        release_imdb,
+                        hostname,
+                    )
 
                     releases.append(
                         {
@@ -158,7 +153,6 @@ def dd_search(
                                 "hostname": hostname.lower(),
                                 "imdb_id": imdb_id,
                                 "link": link,
-                                "mirror": mirror,
                                 "size": mb,
                                 "date": published,
                                 "source": source,

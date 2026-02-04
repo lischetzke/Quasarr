@@ -9,18 +9,13 @@ from urllib.parse import urlparse
 
 from quasarr.providers.jd_cache import JDPackageCache
 from quasarr.providers.log import debug, info, trace
+from quasarr.storage.categories import get_category_from_package_id
 
 # =============================================================================
 # CONSTANTS
 # =============================================================================
 
 PACKAGE_ID_PREFIX = "Quasarr_"
-
-# Categories used for package classification
-CATEGORY_MOVIES = "movies"
-CATEGORY_TV = "tv"
-CATEGORY_DOCS = "docs"
-CATEGORY_NOT_QUASARR = "not_quasarr"
 
 # Known archive extensions for file detection
 ARCHIVE_EXTENSIONS = frozenset(
@@ -89,20 +84,6 @@ def is_archive_file(filename, extraction_status=""):
         return False
     filename_lower = filename.lower()
     return any(filename_lower.endswith(ext) for ext in ARCHIVE_EXTENSIONS)
-
-
-def get_category_from_package_id(package_id):
-    """Extract category from a Quasarr package ID."""
-    if not package_id:
-        return CATEGORY_NOT_QUASARR
-    if CATEGORY_MOVIES in package_id:
-        return CATEGORY_MOVIES
-    elif CATEGORY_DOCS in package_id:
-        return CATEGORY_DOCS
-    elif PACKAGE_ID_PREFIX in package_id:
-        return CATEGORY_TV
-    else:
-        return CATEGORY_NOT_QUASARR
 
 
 def is_quasarr_package(package_id):

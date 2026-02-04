@@ -48,7 +48,7 @@ def resolve_sf_redirect(url, user_agent):
     return None
 
 
-def get_sf_download_links(shared_state, url, mirror, title, password):
+def get_sf_download_links(shared_state, url, mirrors, title, password):
     """
     KEEP THE SIGNATURE EVEN IF SOME PARAMETERS ARE UNUSED!
 
@@ -172,24 +172,44 @@ def get_sf_download_links(shared_state, url, mirror, title, password):
                 if name_match and season_match and resolution_match and group_match:
                     info(f'Release "{name}" found on SF at: {url}')
 
-                    mirrors = parse_mirrors(f"https://{sf}", details)
+                    mirrors_dict = parse_mirrors(f"https://{sf}", details)
 
-                    if mirror:
-                        if mirror not in mirrors["season"]:
-                            continue
-                        release_url = mirrors["season"][mirror]
+                    release_url = None
+                    if mirrors:
+                        for m in mirrors:
+                            if m in mirrors_dict["season"]:
+                                release_url = mirrors_dict["season"][m]
+                                break
                         if not release_url:
-                            info(f"Could not find mirror '{mirror}' for '{title}'")
+                            info(
+                                f"Could not find any of mirrors '{mirrors}' for '{title}'"
+                            )
                     else:
-                        release_url = next(iter(mirrors["season"].values()))
+                        release_url = next(iter(mirrors_dict["season"].values()))
 
-                    real_url = resolve_sf_redirect(release_url, user_agent)
-                    if real_url:
-                        # Use the mirror name if we have it, otherwise use "filecrypt"
-                        mirror_name = mirror if mirror else "filecrypt"
-                        return {"links": [[real_url, mirror_name]], "imdb_id": imdb_id}
-                    else:
-                        return {"links": [], "imdb_id": imdb_id}
+                    if release_url:
+                        real_url = resolve_sf_redirect(release_url, user_agent)
+                        if real_url:
+                            # Use the mirror name if we have it, otherwise use "filecrypt"
+                            # We don't know exactly which mirror was picked if we just took the first one
+                            # But if we iterated, we know.
+                            # Let's just say "filecrypt" as generic fallback or try to find which key matched
+                            mirror_name = "filecrypt"
+                            if mirrors:
+                                for m in mirrors:
+                                    if (
+                                        m in mirrors_dict["season"]
+                                        and mirrors_dict["season"][m] == release_url
+                                    ):
+                                        mirror_name = m
+                                        break
+
+                            return {
+                                "links": [[real_url, mirror_name]],
+                                "imdb_id": imdb_id,
+                            }
+
+                    return {"links": [], "imdb_id": imdb_id}
             except:
                 continue
     except:

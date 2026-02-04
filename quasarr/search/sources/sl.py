@@ -7,7 +7,6 @@ import html
 import re
 import time
 import xml.etree.ElementTree as ET
-from base64 import urlsafe_b64encode
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import quote_plus
 
@@ -18,12 +17,9 @@ from quasarr.providers.cloudflare import ensure_session_cf_bypassed
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.imdb_metadata import get_localized_title
 from quasarr.providers.log import debug, info, warn
+from quasarr.providers.utils import generate_download_link
 
 hostname = "sl"
-supported_mirrors = [
-    "nitroflare",
-    "ddownload",
-]  # ignoring captcha-protected multiup/mirrorace for now
 
 
 def extract_size(text):
@@ -44,7 +40,7 @@ def parse_pubdate_to_iso(pubdate_str):
     return dt.isoformat()
 
 
-def sl_feed(shared_state, start_time, request_from, mirror=None):
+def sl_feed(shared_state, start_time, request_from):
     releases = []
 
     sl = shared_state.values["config"]("Hostnames").get(hostname.lower())
@@ -56,12 +52,6 @@ def sl_feed(shared_state, start_time, request_from, mirror=None):
         feed_type = "movies"
     else:
         feed_type = "tv-shows"
-
-    if mirror and mirror not in supported_mirrors:
-        debug(
-            f'Mirror "{mirror}" not supported by "{hostname.upper()}". Supported: {supported_mirrors}. Skipping!'
-        )
-        return releases
 
     url = f"https://{sl}/{feed_type}/feed/"
     headers = {"User-Agent": shared_state.values["user_agent"]}
@@ -105,12 +95,15 @@ def sl_feed(shared_state, start_time, request_from, mirror=None):
                 m = re.search(r"https?://www\.imdb\.com/title/(tt\d+)", desc)
                 imdb_id = m.group(1) if m else None
 
-                payload = urlsafe_b64encode(
-                    f"{title}|{source}|{mirror}|{mb}|{password}|{imdb_id}|{hostname}".encode(
-                        "utf-8"
-                    )
-                ).decode("utf-8")
-                link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
+                link = generate_download_link(
+                    shared_state,
+                    title,
+                    source,
+                    mb,
+                    password,
+                    imdb_id,
+                    hostname,
+                )
 
                 releases.append(
                     {
@@ -119,7 +112,6 @@ def sl_feed(shared_state, start_time, request_from, mirror=None):
                             "hostname": hostname.lower(),
                             "imdb_id": imdb_id,
                             "link": link,
-                            "mirror": mirror,
                             "size": size,
                             "date": published,
                             "source": source,
@@ -154,7 +146,6 @@ def sl_search(
     start_time,
     request_from,
     search_string,
-    mirror=None,
     season=None,
     episode=None,
 ):
@@ -168,12 +159,6 @@ def sl_search(
         feed_type = "movies"
     else:
         feed_type = "tv-shows"
-
-    if mirror and mirror not in supported_mirrors:
-        debug(
-            f'Mirror "{mirror}" not supported by "{hostname.upper()}". Supported: {supported_mirrors}. Skipping!'
-        )
-        return releases
 
     try:
         imdb_id = shared_state.is_imdb_id(search_string)
@@ -266,12 +251,15 @@ def sl_search(
 
                         size = 0
 
-                        payload = urlsafe_b64encode(
-                            f"{title}|{source}|{mirror}|0|{password}|{imdb_id}|{hostname}".encode(
-                                "utf-8"
-                            )
-                        ).decode("utf-8")
-                        link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
+                        link = generate_download_link(
+                            shared_state,
+                            title,
+                            source,
+                            0,
+                            password,
+                            imdb_id,
+                            hostname,
+                        )
 
                         releases.append(
                             {
@@ -280,7 +268,6 @@ def sl_search(
                                     "hostname": hostname.lower(),
                                     "imdb_id": imdb_id,
                                     "link": link,
-                                    "mirror": mirror,
                                     "size": size,
                                     "date": published,
                                     "source": source,

@@ -4,7 +4,6 @@
 
 import re
 import time
-from base64 import urlsafe_b64encode
 from datetime import datetime
 from html import unescape
 
@@ -18,6 +17,7 @@ from quasarr.providers.sessions.dl import (
     invalidate_session,
     retrieve_and_validate_session,
 )
+from quasarr.providers.utils import generate_download_link
 
 hostname = "dl"
 
@@ -55,7 +55,7 @@ def normalize_title_for_sonarr(title):
     return title
 
 
-def dl_feed(shared_state, start_time, request_from, mirror=None):
+def dl_feed(shared_state, start_time, request_from):
     """
     Parse the correct forum and return releases.
     """
@@ -124,12 +124,15 @@ def dl_feed(shared_state, start_time, request_from, mirror=None):
                 imdb_id = None
                 password = ""
 
-                payload = urlsafe_b64encode(
-                    f"{title}|{thread_url}|{mirror}|{mb}|{password}|{imdb_id or ''}|{hostname}".encode(
-                        "utf-8"
-                    )
-                ).decode("utf-8")
-                link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
+                link = generate_download_link(
+                    shared_state,
+                    title,
+                    thread_url,
+                    mb,
+                    password,
+                    imdb_id or "",
+                    hostname,
+                )
 
                 releases.append(
                     {
@@ -138,7 +141,6 @@ def dl_feed(shared_state, start_time, request_from, mirror=None):
                             "hostname": hostname,
                             "imdb_id": imdb_id,
                             "link": link,
-                            "mirror": mirror,
                             "size": mb * 1024 * 1024,
                             "date": published,
                             "source": thread_url,
@@ -190,7 +192,6 @@ def _search_single_page(
     search_id,
     page_num,
     imdb_id,
-    mirror,
     request_from,
     season,
     episode,
@@ -291,12 +292,15 @@ def _search_single_page(
                 mb = 0
                 password = ""
 
-                payload = urlsafe_b64encode(
-                    f"{title_normalized}|{thread_url}|{mirror}|{mb}|{password}|{imdb_id or ''}|{hostname}".encode(
-                        "utf-8"
-                    )
-                ).decode("utf-8")
-                link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
+                link = generate_download_link(
+                    shared_state,
+                    title_normalized,
+                    thread_url,
+                    mb,
+                    password,
+                    imdb_id or "",
+                    hostname,
+                )
 
                 page_releases.append(
                     {
@@ -305,7 +309,6 @@ def _search_single_page(
                             "hostname": hostname,
                             "imdb_id": imdb_id,
                             "link": link,
-                            "mirror": mirror,
                             "size": mb * 1024 * 1024,
                             "date": published,
                             "source": thread_url,
@@ -332,7 +335,6 @@ def dl_search(
     start_time,
     request_from,
     search_string,
-    mirror=None,
     season=None,
     episode=None,
 ):
@@ -383,7 +385,6 @@ def dl_search(
                 search_id,
                 page_num,
                 imdb_id,
-                mirror,
                 request_from,
                 season,
                 episode,

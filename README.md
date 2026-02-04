@@ -95,22 +95,6 @@ Add Quasarr as both a **Newznab Indexer** and **SABnzbd Download Client** using 
 
 </details>
 
-<details>
-<summary>Restrict results to a specific mirror</summary>
-
-1. In the Newznab Settings for Quasarr, enable advanced settings.
-2. Append the desired mirror name to the `API Path` field.
-
-```
-/api/dropbox/
-```
-
-Using the `URL` field will not work!
-
-Only releases with `dropbox` in a link will be returned. If the mirror isn't available, the release will fail.
-
-</details>
-
 ---
 
 ## LazyLibrarian
@@ -171,15 +155,15 @@ docker run -d \
   ghcr.io/rix1337/quasarr:latest
   ```
 
-| Parameter          | Description                                                                                                                                                                                                                                 |
-|--------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `INTERNAL_ADDRESS` | **Required.** Internal URL so Radarr/Sonarr/LazyLibrarian can reach Quasarr. **Must include port.**                                                                                                                                         |
-| `EXTERNAL_ADDRESS` | Optional. External URL (e.g. reverse proxy). Always protect external access with authentication.                                                                                                                                            |
-| `DISCORD`          | Optional. Discord webhook URL for notifications.                                                                                                                                                                                            |
-| `USER` / `PASS`    | Optional, but recommended! Username / Password to protect the web UI.                                                                                                                                                                       |
-| `AUTH`             | Authentication mode. Supported values: `form` or `basic`.                                                                                                                                                                                   |
-| `SILENT`           | Optional. If `True`, silences all Discord notifications except SponsorHelper error messages.                                                                                                                                                ||
-| `TZ`               | Optional. Timezone. Incorrect values may cause HTTPS/SSL issues.                                                                                                                                                                            |
+| Parameter          | Description                                                                                         |
+|--------------------|-----------------------------------------------------------------------------------------------------|
+| `INTERNAL_ADDRESS` | **Required.** Internal URL so Radarr/Sonarr/LazyLibrarian can reach Quasarr. **Must include port.** |
+| `EXTERNAL_ADDRESS` | Optional. External URL (e.g. reverse proxy). Always protect external access with authentication.    |
+| `DISCORD`          | Optional. Discord webhook URL for notifications.                                                    |
+| `USER` / `PASS`    | Optional, but recommended! Username / Password to protect the web UI.                               |
+| `AUTH`             | Authentication mode. Supported values: `form` or `basic`.                                           |
+| `SILENT`           | Optional. If `True`, silences all Discord notifications except SponsorHelper error messages.        ||
+| `TZ`               | Optional. Timezone. Incorrect values may cause HTTPS/SSL issues.                                    |
 
 # Manual setup
 

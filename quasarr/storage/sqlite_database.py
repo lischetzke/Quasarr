@@ -5,12 +5,14 @@
 import sqlite3
 import time
 
-from quasarr.providers import shared_state
 from quasarr.providers.log import info
 
 
 class DataBase(object):
     def __init__(self, table):
+        # Import shared_state inside the method to avoid circular import
+        from quasarr.providers import shared_state
+
         try:
             self._conn = sqlite3.connect(
                 shared_state.values["dbfile"], check_same_thread=False, timeout=5

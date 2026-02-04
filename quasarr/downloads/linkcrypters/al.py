@@ -93,26 +93,30 @@ class CNL:
         return urls
 
 
-def decrypt_content(content_items: list[dict], mirror: str | None) -> list[str]:
+def decrypt_content(content_items: list[dict], mirrors: list[str] | None) -> list[str]:
     """
-    Go through every item in `content_items`, but if `mirror` is not None,
-    only attempt to decrypt those whose "hoster" field contains `mirror`.
+    Go through every item in `content_items`, but if `mirrors` is not None,
+    only attempt to decrypt those whose "hoster" field contains one of the `mirrors`.
     If no items match that filter, falls back to decrypting every single item.
 
     Returns a flat list of all decrypted URLs.
     """
-    if mirror:
-        filtered = [item for item in content_items if mirror in item.get("hoster", "")]
+    if mirrors:
+        filtered = [
+            item
+            for item in content_items
+            if any(mirror in item.get("hoster", "") for mirror in mirrors)
+        ]
     else:
         filtered = []
 
-    if mirror and not filtered:
+    if mirrors and not filtered:
         info(
-            f"No items found for mirror='{mirror}'. Falling back to all content_items."
+            f"No items found for mirrors='{mirrors}'. Falling back to all content_items."
         )
         filtered = content_items.copy()
 
-    if not mirror:
+    if not mirrors:
         filtered = content_items.copy()
 
     decrypted_links: list[str] = []

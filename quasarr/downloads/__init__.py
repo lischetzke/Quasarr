@@ -29,7 +29,8 @@ from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostnam
 from quasarr.providers.log import info, warn
 from quasarr.providers.notifications import send_discord_message
 from quasarr.providers.statistics import StatsHelper
-from quasarr.providers.utils import filter_offline_links
+from quasarr.providers.utils import extract_client_type, filter_offline_links
+from quasarr.storage.categories import category_exists, get_category_mirrors
 
 # =============================================================================
 # CRYPTER CONFIGURATION
@@ -47,7 +48,7 @@ PROTECTED_PATTERNS = {
 }
 
 # Source key -> getter function mapping
-# All getters have signature: (shared_state, url, mirror, title, password)
+# All getters have signature: (shared_state, url, mirrors, title, password)
 # AL uses password as release_id, others ignore it
 SOURCE_GETTERS = {
     "al": get_al_download_links,
@@ -75,33 +76,7 @@ SOURCE_GETTERS = {
 # =============================================================================
 
 
-def extract_client_type(request_from):
-    """
-    Extract client type from User-Agent, stripping version info.
-
-    Examples:
-        "Radarr/6.0.4.10291 (alpine 3.23.2)" → "radarr"
-        "Sonarr/4.0.0.123" → "sonarr"
-        "LazyLibrarian/1.0" → "lazylibrarian"
-    """
-    if not request_from:
-        return "unknown"
-
-    # Extract the client name before the version (first part before '/')
-    client = request_from.split("/")[0].lower().strip()
-
-    # Normalize known clients
-    if "radarr" in client:
-        return "radarr"
-    elif "sonarr" in client:
-        return "sonarr"
-    elif "lazylibrarian" in client:
-        return "lazylibrarian"
-
-    return client
-
-
-def generate_deterministic_package_id(title, source_key, client_type):
+def generate_deterministic_package_id(title, source_key, client_type, category):
     """
     Generate a deterministic package ID from title, source, and client type.
 
@@ -112,6 +87,7 @@ def generate_deterministic_package_id(title, source_key, client_type):
         title: Release title (e.g., "Movie.Name.2024.1080p.BluRay")
         source_key: Source identifier/hostname shorthand (e.g., "nx", "dl", "al")
         client_type: Client type without version (e.g., "radarr", "sonarr", "lazylibrarian")
+        category: Optional category override (e.g., "movies", "tv", "docs")
 
     Returns:
         Deterministic package ID in format: Quasarr_{category}_{hash32}
@@ -121,16 +97,20 @@ def generate_deterministic_package_id(title, source_key, client_type):
     normalized_source = source_key.lower().strip() if source_key else "unknown"
     normalized_client = client_type.lower().strip() if client_type else "unknown"
 
-    # Category mapping (for compatibility with existing package ID format)
-    category_map = {"lazylibrarian": "docs", "radarr": "movies", "sonarr": "tv"}
-    category = category_map.get(normalized_client, "tv")
+    # Determine category
+    if category and category_exists(category):
+        final_category = category
+    else:
+        # Fallback to client type mapping
+        category_map = {"lazylibrarian": "docs", "radarr": "movies", "sonarr": "tv"}
+        final_category = category_map.get(normalized_client, "tv")
 
     # Create deterministic hash from combination using SHA256
     hash_input = f"{normalized_title}|{normalized_source}|{normalized_client}"
     hash_bytes = hashlib.sha256(hash_input.encode("utf-8")).hexdigest()
 
     # Use first 32 characters for good collision resistance (128-bit)
-    return f"Quasarr_{category}_{hash_bytes[:32]}"
+    return f"Quasarr_{final_category}_{hash_bytes[:32]}"
 
 
 # =============================================================================
@@ -396,13 +376,13 @@ def package_id_exists(shared_state, package_id):
 def download(
     shared_state,
     request_from,
+    category,
     title,
     url,
-    mirror,
     size_mb,
     password,
-    imdb_id=None,
-    source_key=None,
+    imdb_id,
+    source_key,
 ):
     """
     Main download entry point.
@@ -410,9 +390,9 @@ def download(
     Args:
         shared_state: Application shared state
         request_from: User-Agent string (e.g., "Radarr/6.0.4.10291")
+        category: Category (e.g., "movies", "tv", "docs")
         title: Release title
         url: Source URL
-        mirror: Preferred mirror/hoster
         size_mb: Size in MB
         password: Archive password
         imdb_id: IMDb ID (optional)
@@ -432,11 +412,14 @@ def download(
     label = None
     detected_source_key = None
 
+    mirrors = get_category_mirrors(category, lowercase=True)
+
     for key, getter in SOURCE_GETTERS.items():
         hostname = config.get(key)
         if hostname and hostname.lower() in url.lower():
             try:
-                source_result = getter(shared_state, url, mirror, title, password)
+                # Mirror is None as it is now handled by category settings
+                source_result = getter(shared_state, url, mirrors, title, password)
                 if source_result and source_result.get("links"):
                     clear_hostname_issue(key)
             except Exception as e:
@@ -461,7 +444,9 @@ def download(
     final_source_key = source_key if source_key else detected_source_key
 
     # Generate DETERMINISTIC package_id
-    package_id = generate_deterministic_package_id(title, final_source_key, client_type)
+    package_id = generate_deterministic_package_id(
+        title, final_source_key, client_type, category
+    )
 
     # Skip Download if package_id already exists
     if package_id_exists(shared_state, package_id):

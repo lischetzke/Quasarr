@@ -34,7 +34,6 @@ def get_search_results(
     request_from,
     imdb_id="",
     search_phrase="",
-    mirror=None,
     season="",
     episode="",
     offset=0,
@@ -130,7 +129,7 @@ def get_search_results(
     if imdb_id:
         args, kwargs = (
             (shared_state, start_time, request_from, imdb_id),
-            {"mirror": mirror, "season": season, "episode": episode},
+            {"season": season, "episode": episode},
         )
         for name, url, func in imdb_map:
             if url:
@@ -141,7 +140,7 @@ def get_search_results(
     elif search_phrase and docs_search:
         args, kwargs = (
             (shared_state, start_time, request_from, search_phrase),
-            {"mirror": mirror, "season": season, "episode": episode},
+            {"season": season, "episode": episode},
         )
         for name, url, func in phrase_map:
             if url:
@@ -151,7 +150,7 @@ def get_search_results(
         debug(f"Search phrase '{search_phrase}' is not supported for {request_from}.")
 
     else:
-        args, kwargs = ((shared_state, start_time, request_from), {"mirror": mirror})
+        args, kwargs = ((shared_state, start_time, request_from), {})
         use_pagination = False
         for name, url, func in feed_map:
             if url:

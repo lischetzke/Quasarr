@@ -4,7 +4,6 @@
 
 import re
 import time
-from base64 import urlsafe_b64encode
 from datetime import datetime, timedelta
 from html import unescape
 
@@ -14,9 +13,9 @@ from bs4 import BeautifulSoup
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.imdb_metadata import get_localized_title, get_year
 from quasarr.providers.log import debug, info, trace
+from quasarr.providers.utils import generate_download_link
 
 hostname = "he"
-supported_mirrors = ["rapidgator", "nitroflare"]
 
 
 def parse_posted_ago(txt):
@@ -65,7 +64,6 @@ def he_search(
     start_time,
     request_from,
     search_string="",
-    mirror=None,
     season=None,
     episode=None,
 ):
@@ -82,10 +80,6 @@ def he_search(
         tag = "movies"
     else:
         tag = "tv-shows"
-
-    if mirror and mirror not in supported_mirrors:
-        debug(f'Mirror "{mirror}" not supported.')
-        return releases
 
     source_search = ""
     if search_string != "":
@@ -217,13 +211,15 @@ def he_search(
                 release_imdb_id = imdb_id
 
             password = None
-            payload = urlsafe_b64encode(
-                f"{title}|{source}|{mirror}|{mb}|{password}|{release_imdb_id}|{hostname}".encode(
-                    "utf-8"
-                )
-            ).decode()
-            link = (
-                f"{shared_state.values['internal_address']}/download/?payload={payload}"
+
+            link = generate_download_link(
+                shared_state,
+                title,
+                source,
+                mb,
+                password,
+                release_imdb_id,
+                hostname,
             )
 
             releases.append(
@@ -233,7 +229,6 @@ def he_search(
                         "hostname": hostname,
                         "imdb_id": release_imdb_id,
                         "link": link,
-                        "mirror": mirror,
                         "size": size,
                         "date": published,
                         "source": source,

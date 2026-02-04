@@ -5,7 +5,6 @@
 import html
 import re
 import time
-from base64 import urlsafe_b64encode
 from datetime import datetime
 from urllib.parse import quote_plus
 
@@ -15,9 +14,9 @@ from bs4 import BeautifulSoup
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.imdb_metadata import get_localized_title, get_year
 from quasarr.providers.log import debug, error, info
+from quasarr.providers.utils import generate_download_link
 
 hostname = "by"
-supported_mirrors = ["rapidgator", "ddownload", "nitroflare"]
 
 RESOLUTION_REGEX = re.compile(r"\d{3,4}p", re.I)
 CODEC_REGEX = re.compile(r"x264|x265|h264|h265|hevc|avc", re.I)
@@ -48,7 +47,6 @@ def _parse_posts(
     shared_state,
     base_url,
     password,
-    mirror_filter,
     is_search=False,
     request_from=None,
     search_string=None,
@@ -145,11 +143,14 @@ def _parse_posts(
                 mb = 0
                 imdb_id = None
 
-            payload = urlsafe_b64encode(
-                f"{title}|{source}|{mirror_filter}|{mb}|{password}|{imdb_id}|{hostname}".encode()
-            ).decode()
-            link = (
-                f"{shared_state.values['internal_address']}/download/?payload={payload}"
+            link = generate_download_link(
+                shared_state,
+                title,
+                source,
+                mb,
+                password,
+                imdb_id,
+                hostname,
             )
 
             releases.append(
@@ -159,7 +160,6 @@ def _parse_posts(
                         "hostname": hostname,
                         "imdb_id": imdb_id,
                         "link": link,
-                        "mirror": mirror_filter,
                         "size": size_bytes,
                         "date": published,
                         "source": source,
@@ -174,7 +174,7 @@ def _parse_posts(
     return releases
 
 
-def by_feed(shared_state, start_time, request_from, mirror=None):
+def by_feed(shared_state, start_time, request_from):
     by = shared_state.values["config"]("Hostnames").get(hostname)
     password = by
 
@@ -198,7 +198,6 @@ def by_feed(shared_state, start_time, request_from, mirror=None):
             base_url,
             password,
             request_from=request_from,
-            mirror_filter=mirror,
         )
     except Exception as e:
         error(f"Error loading feed: {e}")
@@ -218,7 +217,6 @@ def by_search(
     start_time,
     request_from,
     search_string,
-    mirror=None,
     season=None,
     episode=None,
 ):
@@ -249,7 +247,6 @@ def by_search(
             shared_state,
             base_url,
             password,
-            mirror_filter=mirror,
             is_search=True,
             request_from=request_from,
             search_string=search_string,

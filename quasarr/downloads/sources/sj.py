@@ -3,7 +3,7 @@
 # Project by https://github.com/rix1337
 
 
-def get_sj_download_links(shared_state, url, mirror, title, password):
+def get_sj_download_links(shared_state, url, mirrors, title, password):
     """
     KEEP THE SIGNATURE EVEN IF SOME PARAMETERS ARE UNUSED!
 

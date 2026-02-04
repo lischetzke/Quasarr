@@ -16,43 +16,10 @@ from quasarr.downloads.packages import delete_package, get_packages
 from quasarr.providers import shared_state
 from quasarr.providers.auth import require_api_key
 from quasarr.providers.log import debug, error, info, warn
+from quasarr.providers.utils import determine_category, parse_payload
 from quasarr.providers.version import get_version
 from quasarr.search import get_search_results
-
-
-def parse_payload(payload_str):
-    """
-    Parse the base64-encoded payload string into its components.
-
-    Supports both legacy 6-field format and new 7-field format:
-    - Legacy (6 fields): title|url|mirror|size_mb|password|imdb_id
-    - New (7 fields): title|url|mirror|size_mb|password|imdb_id|source_key
-
-    Returns:
-        dict with keys: title, url, mirror, size_mb, password, imdb_id, source_key
-    """
-    decoded = urlsafe_b64decode(payload_str.encode()).decode()
-    parts = decoded.split("|")
-
-    if len(parts) == 6:
-        # Legacy format - no source_key provided
-        title, url, mirror, size_mb, password, imdb_id = parts
-        source_key = None
-    elif len(parts) == 7:
-        # New format with source_key
-        title, url, mirror, size_mb, password, imdb_id, source_key = parts
-    else:
-        raise ValueError(f"expected 6 or 7 fields, got {len(parts)}")
-
-    return {
-        "title": title,
-        "url": url,
-        "mirror": None if mirror == "None" else mirror,
-        "size_mb": size_mb,
-        "password": password if password else None,
-        "imdb_id": imdb_id if imdb_id else None,
-        "source_key": source_key if source_key else None,
-    }
+from quasarr.storage.categories import get_categories
 
 
 def setup_arr_routes(app):
@@ -72,16 +39,14 @@ def setup_arr_routes(app):
         payload = request.query.payload
         decoded_payload = urlsafe_b64decode(payload).decode("utf-8").split("|")
 
-        # Support both 6 and 7 field formats
         title = decoded_payload[0]
         url = decoded_payload[1]
-        mirror = decoded_payload[2]
-        size_mb = decoded_payload[3]
-        password = decoded_payload[4]
-        imdb_id = decoded_payload[5]
-        source_key = decoded_payload[6] if len(decoded_payload) > 6 else ""
+        size_mb = decoded_payload[2]
+        password = decoded_payload[3]
+        imdb_id = decoded_payload[4]
+        source_key = decoded_payload[5]
 
-        return f'<nzb><file title="{title}" url="{url}" mirror="{mirror}" size_mb="{size_mb}" password="{password}" imdb_id="{imdb_id}" source_key="{source_key}"/></nzb>'
+        return f'<nzb><file title="{title}" url="{url}" size_mb="{size_mb}" password="{password}" imdb_id="{imdb_id}" source_key="{source_key}"/></nzb>'
 
     @app.post("/api")
     @require_api_key
@@ -97,24 +62,23 @@ def setup_arr_routes(app):
             title = sax_utils.unescape(root.find(".//file").attrib["title"])
 
             url = root.find(".//file").attrib["url"]
-            mirror = (
-                None
-                if (mirror := root.find(".//file").attrib.get("mirror")) == "None"
-                else mirror
-            )
 
             size_mb = root.find(".//file").attrib["size_mb"]
             password = root.find(".//file").attrib.get("password")
             imdb_id = root.find(".//file").attrib.get("imdb_id")
             source_key = root.find(".//file").attrib.get("source_key") or None
 
+            # Extract category from request, SABnzbd addfile expects &cat=...
+            category_param = getattr(request.query, "cat", None)
+            category = determine_category(request_from, category_param)
+
             info(f"Attempting download for <y>{title}</y>")
             downloaded = download(
                 shared_state,
                 request_from,
+                category,
                 title,
                 url,
-                mirror,
                 size_mb,
                 password,
                 imdb_id,
@@ -136,9 +100,8 @@ def setup_arr_routes(app):
         return {"status": True, "nzo_ids": nzo_ids}
 
     @app.get("/api")
-    @app.get("/api/<mirror>")
     @require_api_key
-    def quasarr_api(mirror=None):
+    def quasarr_api():
         request_from = check_user_agent()
 
         api_type = (
@@ -158,33 +121,25 @@ def setup_arr_routes(app):
                 elif mode == "version":
                     return {"version": f"Quasarr {get_version()}"}
                 elif mode == "get_cats":
-                    return {"categories": ["*", "movies", "tv", "docs"]}
+                    # Dynamic categories
+                    cats = get_categories()
+                    # SABnzbd usually returns '*' as the first category
+                    if "*" not in cats:
+                        cats.insert(0, "*")
+                    return {"categories": cats}
                 elif mode == "get_config":
+                    # Dynamic categories for config
+                    cats = get_categories()
+                    cat_configs = [{"name": "*", "order": 0, "dir": ""}]
+                    for i, cat in enumerate(cats):
+                        if cat == "*":
+                            continue
+                        cat_configs.append({"name": cat, "order": i + 1, "dir": ""})
+
                     return {
                         "config": {
                             "misc": {"quasarr": True, "complete_dir": "/tmp/"},
-                            "categories": [
-                                {
-                                    "name": "*",
-                                    "order": 0,
-                                    "dir": "",
-                                },
-                                {
-                                    "name": "movies",
-                                    "order": 1,
-                                    "dir": "",
-                                },
-                                {
-                                    "name": "tv",
-                                    "order": 2,
-                                    "dir": "",
-                                },
-                                {
-                                    "name": "docs",
-                                    "order": 3,
-                                    "dir": "",
-                                },
-                            ],
+                            "categories": cat_configs,
                         }
                     }
                 elif mode == "fullstatus":
@@ -193,6 +148,10 @@ def setup_arr_routes(app):
                     raw_name = getattr(request.query, "name", None)
                     if not raw_name:
                         abort(400, "missing or empty 'name' parameter")
+
+                    # Extract category from request, SABnzbd addurl expects &cat=...
+                    category_param = getattr(request.query, "cat", None)
+                    category = determine_category(request_from, category_param)
 
                     payload = False
                     try:
@@ -215,9 +174,9 @@ def setup_arr_routes(app):
                     downloaded = download(
                         shared_state,
                         request_from,
+                        category,
                         parsed_payload["title"],
                         parsed_payload["url"],
-                        parsed_payload["mirror"],
                         parsed_payload["size_mb"],
                         parsed_payload["password"],
                         parsed_payload["imdb_id"],
@@ -271,11 +230,6 @@ def setup_arr_routes(app):
         elif api_type == "arr_indexer":
             # this builds a mock Newznab API response based on Quasarr search
             try:
-                if mirror:
-                    debug(
-                        f'Search will only return releases that match this mirror: "{mirror}"'
-                    )
-
                 mode = request.query.t
                 if mode == "caps":
                     info(f"Providing indexer capability information to {request_from}")
@@ -323,7 +277,6 @@ def setup_arr_routes(app):
                             shared_state,
                             request_from,
                             imdb_id=imdb_id,
-                            mirror=mirror,
                             offset=offset,
                             limit=limit,
                         )
@@ -337,7 +290,6 @@ def setup_arr_routes(app):
                             shared_state,
                             request_from,
                             imdb_id=imdb_id,
-                            mirror=mirror,
                             season=season,
                             episode=episode,
                             offset=offset,
@@ -352,7 +304,6 @@ def setup_arr_routes(app):
                             shared_state,
                             request_from,
                             search_phrase=search_phrase,
-                            mirror=mirror,
                             offset=offset,
                             limit=limit,
                         )
@@ -364,7 +315,6 @@ def setup_arr_routes(app):
                                 shared_state,
                                 request_from,
                                 search_phrase=search_phrase,
-                                mirror=mirror,
                                 offset=offset,
                                 limit=limit,
                             )

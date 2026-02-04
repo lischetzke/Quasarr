@@ -31,7 +31,7 @@ CONFIG_VOLUMES=/path/to/config docker-compose -f docker/dev-services-compose.yml
 Replace `/path/to/config` with your desired configuration location.
 The `CONFIG_VOLUMES` environment variable is **mandatory**.
 
-By default only JDownloader and Flaresolverr are enabled. See next step how to emulate supported *arr services.
+By default, only JDownloader and Flaresolverr are enabled. See next step how to emulate supported *arr services.
 
 **4. Validate your changes**
 
@@ -50,7 +50,7 @@ This tool allows you to test searches, feeds, and downloads without needing the 
 The CI pipeline enforces strict code styling and import optimization. Please run this commands before pushing your
 changes. Alternatively, set up the pre-commit hook as described above.
 
-**Format code AND upgrade dependencie manually:**
+**Format code AND upgrade dependencies manually:**
 
 ```bash
 uv run pre-commit.py --upgrade

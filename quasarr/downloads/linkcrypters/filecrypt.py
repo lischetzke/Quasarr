@@ -168,7 +168,7 @@ class DLC:
         return all_urls
 
 
-def get_filecrypt_links(shared_state, token, title, url, password=None, mirror=None):
+def get_filecrypt_links(shared_state, token, title, url, password=None, mirrors=None):
     info("Attempting to decrypt Filecrypt link: " + url)
     debug("Initializing Filecrypt session & headers.")
     session = requests.Session()
@@ -361,26 +361,26 @@ def get_filecrypt_links(shared_state, token, title, url, password=None, mirror=N
 
         links = []
 
-        mirrors = []
+        mirrors_list = []
         mirrors_available = soup.select("a[href*=mirror]")
         debug(f"Mirrors available: {len(mirrors_available)}")
 
-        if not mirror and mirrors_available:
+        if not mirrors and mirrors_available:
             for mirror in mirrors_available:
                 try:
                     mirror_query = mirror.get("href").split("?")[1]
                     base_url = url.split("?")[0] if "mirror" in url else url
-                    mirrors.append(f"{base_url}?{mirror_query}")
-                    debug(f"Discovered mirror: {mirrors[-1]}")
+                    mirrors_list.append(f"{base_url}?{mirror_query}")
+                    debug(f"Discovered mirror: {mirrors_list[-1]}")
                 except IndexError:
                     debug("Mirror parsing failed due to missing '?'.")
                     continue
         else:
-            mirrors = [url]
+            mirrors_list = [url]
             debug("Using direct URL as only mirror.")
 
-        for mirror in mirrors:
-            if not len(mirrors) == 1:
+        for mirror in mirrors_list:
+            if not len(mirrors_list) == 1:
                 debug(f"Loading mirror: {mirror}")
                 output = session.get(mirror, headers=headers)
                 url = output.url

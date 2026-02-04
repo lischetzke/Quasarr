@@ -5,7 +5,6 @@
 import html
 import re
 import time
-from base64 import urlsafe_b64encode
 from datetime import datetime, timedelta
 from urllib.parse import quote, quote_plus
 
@@ -16,10 +15,9 @@ from quasarr.providers.cloudflare import flaresolverr_get, is_cloudflare_challen
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.imdb_metadata import get_localized_title, get_year
 from quasarr.providers.log import debug, error, info
-from quasarr.providers.utils import is_flaresolverr_available
+from quasarr.providers.utils import generate_download_link, is_flaresolverr_available
 
 hostname = "wd"
-supported_mirrors = ["rapidgator", "ddownload", "katfile", "fikper", "turbobit"]
 
 # regex to detect porn-tag .XXX. (case-insensitive, dots included)
 XXX_REGEX = re.compile(r"\.xxx\.", re.I)
@@ -53,7 +51,6 @@ def _parse_rows(
     shared_state,
     url_base,
     password,
-    mirror_filter,
     request_from=None,
     search_string=None,
     season=None,
@@ -62,8 +59,6 @@ def _parse_rows(
 ):
     """
     Walk the <table> rows, extract one release per row.
-    Only include rows with at least one supported mirror.
-    If mirror_filter provided, only include rows where mirror_filter is present.
 
     Context detection:
       - feed when search_string is None
@@ -117,14 +112,6 @@ def _parse_rows(
                     if " " in title:
                         continue
 
-            hoster_names = tr.find("span", class_="button-warezkorb")[
-                "data-hoster-names"
-            ]
-            mirrors = [m.strip().lower() for m in hoster_names.split(",")]
-            valid = [m for m in mirrors if m in supported_mirrors]
-            if not valid or (mirror_filter and mirror_filter not in valid):
-                continue
-
             size_txt = tr.find("span", class_="element-size").get_text(strip=True)
             sz = extract_size(size_txt)
             mb = shared_state.convert_to_mb(sz)
@@ -132,11 +119,14 @@ def _parse_rows(
 
             published = convert_to_rss_date(date_txt) if date_txt else one_hour_ago
 
-            payload = urlsafe_b64encode(
-                f"{title}|{source}|{mirror_filter}|{mb}|{password}|{imdb_id}|{hostname}".encode()
-            ).decode()
-            download_link = (
-                f"{shared_state.values['internal_address']}/download/?payload={payload}"
+            link = generate_download_link(
+                shared_state,
+                title,
+                source,
+                mb,
+                password,
+                imdb_id,
+                hostname,
             )
 
             releases.append(
@@ -145,8 +135,7 @@ def _parse_rows(
                         "title": title,
                         "hostname": hostname,
                         "imdb_id": imdb_id,
-                        "link": download_link,
-                        "mirror": mirror_filter,
+                        "link": link,
                         "size": size_bytes,
                         "date": published,
                         "source": source,
@@ -160,7 +149,7 @@ def _parse_rows(
     return releases
 
 
-def wd_feed(shared_state, start_time, request_from, mirror=None):
+def wd_feed(shared_state, start_time, request_from):
     wd = shared_state.values["config"]("Hostnames").get(hostname.lower())
     password = wd
 
@@ -203,7 +192,7 @@ def wd_feed(shared_state, start_time, request_from, mirror=None):
 
         r.raise_for_status()
         soup = BeautifulSoup(r.content, "html.parser")
-        releases = _parse_rows(soup, shared_state, wd, password, mirror)
+        releases = _parse_rows(soup, shared_state, wd, password)
     except Exception as e:
         error(f"Error loading feed: {e}")
         mark_hostname_issue(
@@ -222,7 +211,6 @@ def wd_search(
     start_time,
     request_from,
     search_string,
-    mirror=None,
     season=None,
     episode=None,
 ):
@@ -279,7 +267,6 @@ def wd_search(
             shared_state,
             wd,
             password,
-            mirror,
             request_from=request_from,
             search_string=search_string,
             season=season,

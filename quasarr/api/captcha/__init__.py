@@ -18,6 +18,10 @@ from quasarr.providers import obfuscated, shared_state
 from quasarr.providers.html_templates import render_button, render_centered_html
 from quasarr.providers.log import debug, error, info, trace
 from quasarr.providers.statistics import StatsHelper
+from quasarr.storage.categories import (
+    get_category_from_package_id,
+    get_category_mirrors,
+)
 
 
 def js_single_quoted_string_safe(text):
@@ -1703,14 +1707,20 @@ def setup_captcha_routes(app):
             title = data.get("title")
             link = data.get("link")
             password = data.get("password")
-            mirror = None if (mirror := data.get("mirror")) == "None" else mirror
+            category = get_category_from_package_id(package_id)
+            mirrors = get_category_mirrors(category, lowercase=True)
 
             if token:
                 info(
                     f"Received token: <green>{token}</green> to decrypt links for <y>{title}</y>"
                 )
                 decrypted = get_filecrypt_links(
-                    shared_state, token, title, link, password=password, mirror=mirror
+                    shared_state,
+                    token,
+                    title,
+                    link,
+                    password=password,
+                    mirrors=mirrors,
                 )
                 if decrypted:
                     links = decrypted.get("links", [])

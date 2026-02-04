@@ -3,7 +3,6 @@
 # Project by https://github.com/rix1337
 
 import time
-from base64 import urlsafe_b64encode
 from html import unescape
 from urllib.parse import quote_plus, urljoin
 
@@ -18,9 +17,9 @@ from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostnam
 from quasarr.providers.imdb_metadata import get_localized_title, get_year
 from quasarr.providers.log import debug, error, info, trace
 from quasarr.providers.sessions.al import fetch_via_requests_session, invalidate_session
+from quasarr.providers.utils import generate_download_link
 
 hostname = "al"
-supported_mirrors = ["rapidgator", "ddownload"]
 
 
 import re
@@ -117,7 +116,7 @@ def get_release_id(tag):
     return 0
 
 
-def al_feed(shared_state, start_time, request_from, mirror=None):
+def al_feed(shared_state, start_time, request_from):
     releases = []
     host = shared_state.values["config"]("Hostnames").get(hostname)
 
@@ -129,10 +128,6 @@ def al_feed(shared_state, start_time, request_from, mirror=None):
         wanted_type = "movie"
     else:
         wanted_type = "series"
-
-    if mirror and mirror not in supported_mirrors:
-        debug(f'Mirror "{mirror}" not supported.')
-        return releases
 
     try:
         r = fetch_via_requests_session(
@@ -214,11 +209,15 @@ def al_feed(shared_state, start_time, request_from, mirror=None):
 
                 # Build payload using final_title
                 mb = 0  # size not available in feed
-                raw = f"{final_title}|{url}|{mirror}|{mb}|{release_id}||{hostname}".encode(
-                    "utf-8"
+                link = generate_download_link(
+                    shared_state,
+                    final_title,
+                    url,
+                    mb,
+                    release_id,
+                    None,
+                    hostname,
                 )
-                payload = urlsafe_b64encode(raw).decode("utf-8")
-                link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
 
                 # Append only unique releases
                 if final_title not in [r["details"]["title"] for r in releases]:
@@ -229,7 +228,6 @@ def al_feed(shared_state, start_time, request_from, mirror=None):
                                 "hostname": hostname,
                                 "imdb_id": None,
                                 "link": link,
-                                "mirror": mirror,
                                 "size": mb * 1024 * 1024,
                                 "date": date_converted,
                                 "source": url,
@@ -264,7 +262,6 @@ def al_search(
     start_time,
     request_from,
     search_string,
-    mirror=None,
     season=None,
     episode=None,
 ):
@@ -279,10 +276,6 @@ def al_search(
         valid_type = "movie"
     else:
         valid_type = "series"
-
-    if mirror and mirror not in supported_mirrors:
-        debug(f'Mirror "{mirror}" not supported.')
-        return releases
 
     imdb_id = shared_state.is_imdb_id(search_string)
     if imdb_id:
@@ -466,12 +459,15 @@ def al_search(
                     )
                     continue
 
-                payload = urlsafe_b64encode(
-                    f"{release_title}|{url}|{mirror}|{mb}|{release_id}|{imdb_id or ''}".encode(
-                        "utf-8"
-                    )
-                ).decode("utf-8")
-                link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
+                link = generate_download_link(
+                    shared_state,
+                    release_title,
+                    url,
+                    mb,
+                    release_id,
+                    imdb_id or "",
+                    hostname,
+                )
 
                 releases.append(
                     {
@@ -480,7 +476,6 @@ def al_search(
                             "hostname": hostname,
                             "imdb_id": imdb_id,
                             "link": link,
-                            "mirror": mirror,
                             "size": mb * 1024 * 1024,
                             "date": date_str,
                             "source": f"{url}#download_{release_id}",

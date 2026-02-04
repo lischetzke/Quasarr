@@ -32,7 +32,7 @@ def normalize_mirror_name(name):
     return name_lower
 
 
-def get_hs_download_links(shared_state, url, mirror, title, password):
+def get_hs_download_links(shared_state, url, mirrors, title, password):
     """
     KEEP THE SIGNATURE EVEN IF SOME PARAMETERS ARE UNUSED!
 
@@ -41,7 +41,7 @@ def get_hs_download_links(shared_state, url, mirror, title, password):
     """
     headers = {"User-Agent": shared_state.values["user_agent"]}
 
-    mirror_lower = mirror.lower() if mirror else None
+    mirrors_lower = [m.lower() for m in mirrors] if mirrors else []
     links = []
 
     try:
@@ -113,9 +113,9 @@ def get_hs_download_links(shared_state, url, mirror, title, password):
             seen_urls.add(fc_url)
 
             # Filter by requested mirror if specified
-            if mirror_lower:
-                if mirror_lower != fc_mirror:
-                    debug(f"Skipping {fc_mirror} link (requested mirror: {mirror})")
+            if mirrors_lower:
+                if fc_mirror not in mirrors_lower:
+                    debug(f"Skipping {fc_mirror} link (requested mirrors: {mirrors})")
                     continue
 
             # Store [url, mirror_name] - mirror_name is used by CAPTCHA page for filtering

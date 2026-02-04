@@ -4,7 +4,6 @@
 
 import re
 import time
-from base64 import urlsafe_b64encode
 from datetime import datetime, timedelta
 from urllib.parse import quote_plus
 
@@ -13,9 +12,9 @@ from bs4 import BeautifulSoup
 
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.log import debug, error, warn
+from quasarr.providers.utils import generate_download_link
 
 hostname = "mb"
-supported_mirrors = ["rapidgator", "ddownload"]
 XXX_REGEX = re.compile(r"\.xxx\.", re.I)
 RESOLUTION_REGEX = re.compile(r"\d{3,4}p", re.I)
 CODEC_REGEX = re.compile(r"x264|x265|h264|h265|hevc|avc", re.I)
@@ -54,7 +53,6 @@ def _parse_posts(
     soup,
     shared_state,
     password,
-    mirror_filter,
     is_search=False,
     request_from=None,
     search_string=None,
@@ -104,10 +102,6 @@ def _parse_posts(
                 if " " in title:
                     continue
 
-            # can't check for mirrors in soup, so we use the hardcoded list
-            if mirror_filter and mirror_filter not in supported_mirrors:
-                continue
-
             # extract IMDb ID
             imdb_id = None
             for tag in post.find_all("a", href=True):
@@ -133,11 +127,14 @@ def _parse_posts(
                 mb = shared_state.convert_to_mb(sz)
                 size_bytes = mb * 1024 * 1024
 
-            payload = urlsafe_b64encode(
-                f"{title}|{source}|{mirror_filter}|{mb}|{password}|{imdb_id}|{hostname}".encode()
-            ).decode()
-            link = (
-                f"{shared_state.values['internal_address']}/download/?payload={payload}"
+            link = generate_download_link(
+                shared_state,
+                title,
+                source,
+                mb,
+                password,
+                imdb_id,
+                hostname,
             )
 
             releases.append(
@@ -147,7 +144,6 @@ def _parse_posts(
                         "hostname": hostname,
                         "imdb_id": imdb_id,
                         "link": link,
-                        "mirror": mirror_filter,
                         "size": size_bytes,
                         "date": published,
                         "source": source,
@@ -161,7 +157,7 @@ def _parse_posts(
     return releases
 
 
-def mb_feed(shared_state, start_time, request_from, mirror=None):
+def mb_feed(shared_state, start_time, request_from):
     mb = shared_state.values["config"]("Hostnames").get(hostname)
 
     if not "arr" in request_from.lower():
@@ -178,7 +174,7 @@ def mb_feed(shared_state, start_time, request_from, mirror=None):
         r = requests.get(url, headers=headers, timeout=30)
         r.raise_for_status()
         soup = BeautifulSoup(r.content, "html.parser")
-        releases = _parse_posts(soup, shared_state, password, mirror_filter=mirror)
+        releases = _parse_posts(soup, shared_state, password)
     except Exception as e:
         warn(f"Error loading {hostname.upper()} feed: {e}")
         mark_hostname_issue(
@@ -197,7 +193,6 @@ def mb_search(
     start_time,
     request_from,
     search_string,
-    mirror=None,
     season=None,
     episode=None,
 ):
@@ -225,7 +220,6 @@ def mb_search(
             soup,
             shared_state,
             password,
-            mirror_filter=mirror,
             is_search=True,
             request_from=request_from,
             search_string=search_string,

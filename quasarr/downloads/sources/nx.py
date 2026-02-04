@@ -59,7 +59,7 @@ def get_filer_folder_links_via_api(shared_state, url):
         return url
 
 
-def get_nx_download_links(shared_state, url, mirror, title, password):
+def get_nx_download_links(shared_state, url, mirrors, title, password):
     """
     KEEP THE SIGNATURE EVEN IF SOME PARAMETERS ARE UNUSED!
 
