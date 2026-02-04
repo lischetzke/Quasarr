@@ -163,12 +163,10 @@ docker run -d \
   -e 'INTERNAL_ADDRESS'='http://192.168.0.1:8080' \
   -e 'EXTERNAL_ADDRESS'='https://foo.bar/' \
   -e 'DISCORD'='https://discord.com/api/webhooks/1234567890/ABCDEFGHIJKLMN' \
-  -e 'HOSTNAMES'='https://quasarr-host.name/ini?token=123...' \
   -e 'USER'='admin' \
   -e 'PASS'='change-me' \
   -e 'AUTH'='form' \
   -e 'SILENT'='True' \
-  -e 'DEBUG'='' \
   -e 'TZ'='Europe/Berlin' \
   ghcr.io/rix1337/quasarr:latest
   ```
@@ -178,11 +176,9 @@ docker run -d \
 | `INTERNAL_ADDRESS` | **Required.** Internal URL so Radarr/Sonarr/LazyLibrarian can reach Quasarr. **Must include port.**                                                                                                                                         |
 | `EXTERNAL_ADDRESS` | Optional. External URL (e.g. reverse proxy). Always protect external access with authentication.                                                                                                                                            |
 | `DISCORD`          | Optional. Discord webhook URL for notifications.                                                                                                                                                                                            |
-| `HOSTNAMES`        | Optional. URL to a hostname list to skip manual setup. Must be a publicly accessible `HTTP`/`HTTPS` link, point to a raw `.ini` or plain text file (not HTML or JSON), and contain at least one hostname per line in the format `ab = xyz`. |
 | `USER` / `PASS`    | Optional, but recommended! Username / Password to protect the web UI.                                                                                                                                                                       |
 | `AUTH`             | Authentication mode. Supported values: `form` or `basic`.                                                                                                                                                                                   |
-| `SILENT`           | Optional. If `True`, silences all Discord notifications except SponsorHelper error messages.                                                                                                                                                |
-| `DEBUG`            | Optional. If `True`, enables debug logging.                                                                                                                                                                                                 |
+| `SILENT`           | Optional. If `True`, silences all Discord notifications except SponsorHelper error messages.                                                                                                                                                ||
 | `TZ`               | Optional. Timezone. Incorrect values may cause HTTPS/SSL issues.                                                                                                                                                                            |
 
 # Manual setup
@@ -194,16 +190,14 @@ docker run -d \
 `uv tool install quasarr`
 
 ```
+export INTERNAL_ADDRESS=http://192.168.0.1:8080
+export EXTERNAL_ADDRESS=https://foo.bar/
+export DISCORD=https://discord.com/api/webhooks/1234567890/ABCDEFGHIJKLMN
 quasarr
-  --port=8080
-  --discord=https://discord.com/api/webhooks/1234567890/ABCDEFGHIJKLMN
-  --external_address=https://foo.bar/
-  --hostnames=https://quasarr-host.name/ini?token=123...
   ```
 
-* `--discord` see `DISCORD`docker variable
-* `--external_address` see `EXTERNAL_ADDRESS`docker variable
-* `--hostnames` see `HOSTNAMES`docker variable
+* `DISCORD` see `DISCORD`docker variable
+* `EXTERNAL_ADDRESS` see `EXTERNAL_ADDRESS`docker variable
 
 # Philosophy
 

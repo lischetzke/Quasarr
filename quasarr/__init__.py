@@ -2,15 +2,12 @@
 # Quasarr
 # Project by https://github.com/rix1337
 
-import argparse
 import multiprocessing
 import os
 import re
 import sys
 import tempfile
 import time
-
-import requests
 
 import quasarr.providers.web_server
 from quasarr.api import get_api
@@ -30,8 +27,6 @@ from quasarr.providers.utils import (
     check_flaresolverr,
     check_ip,
     extract_allowed_keys,
-    extract_kv_pairs,
-    is_valid_url,
     validate_address,
 )
 from quasarr.storage.config import Config, get_clean_hostnames
@@ -51,21 +46,6 @@ def run():
         shared_state_lock = manager.Lock()
         shared_state.set_state(shared_state_dict, shared_state_lock)
 
-        parser = argparse.ArgumentParser()
-        parser.add_argument("--port", help="Desired Port, defaults to 8080")
-        parser.add_argument(
-            "--internal_address", help="Must be provided when running in Docker"
-        )
-        parser.add_argument(
-            "--external_address", help="External address for CAPTCHA notifications"
-        )
-        parser.add_argument("--discord", help="Discord Webhook URL")
-        parser.add_argument(
-            "--hostnames",
-            help="Public HTTP(s) Link that contains hostnames definition.",
-        )
-        arguments = parser.parse_args()
-
         sys.stdout = Unbuffered(sys.stdout)
 
         print(f"""┌────────────────────────────────────┐
@@ -79,31 +59,35 @@ def run():
             '👉 Automated CAPTCHA solutions: "https://github.com/rix1337/Quasarr?tab=readme-ov-file#sponsorshelper" 👈'
         )
 
-        port = int("8080")
+        port = int(os.environ.get("PORT", "8080"))
+        internal_address_env = os.environ.get("INTERNAL_ADDRESS")
+        external_address_env = os.environ.get("EXTERNAL_ADDRESS")
+        discord_env = os.environ.get("DISCORD")
+
         config_path = ""
         if os.environ.get("DOCKER"):
             config_path = "/config"
-            if not arguments.internal_address:
+            if not internal_address_env:
                 error(
                     "You must set the INTERNAL_ADDRESS variable to a locally reachable URL, e.g. http://192.168.1.1:8080"
                     + " The local URL will be used by Radarr/Sonarr to connect to Quasarr"
                     + " Stopping Quasarr..."
                 )
                 sys.exit(1)
+            internal_address = internal_address_env
         else:
-            if arguments.port:
-                port = int(arguments.port)
-            internal_address = f"http://{check_ip()}:{port}"
+            if internal_address_env:
+                internal_address = internal_address_env
+            else:
+                internal_address = f"http://{check_ip()}:{port}"
 
-        if arguments.internal_address:
-            internal_address = arguments.internal_address
-        if arguments.external_address:
-            external_address = arguments.external_address
+        if external_address_env:
+            external_address = external_address_env
         else:
             external_address = internal_address
 
-        validate_address(internal_address, "--internal_address")
-        validate_address(external_address, "--external_address")
+        validate_address(internal_address, "INTERNAL_ADDRESS")
+        validate_address(external_address, "EXTERNAL_ADDRESS")
 
         shared_state.set_connection_info(internal_address, external_address, port)
 
@@ -131,60 +115,6 @@ def run():
         # Set fallback user agent immediately so it's available while background check runs
         shared_state.update("user_agent", FALLBACK_USER_AGENT)
         shared_state.update("helper_active", False)
-
-        try:
-            if arguments.hostnames:
-                hostnames_link = arguments.hostnames
-                if is_valid_url(hostnames_link):
-                    # Store the hostnames URL for later use in web UI
-                    Config("Settings").save("hostnames_url", hostnames_link)
-                    info(f"Extracting hostnames from {hostnames_link}...")
-                    allowed_keys = supported_hostnames
-                    max_keys = len(allowed_keys)
-                    shorthand_list = (
-                        ", ".join([f'"{key}"' for key in allowed_keys[:-1]])
-                        + " and "
-                        + f'"{allowed_keys[-1]}"'
-                    )
-                    info(
-                        f"There are up to {max_keys} hostnames currently supported: {shorthand_list}"
-                    )
-                    data = requests.get(hostnames_link).text
-                    results = extract_kv_pairs(data, allowed_keys)
-
-                    extracted_hostnames = 0
-
-                    if results:
-                        hostnames = Config("Hostnames")
-                        for shorthand, hostname in results.items():
-                            domain_check = shared_state.extract_valid_hostname(
-                                hostname, shorthand
-                            )
-                            valid_domain = domain_check.get("domain", None)
-                            if valid_domain:
-                                hostnames.save(shorthand, hostname)
-                                extracted_hostnames += 1
-                                info(
-                                    f'Hostname for "{shorthand}" successfully set to "{hostname}"'
-                                )
-                            else:
-                                info(
-                                    f'Skipping invalid hostname for "{shorthand}" ("{hostname}")'
-                                )
-                        if extracted_hostnames == max_keys:
-                            info(f"All {max_keys} hostnames successfully extracted!")
-                            info(
-                                "You can now remove the hostnames link from the command line / environment variable."
-                            )
-                    else:
-                        info(
-                            f'No Hostnames found at "{hostnames_link}". '
-                            "Ensure to pass a plain hostnames list, not html or json!"
-                        )
-                else:
-                    error(f'Invalid hostnames URL: "{hostnames_link}"')
-        except Exception as e:
-            error(f'Error parsing hostnames link: "{e}"')
 
         hostnames = get_clean_hostnames(shared_state)
         if not hostnames:
@@ -233,13 +163,13 @@ def run():
             jdownloader_config(shared_state)
 
         discord_url = ""
-        if arguments.discord:
+        if discord_env:
             discord_webhook_pattern = r"^https://discord\.com/api/webhooks/\d+/[\w-]+$"
-            if re.match(discord_webhook_pattern, arguments.discord):
-                shared_state.update("webhook", arguments.discord)
-                discord_url = arguments.discord
+            if re.match(discord_webhook_pattern, discord_env):
+                shared_state.update("webhook", discord_env)
+                discord_url = discord_env
             else:
-                error(f"Invalid Discord Webhook URL provided: {arguments.discord}")
+                error(f"Invalid Discord Webhook URL provided: {discord_env}")
         shared_state.update("discord", discord_url)
 
         api_key = Config("API").get("key")

@@ -19,7 +19,7 @@ from quasarr.storage.config import Config
 # Auth configuration from environment
 AUTH_USER = os.environ.get("USER", "")
 AUTH_PASS = os.environ.get("PASS", "")
-AUTH_TYPE = os.environ.get("AUTH", "").lower()
+AUTH_TYPE = os.environ.get("AUTH", "form").lower()
 
 # Cookie settings
 COOKIE_NAME = "quasarr_session"
