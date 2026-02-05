@@ -270,21 +270,13 @@ docker run -d \
   -e 'DEATHBYCAPTCHA_TOKEN'='2FMum5zuDBxMmbXDIsADnllEFl73bomydIpzo7...' \
   -e 'GITHUB_TOKEN'='ghp_123.....456789' \
   -e 'FLARESOLVERR_URL'='http://10.10.0.1:8191/v1' \
-  -e 'NX_USER'='your_nx_username' \
-  -e 'NX_PASS'='your_nx_password' \
-  -e 'JUNKIES_USER'='your_junkies_username' \
-  -e 'JUNKIES_PASS'='your_junkies_password' \
-  -e 'JUNKIES_HOSTER'='your_desired_hoster' \
   ghcr.io/rix1337-sponsors/docker/helper:latest
 ```
 
-| Parameter                       | Description                                                                           |
-|---------------------------------|---------------------------------------------------------------------------------------|
-| `QUASARR_URL`                   | Local URL of Quasarr (e.g., `http://192.168.0.1:8080`)                                |
-| `QUASARR_API_KEY`               | Your Quasarr API Key (found in Quasarr web UI under "API Settings")                   |
-| `DEATHBYCAPTCHA_TOKEN`          | [DeathByCaptcha](https://deathbycaptcha.com/register?refid=6184288242b) account token |
-| `GITHUB_TOKEN`                  | Classic GitHub PAT with the scopes listed above                                       |
-| `FLARESOLVERR_URL`              | Local URL of [FlareSolverr](https://github.com/FlareSolverr/FlareSolverr)             |
-| `NX_USER` / `NX_PASS`           | Optional. NX account credentials                                                      |
-| `JUNKIES_USER` / `JUNKIES_PASS` | Optional. Junkies account credentials                                                 |
-| `JUNKIES_HOSTER`                | Optional. Preferred hoster for Junkies links                                          |
+| Parameter              | Description                                                                           |
+|------------------------|---------------------------------------------------------------------------------------|
+| `QUASARR_URL`          | Local URL of Quasarr (e.g., `http://192.168.0.1:8080`)                                |
+| `QUASARR_API_KEY`      | Your Quasarr API Key (found in Quasarr web UI under "API Settings")                   |
+| `DEATHBYCAPTCHA_TOKEN` | [DeathByCaptcha](https://deathbycaptcha.com/register?refid=6184288242b) account token |
+| `GITHUB_TOKEN`         | Classic GitHub PAT with the scopes listed above                                       |
+| `FLARESOLVERR_URL`     | Local URL of [FlareSolverr](https://github.com/FlareSolverr/FlareSolverr)             |

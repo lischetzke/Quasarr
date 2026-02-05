@@ -55,6 +55,7 @@ class Config(object):
         "DD": [("user", "secret", ""), ("password", "secret", "")],
         "DL": [("user", "secret", ""), ("password", "secret", "")],
         "NX": [("user", "secret", ""), ("password", "secret", "")],
+        "JUNKIES": [("user", "secret", ""), ("password", "secret", "")],
     }
     __config__ = []
 

@@ -8,14 +8,11 @@ import os
 import sys
 from typing import TYPE_CHECKING, Any
 
-from dotenv import load_dotenv
 from loguru import logger
 from wcwidth import wcswidth, wrap
 
 if TYPE_CHECKING:
     from loguru import Message
-
-load_dotenv(override=True)
 
 
 def get_log_max_width() -> int:

@@ -3,6 +3,7 @@
 # Project by https://github.com/rix1337
 
 import json
+from functools import wraps
 
 from bottle import abort, request
 
@@ -12,6 +13,21 @@ from quasarr.providers.auth import require_api_key
 from quasarr.providers.log import info
 from quasarr.providers.notifications import send_discord_message
 from quasarr.providers.statistics import StatsHelper
+from quasarr.storage.categories import (
+    get_category_from_package_id,
+    get_category_mirrors,
+)
+from quasarr.storage.config import Config
+
+
+def require_helper_active(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        if not shared_state.values.get("helper_active"):
+            abort(402, "Sponsors Payment Required")
+        return func(*args, **kwargs)
+
+    return wrapper
 
 
 def setup_sponsors_helper_routes(app):
@@ -21,14 +37,36 @@ def setup_sponsors_helper_routes(app):
         """Health check endpoint for SponsorsHelper to verify connectivity."""
         return "pong"
 
+    @app.get("/sponsors_helper/api/credentials/<hostname>/")
+    @require_api_key
+    @require_helper_active
+    def credentials_api(hostname):
+        section = hostname.upper()
+        if section not in ["AL", "DD", "DL", "NX", "JUNKIES"]:
+            return abort(404, f"No credentials for {hostname}")
+
+        config = Config(section)
+        user = config.get("user")
+        password = config.get("password")
+
+        if not user or not password:
+            return abort(404, f"Credentials not set for {hostname}")
+
+        return {"user": user, "pass": password}
+
+    @app.get("/sponsors_helper/api/mirrors/<package_id>/")
+    @require_api_key
+    @require_helper_active
+    def mirrors_api(package_id):
+        category = get_category_from_package_id(package_id)
+        mirrors = get_category_mirrors(category)
+        return {"mirrors": mirrors}
+
     @app.get("/sponsors_helper/api/to_decrypt/")
     @require_api_key
+    @require_helper_active
     def to_decrypt_api():
         try:
-            if not shared_state.values["helper_active"]:
-                shared_state.update("helper_active", True)
-                info("Sponsor status activated successfully")
-
             protected = shared_state.get_db("protected").retrieve_all_titles()
             if not protected:
                 return abort(404, "No encrypted packages found")
@@ -69,6 +107,7 @@ def setup_sponsors_helper_routes(app):
 
     @app.post("/sponsors_helper/api/download/")
     @require_api_key
+    @require_helper_active
     def download_api():
         try:
             data = request.json
@@ -107,6 +146,7 @@ def setup_sponsors_helper_routes(app):
 
     @app.post("/sponsors_helper/api/disable/")
     @require_api_key
+    @require_helper_active
     def disable_api():
         try:
             data = request.json
@@ -141,6 +181,7 @@ def setup_sponsors_helper_routes(app):
 
     @app.delete("/sponsors_helper/api/fail/")
     @require_api_key
+    @require_helper_active
     def fail_api():
         try:
             StatsHelper(shared_state).increment_failed_decryptions_automatic()

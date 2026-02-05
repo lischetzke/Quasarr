@@ -9,6 +9,8 @@ import sys
 import tempfile
 import time
 
+from dotenv import load_dotenv
+
 import quasarr.providers.web_server
 from quasarr.api import get_api
 from quasarr.providers import shared_state, version
@@ -38,6 +40,8 @@ from quasarr.storage.setup import (
     path_config,
 )
 from quasarr.storage.sqlite_database import DataBase
+
+load_dotenv(override=True)
 
 
 def run():
@@ -123,14 +127,16 @@ def run():
 
         # Check credentials for login-required hostnames
         skip_login_db = DataBase("skip_login")
-        login_required_sites = ["al", "dd", "dl", "nx"]
+        login_required_sites = ["al", "dd", "dj", "dl", "nx", "sj"]
 
         quasarr.providers.web_server.temp_server_success = False
 
         for site in login_required_sites:
             hostname = Config("Hostnames").get(site)
             if hostname:
-                site_config = Config(site.upper())
+                # dj and sj share the same credentials under JUNKIES
+                section = "JUNKIES" if site in ["dj", "sj"] else site.upper()
+                site_config = Config(section)
                 user = site_config.get("user")
                 password = site_config.get("password")
                 if not user or not password:

@@ -194,7 +194,7 @@ def _escape_js_for_html_attr(s):
 def hostname_form_html(shared_state, message, show_skip_management=False):
     hostname_fields = """
     <label for="{id}" onclick="showStatusDetail(\'{id}\', \'{label}\', \'{status}\', \'{error_details_for_modal}\', \'{timestamp}\', \'{operation}\', \'{url}\', \'{user}\', \'{password}\', {supports_login})" 
-           style="cursor:default; display:inline-flex; align-items:center; gap:4px;" title="{status_title}">
+           style="cursor:pointer; display:inline-flex; align-items:center; gap:4px;" title="{status_title}">
         <span class="status-indicator" id="status-{id}" data-status="{status}">{status_emoji}</span>
         {label}
     </label>
@@ -211,7 +211,7 @@ def hostname_form_html(shared_state, message, show_skip_management=False):
     hostnames = Config("Hostnames")  # Load once outside the loop
     skip_login_db = DataBase("skip_login")
     hostname_issues = get_all_hostname_issues()
-    login_required_sites = ["al", "dd", "dl", "nx"]
+    login_required_sites = ["al", "dd", "dj", "dl", "nx", "sj"]
 
     for label in shared_state.values["sites"]:
         field_id = label.lower()
@@ -228,9 +228,6 @@ def hostname_form_html(shared_state, message, show_skip_management=False):
         issue = hostname_issues.get(field_id)
         timestamp = ""
         operation = ""
-        error_details_for_modal = (
-            ""  # New variable to hold the full error message for the modal
-        )
 
         if not current_value:
             status = "unset"
@@ -263,7 +260,8 @@ def hostname_form_html(shared_state, message, show_skip_management=False):
         supports_login = "false"
         if field_id in login_required_sites:
             supports_login = "true"
-            site_config = Config(field_id.upper())
+            section = "JUNKIES" if field_id in ["dj", "sj"] else field_id.upper()
+            site_config = Config(section)
             user = site_config.get("user") or ""
             password = site_config.get("password") or ""
 
@@ -558,17 +556,109 @@ def hostname_form_html(shared_state, message, show_skip_management=False):
 </script>
 <script>
     function showStatusDetail(id, label, status, error_details, timestamp, operation, url, user, password, supports_login) {{
-        // Function intentionally left empty to disable modal
+        var statusTextMap = {{
+            ok: 'Operational',
+            error: 'Error',
+            unset: 'Not configured',
+            skipped: 'Login skipped',
+            info: 'Information'
+        }};
+
+        var emojiMap = {{
+            ok: '🟢',
+            error: '🔴',
+            unset: '⚫️',
+            skipped: '🟡',
+            info: 'ℹ️'
+        }};
+
+        var content_html = '';
+        if (status === 'error') {{
+            content_html += '<p>' + (error_details || 'No details available.') + '</p>';
+        }} else {{
+            content_html += '<p>' + (error_details || 'No additional details available.') + '</p>';
+        }}
+
+        var timestamp_html = '';
+        if (timestamp) {{
+            var d = new Date(timestamp);
+            var day = ("0" + d.getDate()).slice(-2);
+            var month = ("0" + (d.getMonth() + 1)).slice(-2);
+            var year = d.getFullYear();
+            var hours = ("0" + d.getHours()).slice(-2);
+            var minutes = ("0" + d.getMinutes()).slice(-2);
+            var seconds = ("0" + d.getSeconds()).slice(-2);
+            var formattedTimestamp = day + "." + month + "." + year + " " + hours + ":" + minutes + ":" + seconds;
+
+            if (operation) {{
+                timestamp_html = '<p><small>Occurred in ' + operation + ' at ' + formattedTimestamp + '</small></p>';
+            }} else {{
+                timestamp_html = '<p><small>Occurred at: ' + formattedTimestamp + '</small></p>';
+            }}
+        }}
+
+        var credentials_html = '';
+        if (url && supports_login) {{
+             var flaresolverrWarning = '';
+             if (id === 'al' && isFlaresolverrSkipped) {{
+                flaresolverrWarning = `
+                    <div style="margin-bottom: 1rem; padding: 0.75rem; background: #fff3cd; border: 1px solid #ffeeba; border-radius: 0.25rem; color: #856404; font-size: 0.875rem;">
+                        <strong>⚠️ FlareSolverr Required</strong><br>
+                        This site requires FlareSolverr, but it was skipped. You must configure it first.
+                        <div style="margin-top: 0.5rem;">
+                            <button class="btn-secondary" style="font-size: 0.75rem; padding: 0.25rem 0.5rem;" onclick="window.location.href='/flaresolverr'">Configure FlareSolverr</button>
+                        </div>
+                    </div>
+                `;
+             }}
+
+             credentials_html = `
+                <div style="margin-top: 1rem; border-top: 1px solid var(--divider-color, #dee2e6); padding-top: 1rem;">
+                    <h4 style="margin-top:0; font-size:1rem;">Credentials</h4>
+                    ${{flaresolverrWarning}}
+                    <div style="margin-bottom: 0.5rem;">
+                        <label style="display:block; font-size: 0.875rem;">Username</label>
+                        <input type="text" id="cred-user-${{id}}" value="${{user}}" style="width: 100%; padding: 0.375rem 0.75rem; border: 1px solid #ced4da; border-radius: 0.25rem;">
+                    </div>
+                    <div style="margin-bottom: 0.5rem;">
+                        <label style="display:block; font-size: 0.875rem;">Password</label>
+                        <input type="password" id="cred-pass-${{id}}" value="${{password}}" style="width: 100%; padding: 0.375rem 0.75rem; border: 1px solid #ced4da; border-radius: 0.25rem;">
+                    </div>
+                    <div id="cred-status-${{id}}" style="margin-bottom: 0.5rem; font-size: 0.875rem; min-height: 1.25em;"></div>
+                    <button class="btn-primary" onclick="saveAndCheckCredentials('${{id}}')">Check & Save Session</button>
+                    <div style="margin-top: 1rem; border-bottom: 1px solid var(--divider-color, #dee2e6);"></div>
+                </div>
+            `;
+        }}
+
+        var content = content_html + timestamp_html + credentials_html;
+        var title = '<span>' + (emojiMap[status] || 'ℹ️') + '</span> ' + label + ' - ' + (statusTextMap[status] || status);
+
+        var buttons = '';
+        if (url) {{
+            var href = url;
+            if (!href.startsWith('http://') && !href.startsWith('https://')) {{
+                href = 'https://' + href;
+            }}
+            buttons = `
+                <button class="btn-primary" style="margin-right: auto;" onclick="window.open('${{href}}', '_blank')">Open ${{id.toUpperCase()}}</button>
+                <button class="btn-secondary" onclick="closeModal()">Close</button>
+            `;
+        }} else {{
+            buttons = '<button class="btn-secondary" onclick="closeModal()">Close</button>';
+        }}
+
+        showModal(title, content, buttons);
     }}
-    
+
     function saveAndCheckCredentials(id) {{
         var user = document.getElementById('cred-user-' + id).value;
         var pass = document.getElementById('cred-pass-' + id).value;
         var statusDiv = document.getElementById('cred-status-' + id);
-        
+
         statusDiv.innerHTML = 'Checking...';
         statusDiv.style.color = 'var(--secondary, #6c757d)';
-        
+
         fetch('/api/hostnames/check-credentials/' + id, {{
             method: 'POST',
             headers: {{ 'Content-Type': 'application/json' }},
@@ -688,7 +778,10 @@ def check_credentials(shared_state, shorthand):
         user = data.get("user")
         password = data.get("password")
 
-        config = Config(shorthand.upper())
+        sh_lower = shorthand.lower()
+        section = "JUNKIES" if sh_lower in ["dj", "sj"] else shorthand.upper()
+        config = Config(section)
+
         # Store old credentials to revert if check fails
         old_user = config.get("user")
         old_password = config.get("password")
@@ -698,9 +791,6 @@ def check_credentials(shared_state, shorthand):
         config.save("password", password)
 
         success = False
-        message = "Session check failed"
-
-        sh_lower = shorthand.lower()
 
         # Clear skip login if set (temporarily, will be restored if check fails?)
         # Actually, if user is trying to set credentials, they probably intend to stop skipping.
@@ -731,13 +821,22 @@ def check_credentials(shared_state, shorthand):
                 message = "Session valid!"
             else:
                 message = "Session check failed (check logs)"
+        elif sh_lower in ["dj", "sj"]:
+            # dj and sj don't have session providers just save credentials
+            success = True
+            message = "Credentials saved"
         else:
             success = True
             message = "Credentials saved"
 
         if success:
             # If successful, ensure skip login is removed
-            DataBase("skip_login").delete(shorthand.lower())
+            DataBase("skip_login").delete(sh_lower)
+            # If dj/sj, also clear skip for the sibling
+            if sh_lower == "dj":
+                DataBase("skip_login").delete("sj")
+            elif sh_lower == "sj":
+                DataBase("skip_login").delete("dj")
         else:
             # If failed, revert credentials
             config.save("user", old_user)
@@ -817,7 +916,7 @@ def get_skip_login():
     """Return list of hostnames with skipped login."""
     response.content_type = "application/json"
     skip_db = DataBase("skip_login")
-    login_required_sites = ["al", "dd", "dl", "nx"]
+    login_required_sites = ["al", "dd", "dj", "dl", "nx", "sj"]
     skipped = []
     for site in login_required_sites:
         if skip_db.retrieve(site):
@@ -829,7 +928,7 @@ def clear_skip_login(shorthand):
     """Clear skip login preference for a hostname."""
     response.content_type = "application/json"
     shorthand = shorthand.lower()
-    login_required_sites = ["al", "dd", "dl", "nx"]
+    login_required_sites = ["al", "dd", "dj", "dl", "nx", "sj"]
     if shorthand not in login_required_sites:
         return {"success": False, "error": f"Invalid shorthand: {shorthand}"}
 
@@ -1213,6 +1312,11 @@ def hostname_credentials_config(shared_state, shorthand, domain):
         """Skip login for this hostname and continue startup."""
         sh_lower = sh.lower()
         DataBase("skip_login").update_store(sh_lower, "true")
+        # If dj/sj, also skip for the sibling
+        if sh_lower == "dj":
+            DataBase("skip_login").update_store("sj", "true")
+        elif sh_lower == "sj":
+            DataBase("skip_login").update_store("dj", "true")
         info(f'Login for "{sh}" skipped by user choice')
         quasarr.providers.web_server.temp_server_success = True
         return {"success": True}
@@ -1225,7 +1329,9 @@ def hostname_credentials_config(shared_state, shorthand, domain):
 
         user = request.forms.get("user")
         password = request.forms.get("password")
-        config = Config(shorthand)
+        sh_lower = sh.lower()
+        section = "JUNKIES" if sh_lower in ["dj", "sj"] else sh.upper()
+        config = Config(section)
 
         error_message = "User and Password wrong or empty!"
 
@@ -1234,9 +1340,14 @@ def hostname_credentials_config(shared_state, shorthand, domain):
             config.save("password", password)
 
             # Clear any skip preference since we now have credentials
-            DataBase("skip_login").delete(sh.lower())
+            DataBase("skip_login").delete(sh_lower)
+            # If dj/sj, also clear skip for the sibling
+            if sh_lower == "dj":
+                DataBase("skip_login").delete("sj")
+            elif sh_lower == "sj":
+                DataBase("skip_login").delete("dj")
 
-            if sh.lower() == "al":
+            if sh_lower == "al":
                 error_message = (
                     "User and Password wrong or empty.<br><br>"
                     "Or if you skipped Flaresolverr setup earlier, "
@@ -1250,7 +1361,7 @@ def hostname_credentials_config(shared_state, shorthand, domain):
                     return render_reconnect_success(
                         f"{sh} credentials set successfully"
                     )
-            elif sh.lower() == "dd":
+            elif sh_lower == "dd":
                 if quasarr.providers.sessions.dd.create_and_persist_session(
                     shared_state
                 ):
@@ -1258,7 +1369,7 @@ def hostname_credentials_config(shared_state, shorthand, domain):
                     return render_reconnect_success(
                         f"{sh} credentials set successfully"
                     )
-            elif sh.lower() == "dl":
+            elif sh_lower == "dl":
                 if quasarr.providers.sessions.dl.create_and_persist_session(
                     shared_state
                 ):
@@ -1266,7 +1377,7 @@ def hostname_credentials_config(shared_state, shorthand, domain):
                     return render_reconnect_success(
                         f"{sh} credentials set successfully"
                     )
-            elif sh.lower() == "nx":
+            elif sh_lower == "nx":
                 if quasarr.providers.sessions.nx.create_and_persist_session(
                     shared_state
                 ):
@@ -1274,6 +1385,10 @@ def hostname_credentials_config(shared_state, shorthand, domain):
                     return render_reconnect_success(
                         f"{sh} credentials set successfully"
                     )
+            elif sh_lower in ["dj", "sj"]:
+                # dj and sj don't have session providers yet, just save credentials
+                quasarr.providers.web_server.temp_server_success = True
+                return render_reconnect_success(f"{sh} credentials set successfully")
             else:
                 quasarr.providers.web_server.temp_server_success = False
                 return render_fail(f"Unknown site shorthand! ({sh})")
