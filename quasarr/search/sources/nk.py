@@ -14,7 +14,10 @@ from bs4 import BeautifulSoup
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.imdb_metadata import get_localized_title, get_year
 from quasarr.providers.log import debug, info, trace
-from quasarr.providers.utils import generate_download_link
+from quasarr.providers.utils import (
+    SEARCH_CAT_BOOKS,
+    generate_download_link,
+)
 
 hostname = "nk"
 
@@ -62,7 +65,7 @@ def nk_feed(*args, **kwargs):
 def nk_search(
     shared_state,
     start_time,
-    request_from,
+    search_category,
     search_string="",
     season=None,
     episode=None,
@@ -70,9 +73,9 @@ def nk_search(
     releases = []
     host = shared_state.values["config"]("Hostnames").get(hostname)
 
-    if not "arr" in request_from.lower():
+    if search_category == SEARCH_CAT_BOOKS:
         debug(
-            f'<d>Skipping {request_from} search on "{hostname.upper()}" (unsupported media type)!</d>'
+            f"<d>Skipping <y>{search_category}</y> on <g>{hostname.upper()}</g> (category not supported)!</d>"
         )
         return releases
 
@@ -157,7 +160,7 @@ def nk_search(
                 release_imdb_id = imdb_id
 
             if not shared_state.is_valid_release(
-                title, request_from, search_string, season, episode
+                title, search_category, search_string, season, episode
             ):
                 continue
 

@@ -8,7 +8,13 @@ from datetime import timezone
 from email.utils import parsedate_to_datetime
 
 from quasarr.providers.imdb_metadata import get_imdb_metadata
-from quasarr.providers.log import debug, info, trace
+from quasarr.providers.log import debug, info, trace, warn
+from quasarr.providers.utils import (
+    SEARCH_CAT_BOOKS,
+    SEARCH_CAT_MOVIES,
+    SEARCH_CAT_SHOWS,
+    determine_search_category,
+)
 from quasarr.search.sources.al import al_feed, al_search
 from quasarr.search.sources.by import by_feed, by_search
 from quasarr.search.sources.dd import dd_feed, dd_search
@@ -32,6 +38,7 @@ from quasarr.search.sources.wx import wx_feed, wx_search
 def get_search_results(
     shared_state,
     request_from,
+    search_category,
     imdb_id="",
     search_phrase="",
     season="",
@@ -45,7 +52,9 @@ def get_search_results(
     if imdb_id:
         get_imdb_metadata(imdb_id)
 
-    docs_search = "lazylibrarian" in request_from.lower()
+    # Determine search category if not provided
+    if not search_category:
+        search_category = determine_search_category(request_from)
 
     # Config retrieval
     config = shared_state.values["config"]("Hostnames")
@@ -72,7 +81,25 @@ def get_search_results(
     search_executor = SearchExecutor()
 
     # Mappings
-    imdb_map = [
+    imdb_movies_map = [
+        ("al", al, al_search),
+        ("by", by, by_search),
+        ("dd", dd, dd_search),
+        ("dl", dl, dl_search),
+        ("dt", dt, dt_search),
+        ("dw", dw, dw_search),
+        ("fx", fx, fx_search),
+        ("he", he, he_search),
+        ("hs", hs, hs_search),
+        ("mb", mb, mb_search),
+        ("nk", nk, nk_search),
+        ("nx", nx, nx_search),
+        ("sl", sl, sl_search),
+        ("wd", wd, wd_search),
+        ("wx", wx, wx_search),
+    ]
+
+    imdb_shows_map = [
         ("al", al, al_search),
         ("by", by, by_search),
         ("dd", dd, dd_search),
@@ -123,46 +150,58 @@ def get_search_results(
         ("wx", wx, wx_feed),
     ]
 
-    use_pagination = True
+    # Set up searches
 
-    # Add searches
-    if imdb_id:
-        args, kwargs = (
-            (shared_state, start_time, request_from, imdb_id),
-            {"season": season, "episode": episode},
-        )
-        for name, url, func in imdb_map:
-            if url:
-                search_executor.add(
-                    func, args, kwargs, use_cache=True, source_name=name.upper()
-                )
-
-    elif search_phrase and docs_search:
-        args, kwargs = (
-            (shared_state, start_time, request_from, search_phrase),
-            {"season": season, "episode": episode},
-        )
-        for name, url, func in phrase_map:
-            if url:
-                search_executor.add(func, args, kwargs, source_name=name.upper())
-
-    elif search_phrase:
-        debug(f"Search phrase '{search_phrase}' is not supported for {request_from}.")
-
-    else:
-        args, kwargs = ((shared_state, start_time, request_from), {})
-        use_pagination = False
-        for name, url, func in feed_map:
-            if url:
-                search_executor.add(func, args, kwargs, source_name=name.upper())
-
-    # Clean description for Console UI
     if imdb_id:
         stype = f"IMDb-ID <b>{imdb_id}</b>"
     elif search_phrase:
         stype = f"Search-Phrase <b>{search_phrase}</b>"
     else:
-        stype = "<b>feed</b> search"
+        stype = "<b>Feed</b> search"
+
+    use_pagination = True
+
+    if imdb_id:
+        if search_category == SEARCH_CAT_MOVIES:
+            args = (shared_state, start_time, search_category, imdb_id)
+            kwargs = {}
+            for name, url, func in imdb_movies_map:
+                if url:
+                    search_executor.add(
+                        func, args, kwargs, use_cache=True, source_name=name.upper()
+                    )
+        elif search_category == SEARCH_CAT_SHOWS:
+            args = (shared_state, start_time, search_category, imdb_id)
+            kwargs = {"season": season, "episode": episode}
+            for name, url, func in imdb_shows_map:
+                if url:
+                    search_executor.add(
+                        func, args, kwargs, use_cache=True, source_name=name.upper()
+                    )
+        else:
+            warn(
+                f"{stype} is not supported for {request_from}, category: {search_category}"
+            )
+
+    elif search_phrase:
+        if search_category == SEARCH_CAT_BOOKS:
+            args = (shared_state, start_time, search_category, search_phrase)
+            kwargs = {}
+            for name, url, func in phrase_map:
+                if url:
+                    search_executor.add(func, args, kwargs, source_name=name.upper())
+        else:
+            warn(
+                f"{stype} is not supported for {request_from}, category: {search_category}"
+            )
+
+    else:
+        args = (shared_state, start_time, search_category)
+        kwargs = {}
+        use_pagination = False
+        for name, url, func in feed_map:
+            if url:
+                search_executor.add(func, args, kwargs, source_name=name.upper())
 
     debug(f"Starting <g>{len(search_executor.searches)}</g> searches for {stype}...")
 
@@ -281,7 +320,7 @@ class SearchExecutor:
                         if res and len(res) > 0:
                             badge = f"<bg green><black>{source_name}</black></bg green>"
                         else:
-                            debug(f"❌ No results returned by {source_name}")
+                            debug(f"❌ No results returned by <g>{source_name}</g>")
                             badge = f"<bg black><white>{source_name}</white></bg black>"
 
                         results_badges[index] = badge

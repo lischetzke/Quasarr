@@ -14,11 +14,16 @@ from urllib.parse import urlparse
 import requests
 from PIL import Image
 
-from quasarr.providers.log import crit, error
+from quasarr.providers.log import crit, error, warn
 from quasarr.storage.categories import category_exists
 
 # Fallback user agent when FlareSolverr is not available
 FALLBACK_USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"
+
+# Search Categories
+SEARCH_CAT_MOVIES = 2000
+SEARCH_CAT_SHOWS = 5000
+SEARCH_CAT_BOOKS = 7000
 
 
 class Unbuffered(object):
@@ -457,6 +462,24 @@ def determine_category(request_from, category=None):
     # Default mapping
     category_map = {"lazylibrarian": "docs", "radarr": "movies", "sonarr": "tv"}
     return category_map.get(client_type, "tv")
+
+
+def determine_search_category(request_from):
+    """
+    Determine the numeric search category based on the client type.
+    Returns 2000 (Movies), 5000 (TV), or 7000 (Books).
+    Defaults to 5000 (TV) if unknown.
+    """
+    client_type = extract_client_type(request_from)
+    if client_type == "radarr":
+        return SEARCH_CAT_MOVIES
+    elif client_type == "lazylibrarian":
+        return SEARCH_CAT_BOOKS
+    elif client_type == "sonarr":
+        return SEARCH_CAT_SHOWS
+    else:
+        warn(f"Unknown client type '{client_type}' from '{request_from}'")
+        return None
 
 
 def extract_client_type(request_from):

@@ -13,7 +13,7 @@ from bs4 import BeautifulSoup
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.imdb_metadata import get_localized_title
 from quasarr.providers.log import debug, info, trace
-from quasarr.providers.utils import generate_download_link
+from quasarr.providers.utils import SEARCH_CAT_SHOWS, generate_download_link
 
 hostname = "sj"
 
@@ -27,12 +27,12 @@ def convert_to_rss_date(date_str):
         return ""
 
 
-def sj_feed(shared_state, start_time, request_from):
+def sj_feed(shared_state, start_time, search_category):
     releases = []
 
-    if "sonarr" not in request_from.lower():
+    if search_category != SEARCH_CAT_SHOWS:  # Only TV supported
         debug(
-            f'<d>Skipping {request_from} search on "{hostname.upper()}" (unsupported media type)!</d>'
+            f"<d>Skipping <y>{search_category}</y> on <g>{hostname.upper()}</g> (category not supported)!</d>"
         )
         return releases
 
@@ -118,16 +118,16 @@ def sj_feed(shared_state, start_time, request_from):
 def sj_search(
     shared_state,
     start_time,
-    request_from,
+    search_category,
     search_string,
     season=None,
     episode=None,
 ):
     releases = []
 
-    if "sonarr" not in request_from.lower():
+    if search_category != SEARCH_CAT_SHOWS:  # Only TV supported
         debug(
-            f'<d>Skipping {request_from} search on "{hostname.upper()}" (unsupported media type)!</d>'
+            f"<d>Skipping <y>{search_category}</y> on <g>{hostname.upper()}</g> (category not supported)!</d>"
         )
         return releases
 
@@ -203,7 +203,7 @@ def sj_search(
                         continue
 
                     if not shared_state.is_valid_release(
-                        title, request_from, search_string, season, episode
+                        title, search_category, search_string, season, episode
                     ):
                         continue
 

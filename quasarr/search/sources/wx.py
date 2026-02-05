@@ -14,7 +14,12 @@ from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.imdb_metadata import get_localized_title, get_year
 from quasarr.providers.log import debug, error, trace, warn
-from quasarr.providers.utils import generate_download_link
+from quasarr.providers.utils import (
+    SEARCH_CAT_BOOKS,
+    SEARCH_CAT_MOVIES,
+    SEARCH_CAT_SHOWS,
+    generate_download_link,
+)
 
 warnings.filterwarnings(
     "ignore", category=XMLParsedAsHTMLWarning
@@ -23,15 +28,17 @@ warnings.filterwarnings(
 hostname = "wx"
 
 
-def wx_feed(shared_state, start_time, request_from):
+def wx_feed(shared_state, start_time, search_category):
     """
     Fetch latest releases from RSS feed.
     """
     releases = []
     host = shared_state.values["config"]("Hostnames").get(hostname)
 
-    if "lazylibrarian" in request_from.lower():
-        debug(f"<d>Skipping {request_from}: unsupported media type.</d>")
+    if search_category == SEARCH_CAT_BOOKS:
+        debug(
+            f"<d>Skipping <y>{search_category}</y> on <g>{hostname.upper()}</g> (category not supported)!</d>"
+        )
         return releases
 
     rss_url = f"https://{host}/rss"
@@ -140,7 +147,7 @@ def wx_feed(shared_state, start_time, request_from):
 def wx_search(
     shared_state,
     start_time,
-    request_from,
+    search_category,
     search_string,
     season=None,
     episode=None,
@@ -152,8 +159,8 @@ def wx_search(
     releases = []
     host = shared_state.values["config"]("Hostnames").get(hostname)
 
-    if "lazylibrarian" in request_from.lower():
-        debug(f"<d>Skipping {request_from}: unsupported media type.</d>")
+    if search_category == SEARCH_CAT_BOOKS:
+        debug(f"<d>Skipping <y>{search_category}</>: unsupported category.</d>")
         return releases
 
     imdb_id = shared_state.is_imdb_id(search_string)
@@ -191,10 +198,13 @@ def wx_search(
         "sortOrder": "desc",
     }
 
-    if "sonarr" in request_from.lower():
+    if search_category == SEARCH_CAT_SHOWS:
         params["types"] = "series,anime"
-    elif "radarr" in request_from.lower():
+    elif search_category == SEARCH_CAT_MOVIES:
         params["types"] = "movie"
+    else:
+        warn(f"Unknown search category: {search_category}")
+        return releases
 
     trace(f"Searching: '{search_string}'")
 
@@ -263,7 +273,7 @@ def wx_search(
                     title = title.replace(" ", ".")
 
                     if shared_state.is_valid_release(
-                        title, request_from, search_string, season, episode
+                        title, search_category, search_string, season, episode
                     ):
                         # Skip if we've already seen this exact title
                         if title in seen_titles:
@@ -320,7 +330,7 @@ def wx_search(
 
                             if not shared_state.is_valid_release(
                                 release_title,
-                                request_from,
+                                search_category,
                                 search_string,
                                 season,
                                 episode,

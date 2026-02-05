@@ -17,7 +17,12 @@ from quasarr.providers.cloudflare import ensure_session_cf_bypassed
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.imdb_metadata import get_localized_title
 from quasarr.providers.log import debug, info, warn
-from quasarr.providers.utils import generate_download_link
+from quasarr.providers.utils import (
+    SEARCH_CAT_BOOKS,
+    SEARCH_CAT_MOVIES,
+    SEARCH_CAT_SHOWS,
+    generate_download_link,
+)
 
 hostname = "sl"
 
@@ -40,18 +45,21 @@ def parse_pubdate_to_iso(pubdate_str):
     return dt.isoformat()
 
 
-def sl_feed(shared_state, start_time, request_from):
+def sl_feed(shared_state, start_time, search_category):
     releases = []
 
     sl = shared_state.values["config"]("Hostnames").get(hostname.lower())
     password = sl
 
-    if "lazylibrarian" in request_from.lower():
+    if search_category == SEARCH_CAT_BOOKS:
         feed_type = "ebooks"
-    elif "radarr" in request_from.lower():
+    elif search_category == SEARCH_CAT_MOVIES:
         feed_type = "movies"
-    else:
+    elif search_category == SEARCH_CAT_SHOWS:
         feed_type = "tv-shows"
+    else:
+        warn(f"Unknown search category: {search_category}")
+        return releases
 
     url = f"https://{sl}/{feed_type}/feed/"
     headers = {"User-Agent": shared_state.values["user_agent"]}
@@ -70,7 +78,7 @@ def sl_feed(shared_state, start_time, request_from):
         for item in root.find("channel").findall("item"):
             try:
                 title = item.findtext("title").strip()
-                if "lazylibrarian" in request_from.lower():
+                if search_category == SEARCH_CAT_BOOKS:
                     # lazylibrarian can only detect specific date formats / issue numbering for magazines
                     title = shared_state.normalize_magazine_title(title)
 
@@ -144,7 +152,7 @@ def sl_feed(shared_state, start_time, request_from):
 def sl_search(
     shared_state,
     start_time,
-    request_from,
+    search_category,
     search_string,
     season=None,
     episode=None,
@@ -153,12 +161,15 @@ def sl_search(
     sl = shared_state.values["config"]("Hostnames").get(hostname.lower())
     password = sl
 
-    if "lazylibrarian" in request_from.lower():
+    if search_category == SEARCH_CAT_BOOKS:
         feed_type = "ebooks"
-    elif "radarr" in request_from.lower():
+    elif search_category == SEARCH_CAT_MOVIES:
         feed_type = "movies"
-    else:
+    elif search_category == SEARCH_CAT_SHOWS:
         feed_type = "tv-shows"
+    else:
+        warn(f"Unknown search category: {search_category}")
+        return releases
 
     try:
         imdb_id = shared_state.is_imdb_id(search_string)
@@ -225,11 +236,11 @@ def sl_search(
                         title = a.get_text(strip=True)
 
                         if not shared_state.is_valid_release(
-                            title, request_from, search_string, season, episode
+                            title, search_category, search_string, season, episode
                         ):
                             continue
 
-                        if "lazylibrarian" in request_from.lower():
+                        if search_category == SEARCH_CAT_BOOKS:
                             title = shared_state.normalize_magazine_title(title)
                             imdb_id = None
 

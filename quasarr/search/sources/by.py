@@ -13,8 +13,13 @@ from bs4 import BeautifulSoup
 
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.imdb_metadata import get_localized_title, get_year
-from quasarr.providers.log import debug, error, info
-from quasarr.providers.utils import generate_download_link
+from quasarr.providers.log import debug, error, info, warn
+from quasarr.providers.utils import (
+    SEARCH_CAT_BOOKS,
+    SEARCH_CAT_MOVIES,
+    SEARCH_CAT_SHOWS,
+    generate_download_link,
+)
 
 hostname = "by"
 
@@ -48,7 +53,7 @@ def _parse_posts(
     base_url,
     password,
     is_search=False,
-    request_from=None,
+    search_category=None,
     search_string=None,
     season=None,
     episode=None,
@@ -87,7 +92,7 @@ def _parse_posts(
                 except AttributeError:
                     link_tag = table.find("a")
                 title = link_tag.get_text(strip=True)
-                if "lazylibrarian" in request_from.lower():
+                if search_category == SEARCH_CAT_BOOKS:
                     # lazylibrarian can only detect specific date formats / issue numbering for magazines
                     title = shared_state.normalize_magazine_title(title)
                 else:
@@ -118,7 +123,7 @@ def _parse_posts(
                 row = entry
                 title_tag = row.find("p", class_="TITLE").find("a")
                 title = title_tag.get_text(strip=True)
-                if "lazylibrarian" in request_from.lower():
+                if search_category == SEARCH_CAT_BOOKS:
                     # lazylibrarian can only detect specific date formats / issue numbering for magazines
                     title = shared_state.normalize_magazine_title(title)
                 else:
@@ -129,7 +134,7 @@ def _parse_posts(
                         continue
 
                 if not shared_state.is_valid_release(
-                    title, request_from, search_string, season, episode
+                    title, search_category, search_string, season, episode
                 ):
                     continue
                 if XXX_REGEX.search(title) and "xxx" not in search_string.lower():
@@ -174,16 +179,19 @@ def _parse_posts(
     return releases
 
 
-def by_feed(shared_state, start_time, request_from):
+def by_feed(shared_state, start_time, search_category):
     by = shared_state.values["config"]("Hostnames").get(hostname)
     password = by
 
-    if "lazylibrarian" in request_from.lower():
+    if search_category == SEARCH_CAT_BOOKS:
         feed_type = "?cat=71"
-    elif "radarr" in request_from.lower():
+    elif search_category == SEARCH_CAT_MOVIES:
         feed_type = "?cat=1"
-    else:
+    elif search_category == SEARCH_CAT_SHOWS:
         feed_type = "?cat=2"
+    else:
+        warn(f"Invalid search category: {search_category}")
+        return []
 
     base_url = f"https://{by}"
     url = f"{base_url}/{feed_type}"
@@ -197,7 +205,7 @@ def by_feed(shared_state, start_time, request_from):
             shared_state,
             base_url,
             password,
-            request_from=request_from,
+            search_category=search_category,
         )
     except Exception as e:
         error(f"Error loading feed: {e}")
@@ -215,7 +223,7 @@ def by_feed(shared_state, start_time, request_from):
 def by_search(
     shared_state,
     start_time,
-    request_from,
+    search_category,
     search_string,
     season=None,
     episode=None,
@@ -248,7 +256,7 @@ def by_search(
             base_url,
             password,
             is_search=True,
-            request_from=request_from,
+            search_category=search_category,
             search_string=search_string,
             season=season,
             episode=episode,

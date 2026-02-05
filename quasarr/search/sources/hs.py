@@ -11,7 +11,10 @@ import requests
 from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning
 
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
-from quasarr.providers.utils import generate_download_link
+from quasarr.providers.utils import (
+    SEARCH_CAT_BOOKS,
+    generate_download_link,
+)
 
 warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
 from quasarr.providers.log import debug, warn
@@ -184,7 +187,7 @@ def _parse_search_results(
     shared_state,
     hd_host,
     password,
-    request_from,
+    search_category,
     search_string,
     season,
     episode,
@@ -265,7 +268,7 @@ def _parse_search_results(
             for title in unique_episodes:
                 # Validate release against search criteria
                 if not shared_state.is_valid_release(
-                    title, request_from, search_string, season, episode
+                    title, search_category, search_string, season, episode
                 ):
                     continue
 
@@ -301,7 +304,7 @@ def _parse_search_results(
             # Also add the main title (season pack) with full size - if not duplicate
             if main_title.lower() not in seen:
                 if shared_state.is_valid_release(
-                    main_title, request_from, search_string, season, episode
+                    main_title, search_category, search_string, season, episode
                 ):
                     link = generate_download_link(
                         shared_state,
@@ -335,7 +338,7 @@ def _parse_search_results(
     return releases
 
 
-def hs_feed(shared_state, start_time, request_from):
+def hs_feed(shared_state, start_time, search_category):
     """Return recent releases from HS feed"""
     releases = []
     hs = shared_state.values["config"]("Hostnames").get(hostname)
@@ -344,10 +347,9 @@ def hs_feed(shared_state, start_time, request_from):
     if not hs:
         return releases
 
-    # HS only supports movies and series
-    if "lazylibrarian" in request_from.lower():
+    if search_category == SEARCH_CAT_BOOKS:
         debug(
-            f'<d>Skipping {request_from} feed on "{hostname.upper()}" (unsupported media type)!</d>'
+            f'<d>Skipping {search_category} feed on "{hostname.upper()}" (unsupported media type)!</d>'
         )
         return releases
 
@@ -438,7 +440,7 @@ def hs_feed(shared_state, start_time, request_from):
 def hs_search(
     shared_state,
     start_time,
-    request_from,
+    search_category,
     search_string,
     season=None,
     episode=None,
@@ -451,10 +453,9 @@ def hs_search(
     if not hs:
         return releases
 
-    # HS only supports movies and series
-    if "lazylibrarian" in request_from.lower():
+    if search_category == SEARCH_CAT_BOOKS:
         debug(
-            f'<d>Skipping {request_from} search on "{hostname.upper()}" (unsupported media type)!</d>'
+            f"<d>Skipping <y>{search_category}</y> on <g>{hostname.upper()}</g> (category not supported)!</d>"
         )
         return releases
 
@@ -480,7 +481,7 @@ def hs_search(
             shared_state,
             hs,
             password,
-            request_from,
+            search_category,
             search_string,
             season,
             episode,

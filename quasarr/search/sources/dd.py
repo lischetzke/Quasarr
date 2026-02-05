@@ -13,7 +13,10 @@ from quasarr.providers.sessions.dd import (
     create_and_persist_session,
     retrieve_and_validate_session,
 )
-from quasarr.providers.utils import generate_download_link
+from quasarr.providers.utils import (
+    SEARCH_CAT_BOOKS,
+    generate_download_link,
+)
 
 hostname = "dd"
 
@@ -36,7 +39,7 @@ def dd_feed(*args, **kwargs):
 def dd_search(
     shared_state,
     start_time,
-    request_from,
+    search_category,
     search_string="",
     season=None,
     episode=None,
@@ -45,8 +48,8 @@ def dd_search(
     dd = shared_state.values["config"]("Hostnames").get(hostname.lower())
     password = dd
 
-    if not "arr" in request_from.lower():
-        debug(f"<d>Skipping {request_from} search (unsupported media type)!</d>")
+    if search_category == SEARCH_CAT_BOOKS:
+        debug(f"<d>Skipping {search_category} (unsupported media type)!</d>")
         return releases
 
     try:
@@ -120,7 +123,7 @@ def dd_search(
                     title = release.get("release")
 
                     if not shared_state.is_valid_release(
-                        title, request_from, search_string, season, episode
+                        title, search_category, search_string, season, episode
                     ):
                         continue
 

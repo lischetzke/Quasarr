@@ -20,6 +20,11 @@ from quasarr.providers.myjd_api import (
     RequestTimeoutException,
     TokenExpiredException,
 )
+from quasarr.providers.utils import (
+    SEARCH_CAT_BOOKS,
+    SEARCH_CAT_MOVIES,
+    SEARCH_CAT_SHOWS,
+)
 from quasarr.storage.config import Config
 from quasarr.storage.sqlite_database import DataBase
 
@@ -698,7 +703,7 @@ def match_in_title(title: str, season: int = None, episode: int = None) -> bool:
 
 def is_valid_release(
     title: str,
-    request_from: str,
+    search_category: int,
     search_string: str,
     season: int = None,
     episode: int = None,
@@ -706,17 +711,15 @@ def is_valid_release(
     """
     Return True if the given release title is valid for the given search parameters.
     - title: the release title to test
-    - request_from: user agent, contains 'Radarr' for movie searches or 'Sonarr' for TV searches
+    - search_category: numeric search category, 2000 for movies, 5000 for tv shows
     - search_string: the original search phrase (could be an IMDb id or plain text)
     - season: desired season number (or None)
     - episode: desired episode number (or None)
     """
     try:
-        # Determine whether this is a movie or TV search
-        rf = request_from.lower()
-        is_movie_search = "radarr" in rf
-        is_tv_search = "sonarr" in rf
-        is_docs_search = "lazylibrarian" in rf
+        is_movie_search = search_category == SEARCH_CAT_MOVIES
+        is_tv_search = search_category == SEARCH_CAT_SHOWS
+        is_docs_search = search_category == SEARCH_CAT_BOOKS
 
         # if search string is NOT an imdb id check search_string_in_sanitized_title - if not match, it is not valid
         if not is_docs_search and not is_imdb_id(search_string):
@@ -774,7 +777,7 @@ def is_valid_release(
             return True
 
         # unknown search source — reject by default
-        debug(f"Skipping {title!r} as search source is unknown: {request_from!r}")
+        debug(f"Skipping {title!r} as search category is unknown: {search_category!r}")
         return False
 
     except Exception as e:
@@ -783,7 +786,7 @@ def is_valid_release(
         debug(
             f"Exception in is_valid_release: {e!r}\n{tb}"
             f"is_valid_release called with "
-            f"title={title!r}, request_from={request_from!r}, "
+            f"title={title!r}, search_category={search_category!r}, "
             f"search_string={search_string!r}, season={season!r}, episode={episode!r}"
         )
         return False

@@ -15,9 +15,14 @@ from quasarr.downloads.sources.al import (
 )
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.imdb_metadata import get_localized_title, get_year
-from quasarr.providers.log import debug, error, info, trace
+from quasarr.providers.log import debug, error, info, trace, warn
 from quasarr.providers.sessions.al import fetch_via_requests_session, invalidate_session
-from quasarr.providers.utils import generate_download_link
+from quasarr.providers.utils import (
+    SEARCH_CAT_BOOKS,
+    SEARCH_CAT_MOVIES,
+    SEARCH_CAT_SHOWS,
+    generate_download_link,
+)
 
 hostname = "al"
 
@@ -116,18 +121,22 @@ def get_release_id(tag):
     return 0
 
 
-def al_feed(shared_state, start_time, request_from):
+def al_feed(shared_state, start_time, search_category):
     releases = []
     host = shared_state.values["config"]("Hostnames").get(hostname)
 
-    if not "arr" in request_from.lower():
-        debug(f"<d>Skipping {request_from} search (unsupported media type)!</d>")
+    if search_category == SEARCH_CAT_BOOKS:
+        debug(
+            f"<d>Skipping <y>{search_category}</y> on <g>{hostname.upper()}</g> (category not supported)!</d>"
+        )
         return releases
-
-    if "Radarr" in request_from:
+    elif search_category == SEARCH_CAT_MOVIES:
         wanted_type = "movie"
-    else:
+    elif search_category == SEARCH_CAT_SHOWS:
         wanted_type = "series"
+    else:
+        warn(f"Unknown search category: {search_category}")
+        return releases
 
     try:
         r = fetch_via_requests_session(
@@ -260,7 +269,7 @@ def extract_season(title: str) -> int | None:
 def al_search(
     shared_state,
     start_time,
-    request_from,
+    search_category,
     search_string,
     season=None,
     episode=None,
@@ -268,14 +277,18 @@ def al_search(
     releases = []
     host = shared_state.values["config"]("Hostnames").get(hostname)
 
-    if not "arr" in request_from.lower():
-        debug(f"<d>Skipping {request_from} search (unsupported media type)!</d>")
+    if search_category == SEARCH_CAT_BOOKS:
+        debug(
+            f"<d>Skipping <y>{search_category}</y> on <g>{hostname.upper()}</g> (category not supported)!</d>"
+        )
         return releases
-
-    if "Radarr" in request_from:
+    elif search_category == SEARCH_CAT_MOVIES:
         valid_type = "movie"
-    else:
+    elif search_category == SEARCH_CAT_SHOWS:
         valid_type = "series"
+    else:
+        warn(f"Unknown search category: {search_category}")
+        return releases
 
     imdb_id = shared_state.is_imdb_id(search_string)
     if imdb_id:

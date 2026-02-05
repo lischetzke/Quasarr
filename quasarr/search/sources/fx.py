@@ -10,7 +10,11 @@ from bs4 import BeautifulSoup
 
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.log import debug, info, trace, warn
-from quasarr.providers.utils import generate_download_link
+from quasarr.providers.utils import (
+    SEARCH_CAT_BOOKS,
+    SEARCH_CAT_MOVIES,
+    generate_download_link,
+)
 
 hostname = "fx"
 
@@ -25,16 +29,20 @@ def extract_size(text):
         raise ValueError(f"Invalid size format: {text}")
 
 
-def fx_feed(shared_state, start_time, request_from):
+def fx_feed(shared_state, start_time, search_category):
     releases = []
 
     fx = shared_state.values["config"]("Hostnames").get(hostname.lower())
 
-    if not "arr" in request_from.lower():
+    if search_category == SEARCH_CAT_BOOKS:
         debug(
-            f'<d>Skipping {request_from} search on "{hostname.upper()}" (unsupported media type)!</d>'
+            f"<d>Skipping <y>{search_category}</y> on <g>{hostname.upper()}</g> (category not supported)!</d>"
         )
         return releases
+    elif search_category == SEARCH_CAT_MOVIES:
+        pass
+    else:
+        pass
 
     password = fx.split(".")[0]
     url = f"https://{fx}/"
@@ -140,7 +148,7 @@ def fx_feed(shared_state, start_time, request_from):
 def fx_search(
     shared_state,
     start_time,
-    request_from,
+    search_category,
     search_string,
     season=None,
     episode=None,
@@ -149,11 +157,15 @@ def fx_search(
     fx = shared_state.values["config"]("Hostnames").get(hostname.lower())
     password = fx.split(".")[0]
 
-    if not "arr" in request_from.lower():
+    if search_category == SEARCH_CAT_BOOKS:
         debug(
-            f'<d>Skipping {request_from} search on "{hostname.upper()}" (unsupported media type)!</d>'
+            f"<d>Skipping <y>{search_category}</y> on <g>{hostname.upper()}</g> (category not supported)!</d>"
         )
         return releases
+    elif search_category == SEARCH_CAT_MOVIES:
+        pass
+    else:
+        pass
 
     if search_string != "":
         imdb_id = shared_state.is_imdb_id(search_string)
@@ -206,7 +218,7 @@ def fx_search(
                         title = shared_state.sanitize_title(title.text)
 
                         if not shared_state.is_valid_release(
-                            title, request_from, search_string, season, episode
+                            title, search_category, search_string, season, episode
                         ):
                             continue
 

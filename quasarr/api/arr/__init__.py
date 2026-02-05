@@ -16,24 +16,17 @@ from quasarr.downloads.packages import delete_package, get_packages
 from quasarr.providers import shared_state
 from quasarr.providers.auth import require_api_key
 from quasarr.providers.log import debug, error, info, warn
-from quasarr.providers.utils import determine_category, parse_payload
+from quasarr.providers.utils import (
+    determine_category,
+    determine_search_category,
+    parse_payload,
+)
 from quasarr.providers.version import get_version
 from quasarr.search import get_search_results
 from quasarr.storage.categories import get_categories
 
 
 def setup_arr_routes(app):
-    def check_user_agent():
-        user_agent = request.headers.get("User-Agent") or ""
-        if not any(
-            tool in user_agent.lower()
-            for tool in ["radarr", "sonarr", "lazylibrarian", "python-requests"]
-        ):
-            msg = f"Unsupported User-Agent: {user_agent}. Quasarr as a compatibility layer must be called by Radarr, Sonarr or LazyLibrarian directly."
-            info(msg)
-            abort(406, msg)
-        return user_agent
-
     @app.get("/download/")
     def fake_nzb_file():
         payload = request.query.payload
@@ -51,7 +44,7 @@ def setup_arr_routes(app):
     @app.post("/api")
     @require_api_key
     def download_fake_nzb_file():
-        request_from = check_user_agent()
+        request_from = request.headers.get("User-Agent") or ""
         downloads = request.files.getall("name")
         nzo_ids = []  # naming structure for package IDs expected in newznab
 
@@ -70,13 +63,13 @@ def setup_arr_routes(app):
 
             # Extract category from request, SABnzbd addfile expects &cat=...
             category_param = getattr(request.query, "cat", None)
-            category = determine_category(request_from, category_param)
+            download_category = determine_category(request_from, category_param)
 
             info(f"Attempting download for <y>{title}</y>")
             downloaded = download(
                 shared_state,
                 request_from,
-                category,
+                download_category,
                 title,
                 url,
                 size_mb,
@@ -102,7 +95,7 @@ def setup_arr_routes(app):
     @app.get("/api")
     @require_api_key
     def quasarr_api():
-        request_from = check_user_agent()
+        request_from = request.headers.get("User-Agent") or ""
 
         api_type = (
             "arr_download_client"
@@ -151,7 +144,7 @@ def setup_arr_routes(app):
 
                     # Extract category from request, SABnzbd addurl expects &cat=...
                     category_param = getattr(request.query, "cat", None)
-                    category = determine_category(request_from, category_param)
+                    download_category = determine_category(request_from, category_param)
 
                     payload = False
                     try:
@@ -174,7 +167,7 @@ def setup_arr_routes(app):
                     downloaded = download(
                         shared_state,
                         request_from,
-                        category,
+                        download_category,
                         parsed_payload["title"],
                         parsed_payload["url"],
                         parsed_payload["size_mb"],
@@ -249,8 +242,8 @@ def setup_arr_routes(app):
                                     <movie-search available="yes" supportedParams="imdbid" />
                                   </searching>
                                   <categories>
-                                    <category id="5000" name="TV" />
                                     <category id="2000" name="Movies" />
+                                    <category id="5000" name="TV" />
                                     <category id="7000" name="Books">
                                   </category>
                                   </categories>
@@ -270,12 +263,33 @@ def setup_arr_routes(app):
                         debug(f"Error parsing limit parameter: {e}")
                         limit = 1000
 
+                    # Extract category from request, fallback to user agent based
+                    cat_param = getattr(request.query, "cat", None)
+                    if cat_param:
+                        try:
+                            # Handle comma-separated categories (e.g. "5000,5030,5040")
+                            # We just take the first one or check if any match our main categories
+                            cats = [int(c) for c in cat_param.split(",")]
+                            if 2000 in cats:
+                                search_category = 2000
+                            elif 7000 in cats:
+                                search_category = 7000
+                            else:
+                                search_category = (
+                                    5000  # Default to TV if ambiguous or 5000 present
+                                )
+                        except ValueError:
+                            search_category = determine_search_category(request_from)
+                    else:
+                        search_category = determine_search_category(request_from)
+
                     if mode == "movie":
                         # supported params: imdbid
                         imdb_id = getattr(request.query, "imdbid", "")
                         releases = get_search_results(
                             shared_state,
                             request_from,
+                            search_category,
                             imdb_id=imdb_id,
                             offset=offset,
                             limit=limit,
@@ -289,6 +303,7 @@ def setup_arr_routes(app):
                         releases = get_search_results(
                             shared_state,
                             request_from,
+                            search_category,
                             imdb_id=imdb_id,
                             season=season,
                             episode=episode,
@@ -303,6 +318,7 @@ def setup_arr_routes(app):
                         releases = get_search_results(
                             shared_state,
                             request_from,
+                            search_category,
                             search_phrase=search_phrase,
                             offset=offset,
                             limit=limit,
@@ -314,6 +330,7 @@ def setup_arr_routes(app):
                             releases = get_search_results(
                                 shared_state,
                                 request_from,
+                                search_category,
                                 search_phrase=search_phrase,
                                 offset=offset,
                                 limit=limit,

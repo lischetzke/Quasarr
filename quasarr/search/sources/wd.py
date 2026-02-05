@@ -14,8 +14,14 @@ from bs4 import BeautifulSoup
 from quasarr.providers.cloudflare import flaresolverr_get, is_cloudflare_challenge
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.imdb_metadata import get_localized_title, get_year
-from quasarr.providers.log import debug, error, info
-from quasarr.providers.utils import generate_download_link, is_flaresolverr_available
+from quasarr.providers.log import debug, error, info, warn
+from quasarr.providers.utils import (
+    SEARCH_CAT_BOOKS,
+    SEARCH_CAT_MOVIES,
+    SEARCH_CAT_SHOWS,
+    generate_download_link,
+    is_flaresolverr_available,
+)
 
 hostname = "wd"
 
@@ -51,7 +57,7 @@ def _parse_rows(
     shared_state,
     url_base,
     password,
-    request_from=None,
+    search_category=None,
     search_string=None,
     season=None,
     episode=None,
@@ -92,11 +98,11 @@ def _parse_rows(
             # search context contains non-video releases (ebooks, games, etc.)
             if is_search:
                 if not shared_state.is_valid_release(
-                    title, request_from, search_string, season, episode
+                    title, search_category, search_string, season, episode
                 ):
                     continue
 
-                if "lazylibrarian" in request_from.lower():
+                if search_category == SEARCH_CAT_BOOKS:
                     # lazylibrarian can only detect specific date formats / issue numbering for magazines
                     title = shared_state.normalize_magazine_title(title)
                 else:
@@ -149,16 +155,19 @@ def _parse_rows(
     return releases
 
 
-def wd_feed(shared_state, start_time, request_from):
+def wd_feed(shared_state, start_time, search_category):
     wd = shared_state.values["config"]("Hostnames").get(hostname.lower())
     password = wd
 
-    if "lazylibrarian" in request_from.lower():
+    if search_category == SEARCH_CAT_BOOKS:
         feed_type = "Ebooks"
-    elif "radarr" in request_from.lower():
+    elif search_category == SEARCH_CAT_MOVIES:
         feed_type = "Movies"
-    else:
+    elif search_category == SEARCH_CAT_SHOWS:
         feed_type = "Serien"
+    else:
+        warn(f"Unknown search category: {search_category}")
+        return []
 
     url = f"https://{wd}/{feed_type}"
     headers = {"User-Agent": shared_state.values["user_agent"]}
@@ -209,7 +218,7 @@ def wd_feed(shared_state, start_time, request_from):
 def wd_search(
     shared_state,
     start_time,
-    request_from,
+    search_category,
     search_string,
     season=None,
     episode=None,
@@ -217,6 +226,12 @@ def wd_search(
     releases = []
     wd = shared_state.values["config"]("Hostnames").get(hostname.lower())
     password = wd
+
+    if search_category == SEARCH_CAT_BOOKS:
+        debug(
+            f"<d>Skipping <y>{search_category}</y> on <g>{hostname.upper()}</g> (category not supported)!</d>"
+        )
+        return releases
 
     imdb_id = shared_state.is_imdb_id(search_string)
     if imdb_id:
@@ -267,7 +282,7 @@ def wd_search(
             shared_state,
             wd,
             password,
-            request_from=request_from,
+            search_category=search_category,
             search_string=search_string,
             season=season,
             episode=episode,

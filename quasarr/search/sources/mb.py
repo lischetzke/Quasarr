@@ -12,7 +12,12 @@ from bs4 import BeautifulSoup
 
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.log import debug, error, warn
-from quasarr.providers.utils import generate_download_link
+from quasarr.providers.utils import (
+    SEARCH_CAT_BOOKS,
+    SEARCH_CAT_MOVIES,
+    SEARCH_CAT_SHOWS,
+    generate_download_link,
+)
 
 hostname = "mb"
 XXX_REGEX = re.compile(r"\.xxx\.", re.I)
@@ -54,7 +59,7 @@ def _parse_posts(
     shared_state,
     password,
     is_search=False,
-    request_from=None,
+    search_category=None,
     search_string=None,
     season=None,
     episode=None,
@@ -88,7 +93,7 @@ def _parse_posts(
 
             if is_search:
                 if not shared_state.is_valid_release(
-                    title, request_from, search_string, season, episode
+                    title, search_category, search_string, season, episode
                 ):
                     continue
 
@@ -157,17 +162,24 @@ def _parse_posts(
     return releases
 
 
-def mb_feed(shared_state, start_time, request_from):
+def mb_feed(shared_state, start_time, search_category):
     mb = shared_state.values["config"]("Hostnames").get(hostname)
 
-    if not "arr" in request_from.lower():
+    if search_category == SEARCH_CAT_BOOKS:
         debug(
-            f'<d>Skipping {request_from} search on "{hostname.upper()}" (unsupported media type)!</d>'
+            f"<d>Skipping <y>{search_category}</y> on <g>{hostname.upper()}</g> (category not supported)!</d>"
         )
         return []
 
     password = mb
-    section = "neuerscheinungen" if "Radarr" in request_from else "serie"
+    if search_category == SEARCH_CAT_MOVIES:
+        section = "neuerscheinungen"
+    elif search_category == SEARCH_CAT_SHOWS:
+        section = "serie"
+    else:
+        warn(f"Unknown search category: {search_category}")
+        return []
+
     url = f"https://{mb}/category/{section}/"
     headers = {"User-Agent": shared_state.values["user_agent"]}
     try:
@@ -191,16 +203,16 @@ def mb_feed(shared_state, start_time, request_from):
 def mb_search(
     shared_state,
     start_time,
-    request_from,
+    search_category,
     search_string,
     season=None,
     episode=None,
 ):
     mb = shared_state.values["config"]("Hostnames").get(hostname)
 
-    if not "arr" in request_from.lower():
+    if search_category == SEARCH_CAT_BOOKS:
         debug(
-            f'<d>Skipping {request_from} search on "{hostname.upper()}" (unsupported media type)!</d>'
+            f"<d>Skipping <y>{search_category}</y> on <g>{hostname.upper()}</g> (category not supported)!</d>"
         )
         return []
 
@@ -221,7 +233,7 @@ def mb_search(
             shared_state,
             password,
             is_search=True,
-            request_from=request_from,
+            search_category=search_category,
             search_string=search_string,
             season=season,
             episode=episode,

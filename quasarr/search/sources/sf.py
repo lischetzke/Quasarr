@@ -12,7 +12,7 @@ import requests
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.imdb_metadata import get_localized_title
 from quasarr.providers.log import debug, info, trace, warn
-from quasarr.providers.utils import generate_download_link
+from quasarr.providers.utils import SEARCH_CAT_SHOWS, generate_download_link
 
 hostname = "sf"
 
@@ -94,14 +94,14 @@ def parse_mirrors(base_url, entry):
     return mirrors
 
 
-def sf_feed(shared_state, start_time, request_from):
+def sf_feed(shared_state, start_time, search_category):
     releases = []
     sf = shared_state.values["config"]("Hostnames").get(hostname.lower())
     password = check(sf)
 
-    if not "sonarr" in request_from.lower():
+    if search_category != SEARCH_CAT_SHOWS:  # Only TV supported
         debug(
-            f'<d>Skipping {request_from} search on "{hostname.upper()}" (unsupported media type)!</d>'
+            f"<d>Skipping <y>{search_category}</y> on <g>{hostname.upper()}</g> (category not supported)!</d>"
         )
         return releases
 
@@ -208,7 +208,7 @@ def extract_size(text):
 def sf_search(
     shared_state,
     start_time,
-    request_from,
+    search_category,
     search_string,
     season=None,
     episode=None,
@@ -225,9 +225,9 @@ def sf_search(
             return releases
         search_string = html.unescape(search_string)
 
-    if not "sonarr" in request_from.lower():
+    if search_category != SEARCH_CAT_SHOWS:  # Only TV supported
         debug(
-            f'<d>Skipping {request_from} search on "{hostname.upper()}" (unsupported media type)!</d>'
+            f"<d>Skipping <y>{search_category}</y> on <g>{hostname.upper()}</g> (category not supported)!</d>"
         )
         return releases
 
@@ -403,7 +403,7 @@ def sf_search(
 
                 # check down here on purpose, because the title may be modified at episode stage
                 if not shared_state.is_valid_release(
-                    title, request_from, search_string, season, episode
+                    title, search_category, search_string, season, episode
                 ):
                     continue
 

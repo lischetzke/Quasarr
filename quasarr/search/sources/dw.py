@@ -11,7 +11,12 @@ from bs4 import BeautifulSoup
 
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.log import debug, info, trace, warn
-from quasarr.providers.utils import generate_download_link
+from quasarr.providers.utils import (
+    SEARCH_CAT_BOOKS,
+    SEARCH_CAT_MOVIES,
+    SEARCH_CAT_SHOWS,
+    generate_download_link,
+)
 
 hostname = "dw"
 
@@ -76,21 +81,24 @@ def extract_size(text):
     raise ValueError(f"Invalid size format: {text}")
 
 
-def dw_feed(shared_state, start_time, request_from):
+def dw_feed(shared_state, start_time, search_category):
     releases = []
     dw = shared_state.values["config"]("Hostnames").get(hostname.lower())
     password = dw
 
-    if not "arr" in request_from.lower():
+    if search_category == SEARCH_CAT_BOOKS:
         debug(
-            f'<d>Skipping {request_from} search on "{hostname.upper()}" (unsupported media type)!</d>'
+            f"<d>Skipping <y>{search_category}</y> on <g>{hostname.upper()}</g> (category not supported)!</d>"
         )
         return releases
 
-    if "Radarr" in request_from:
+    if search_category == SEARCH_CAT_MOVIES:
         feed_type = "videos/filme/"
-    else:
+    elif search_category == SEARCH_CAT_SHOWS:
         feed_type = "videos/serien/"
+    else:
+        warn(f"Unknown search category: {search_category}")
+        return releases
 
     url = f"https://{dw}/{feed_type}"
     headers = {
@@ -170,7 +178,7 @@ def dw_feed(shared_state, start_time, request_from):
 def dw_search(
     shared_state,
     start_time,
-    request_from,
+    search_category,
     search_string,
     season=None,
     episode=None,
@@ -179,16 +187,19 @@ def dw_search(
     dw = shared_state.values["config"]("Hostnames").get(hostname.lower())
     password = dw
 
-    if not "arr" in request_from.lower():
+    if search_category == SEARCH_CAT_BOOKS:
         debug(
-            f'<d>Skipping {request_from} search on "{hostname.upper()}" (unsupported media type)!</d>'
+            f"<d>Skipping <y>{search_category}</y> on <g>{hostname.upper()}</g> (category not supported)!</d>"
         )
         return releases
 
-    if "Radarr" in request_from:
+    if search_category == SEARCH_CAT_MOVIES:
         search_type = "videocategory=filme"
-    else:
+    elif search_category == SEARCH_CAT_SHOWS:
         search_type = "videocategory=serien"
+    else:
+        warn(f"Unknown search category: {search_category}")
+        return releases
 
     url = f"https://{dw}/?s={search_string}&{search_type}"
     headers = {
@@ -216,7 +227,7 @@ def dw_search(
                 title = result.a.text.strip()
 
                 if not shared_state.is_valid_release(
-                    title, request_from, search_string, season, episode
+                    title, search_category, search_string, season, episode
                 ):
                     continue
 

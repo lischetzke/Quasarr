@@ -530,25 +530,25 @@ class QuasarrClient:
     def get_feed(self, feed_type):
         if feed_type == "movie":
             return self._parse_xml(
-                self._get({"t": "movie", "imdbid": ""}, USER_AGENT_RADARR)
+                self._get({"t": "movie", "cat": "2000"}, USER_AGENT_RADARR)
             )
         elif feed_type == "tv":
             return self._parse_xml(
-                self._get({"t": "tvsearch", "imdbid": ""}, USER_AGENT_SONARR)
+                self._get({"t": "tvsearch", "cat": "5000"}, USER_AGENT_SONARR)
             )
         elif feed_type == "doc":
             return self._parse_xml(
-                self._get({"t": "book", "author": "", "title": ""}, USER_AGENT_LL)
+                self._get({"t": "book", "cat": "7000"}, USER_AGENT_LL)
             )
         return []
 
     def search_movie(self, imdb_id):
         return self._fetch_all_results(
-            {"t": "movie", "imdbid": imdb_id}, USER_AGENT_RADARR
+            {"t": "movie", "imdbid": imdb_id, "cat": "2000"}, USER_AGENT_RADARR
         )
 
     def search_tv(self, imdb_id, season=None, ep=None):
-        params = {"t": "tvsearch", "imdbid": imdb_id}
+        params = {"t": "tvsearch", "imdbid": imdb_id, "cat": "5000"}
         if season:
             params["season"] = season
         if ep:
@@ -556,7 +556,9 @@ class QuasarrClient:
         return self._fetch_all_results(params, USER_AGENT_SONARR)
 
     def search_doc(self, query):
-        return self._fetch_all_results({"t": "book", "title": query}, USER_AGENT_LL)
+        return self._fetch_all_results(
+            {"t": "book", "title": query, "cat": "7000"}, USER_AGENT_LL
+        )
 
     def _fetch_all_results(self, base_params, user_agent):
         all_items = []
@@ -594,8 +596,19 @@ class QuasarrClient:
         except:
             return []
 
-    def add_download(self, title, link):
-        resp = self._get({"mode": "addurl", "name": link}, USER_AGENT_RADARR)
+    def add_download(self, title, link, category=None):
+        params = {"mode": "addurl", "name": link}
+        if category:
+            params["cat"] = category
+
+        # Use appropriate User-Agent if category is known
+        user_agent = USER_AGENT_RADARR
+        if category == "tv":
+            user_agent = USER_AGENT_SONARR
+        elif category == "docs":
+            user_agent = USER_AGENT_LL
+
+        resp = self._get(params, user_agent)
         return resp.json().get("status", False) if resp else False
 
     def delete_download(self, nzo_id):
@@ -751,7 +764,7 @@ def show_downloads(client):
                 time.sleep(1)
 
 
-def handle_results_pager(client, results, duration=None):
+def handle_results_pager(client, results, category=None, duration=None):
     clear_screen()
     if not results:
         console.print(
@@ -785,7 +798,11 @@ def handle_results_pager(client, results, duration=None):
         item, last_idx = result
 
         success = LoadingScreen(
-            f"Adding: {item['title']}", client.add_download, item["title"], item["link"]
+            f"Adding: {item['title']}",
+            client.add_download,
+            item["title"],
+            item["link"],
+            category,
         ).run()
 
         clear_screen()
@@ -822,7 +839,10 @@ def handle_feeds_menu(client):
         clear_screen()
 
         if results is not None:
-            handle_results_pager(client, results, time.time() - start)
+            cat_map = {"movie": "movies", "tv": "tv", "doc": "docs"}
+            handle_results_pager(
+                client, results, cat_map.get(choice), time.time() - start
+            )
 
 
 def handle_searches_menu(client):
@@ -854,7 +874,7 @@ def handle_searches_menu(client):
                 ).run()
                 clear_screen()
                 if res is not None:
-                    handle_results_pager(client, res, time.time() - start)
+                    handle_results_pager(client, res, "movies", time.time() - start)
         elif choice == "tv":
             q = TextInput(
                 "TV: IMDb ID", default=defaults["tv"], validator=validate_imdb
@@ -873,7 +893,7 @@ def handle_searches_menu(client):
                         ).run()
                         clear_screen()
                         if res is not None:
-                            handle_results_pager(client, res, time.time() - start)
+                            handle_results_pager(client, res, "tv", time.time() - start)
         elif choice == "doc":
             q = TextInput("Doc: Query", default=defaults["doc"]).run()
             if q:
@@ -882,7 +902,7 @@ def handle_searches_menu(client):
                 res = LoadingScreen(f"Searching Doc: {q}", client.search_doc, q).run()
                 clear_screen()
                 if res is not None:
-                    handle_results_pager(client, res, time.time() - start)
+                    handle_results_pager(client, res, "docs", time.time() - start)
 
 
 def run_cli():

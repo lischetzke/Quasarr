@@ -17,7 +17,12 @@ from quasarr.providers.sessions.dl import (
     invalidate_session,
     retrieve_and_validate_session,
 )
-from quasarr.providers.utils import generate_download_link
+from quasarr.providers.utils import (
+    SEARCH_CAT_BOOKS,
+    SEARCH_CAT_MOVIES,
+    SEARCH_CAT_SHOWS,
+    generate_download_link,
+)
 
 hostname = "dl"
 
@@ -43,9 +48,9 @@ def convert_to_rss_date(iso_date_str):
         return datetime.now().strftime("%a, %d %b %Y %H:%M:%S +0000")
 
 
-def normalize_title_for_sonarr(title):
+def normalize_title_for_arr(title):
     """
-    Normalize title for Sonarr by replacing spaces with dots.
+    Normalize title for *arr by replacing spaces with dots.
     """
     title = title.replace(" ", ".")
     title = re.sub(r"\s*-\s*", "-", title)
@@ -55,19 +60,22 @@ def normalize_title_for_sonarr(title):
     return title
 
 
-def dl_feed(shared_state, start_time, request_from):
+def dl_feed(shared_state, start_time, search_category):
     """
     Parse the correct forum and return releases.
     """
     releases = []
     host = shared_state.values["config"]("Hostnames").get(hostname)
 
-    if "lazylibrarian" in request_from.lower():
+    if search_category == SEARCH_CAT_BOOKS:
         forum = "magazine-zeitschriften.72"
-    elif "radarr" in request_from.lower():
+    elif search_category == SEARCH_CAT_MOVIES:
         forum = "hd.8"
-    else:
+    elif search_category == SEARCH_CAT_SHOWS:
         forum = "hd.14"
+    else:
+        warn(f"Unknown search category: {search_category}")
+        return releases
 
     if not host:
         debug("hostname not configured")
@@ -104,7 +112,7 @@ def dl_feed(shared_state, start_time, request_from):
                     continue
 
                 title = unescape(title)
-                title = normalize_title_for_sonarr(title)
+                title = normalize_title_for_arr(title)
 
                 # Extract thread URL
                 thread_url = title_elem.get("href")
@@ -192,7 +200,7 @@ def _search_single_page(
     search_id,
     page_num,
     imdb_id,
-    request_from,
+    search_category,
     season,
     episode,
 ):
@@ -258,10 +266,10 @@ def _search_single_page(
 
                 title = re.sub(r"\s+", " ", title)
                 title = unescape(title)
-                title_normalized = normalize_title_for_sonarr(title)
+                title_normalized = normalize_title_for_arr(title)
 
                 # Filter: Skip if no resolution or codec info (unless LazyLibrarian)
-                if "lazylibrarian" not in request_from.lower():
+                if search_category != SEARCH_CAT_BOOKS:
                     if not (
                         RESOLUTION_REGEX.search(title_normalized)
                         or CODEC_REGEX.search(title_normalized)
@@ -280,7 +288,7 @@ def _search_single_page(
                     thread_url = f"https://www.{host}{thread_url}"
 
                 if not shared_state.is_valid_release(
-                    title_normalized, request_from, search_string, season, episode
+                    title_normalized, search_category, search_string, season, episode
                 ):
                     continue
 
@@ -333,7 +341,7 @@ def _search_single_page(
 def dl_search(
     shared_state,
     start_time,
-    request_from,
+    search_category,
     search_string,
     season=None,
     episode=None,
@@ -385,7 +393,7 @@ def dl_search(
                 search_id,
                 page_num,
                 imdb_id,
-                request_from,
+                search_category,
                 season,
                 episode,
             )
@@ -421,7 +429,9 @@ def dl_search(
         )
         invalidate_session(shared_state)
 
-    trace(f"FINAL - Found {len(releases)} valid releases - providing to {request_from}")
+    trace(
+        f"FINAL - Found {len(releases)} valid releases - providing to {search_category}"
+    )
 
     elapsed = time.time() - start_time
     debug(f"Time taken: {elapsed:.2f}s")

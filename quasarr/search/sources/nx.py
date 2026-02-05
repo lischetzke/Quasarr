@@ -10,22 +10,30 @@ import requests
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.imdb_metadata import get_localized_title, get_year
 from quasarr.providers.log import debug, info, trace, warn
-from quasarr.providers.utils import generate_download_link
+from quasarr.providers.utils import (
+    SEARCH_CAT_BOOKS,
+    SEARCH_CAT_MOVIES,
+    SEARCH_CAT_SHOWS,
+    generate_download_link,
+)
 
 hostname = "nx"
 
 
-def nx_feed(shared_state, start_time, request_from):
+def nx_feed(shared_state, start_time, search_category):
     releases = []
     nx = shared_state.values["config"]("Hostnames").get(hostname.lower())
     password = nx
 
-    if "lazylibrarian" in request_from.lower():
+    if search_category == SEARCH_CAT_BOOKS:
         stype = "ebook"
-    elif "radarr" in request_from.lower():
+    elif search_category == SEARCH_CAT_MOVIES:
         stype = "movie"
-    else:
+    elif search_category == SEARCH_CAT_SHOWS:
         stype = "episode"
+    else:
+        warn(f"Unknown search category: {search_category}")
+        return releases
 
     url = f"https://{nx}/api/frontend/releases/category/{stype}/tag/all/1/51?sort=date"
     headers = {
@@ -50,7 +58,7 @@ def nx_feed(shared_state, start_time, request_from):
 
             if title:
                 try:
-                    if "lazylibrarian" in request_from.lower():
+                    if search_category == SEARCH_CAT_BOOKS:
                         # lazylibrarian can only detect specific date formats / issue numbering for magazines
                         title = shared_state.normalize_magazine_title(title)
 
@@ -112,7 +120,7 @@ def nx_feed(shared_state, start_time, request_from):
 def nx_search(
     shared_state,
     start_time,
-    request_from,
+    search_category,
     search_string,
     season=None,
     episode=None,
@@ -125,12 +133,15 @@ def nx_search(
     nx = shared_state.values["config"]("Hostnames").get(hostname.lower())
     password = nx
 
-    if "lazylibrarian" in request_from.lower():
+    if search_category == SEARCH_CAT_BOOKS:
         valid_type = "ebook"
-    elif "radarr" in request_from.lower():
+    elif search_category == SEARCH_CAT_MOVIES:
         valid_type = "movie"
-    else:
+    elif search_category == SEARCH_CAT_SHOWS:
         valid_type = "episode"
+    else:
+        warn(f"Unknown search category: {search_category}")
+        return releases
 
     imdb_id = shared_state.is_imdb_id(search_string)
     if imdb_id:
@@ -166,11 +177,11 @@ def nx_search(
                 title = item["name"]
                 if title:
                     if not shared_state.is_valid_release(
-                        title, request_from, search_string, season, episode
+                        title, search_category, search_string, season, episode
                     ):
                         continue
 
-                    if "lazylibrarian" in request_from.lower():
+                    if search_category == SEARCH_CAT_BOOKS:
                         # lazylibrarian can only detect specific date formats / issue numbering for magazines
                         title = shared_state.normalize_magazine_title(title)
 

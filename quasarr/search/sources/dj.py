@@ -13,7 +13,7 @@ from bs4 import BeautifulSoup
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.imdb_metadata import get_localized_title
 from quasarr.providers.log import debug, error, trace, warn
-from quasarr.providers.utils import generate_download_link
+from quasarr.providers.utils import SEARCH_CAT_SHOWS, generate_download_link
 
 hostname = "dj"
 
@@ -27,12 +27,12 @@ def convert_to_rss_date(date_str):
         return ""
 
 
-def dj_feed(shared_state, start_time, request_from):
+def dj_feed(shared_state, start_time, search_category):
     releases = []
 
-    if "sonarr" not in request_from.lower():
+    if search_category != SEARCH_CAT_SHOWS:  # Only TV supported
         debug(
-            f'<d>Skipping {request_from} search on "{hostname.upper()}" (unsupported media type)!</d>'
+            f"<d>Skipping <y>{search_category}</y> on <g>{hostname.upper()}</g> (category not supported)!</d>"
         )
         return releases
 
@@ -118,21 +118,21 @@ def dj_feed(shared_state, start_time, request_from):
 def dj_search(
     shared_state,
     start_time,
-    request_from,
+    search_category,
     search_string,
     season=None,
     episode=None,
 ):
     releases = []
 
-    if "sonarr" not in request_from.lower():
+    if search_category != SEARCH_CAT_SHOWS:  # Only TV supported
         debug(
-            f'<d>Skipping {request_from} search on "{hostname.upper()}" (unsupported media type)!</d>'
+            f"<d>Skipping <y>{search_category}</y> on <g>{hostname.upper()}</g> (category not supported)!</d>"
         )
         return releases
 
-    sj_host = shared_state.values["config"]("Hostnames").get(hostname)
-    password = sj_host
+    dj_host = shared_state.values["config"]("Hostnames").get(hostname)
+    password = dj_host
 
     imdb_id = shared_state.is_imdb_id(search_string)
     if not imdb_id:
@@ -145,7 +145,7 @@ def dj_search(
         return releases
 
     headers = {"User-Agent": shared_state.values["user_agent"]}
-    search_url = f"https://{sj_host}/serie/search"
+    search_url = f"https://{dj_host}/serie/search"
     params = {"q": localized_title}
 
     try:
@@ -180,7 +180,7 @@ def dj_search(
                 f"Matched search string '{localized_title}' with result '{result_title}'"
             )
 
-            series_url = f"https://{sj_host}{result['href']}"
+            series_url = f"https://{dj_host}{result['href']}"
 
             r = requests.get(series_url, headers=headers, timeout=10)
             media_id_match = re.search(r'data-mediaid="([^"]+)"', r.text)
@@ -189,7 +189,7 @@ def dj_search(
                 continue
 
             media_id = media_id_match.group(1)
-            api_url = f"https://{sj_host}/api/media/{media_id}/releases"
+            api_url = f"https://{dj_host}/api/media/{media_id}/releases"
 
             r = requests.get(api_url, headers=headers, timeout=10)
             r.raise_for_status()
@@ -202,7 +202,7 @@ def dj_search(
                         continue
 
                     if not shared_state.is_valid_release(
-                        title, request_from, search_string, season, episode
+                        title, search_category, search_string, season, episode
                     ):
                         continue
 

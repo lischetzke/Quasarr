@@ -15,7 +15,12 @@ from bs4 import BeautifulSoup
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.imdb_metadata import get_localized_title
 from quasarr.providers.log import debug, error, info, warn
-from quasarr.providers.utils import generate_download_link
+from quasarr.providers.utils import (
+    SEARCH_CAT_BOOKS,
+    SEARCH_CAT_MOVIES,
+    SEARCH_CAT_SHOWS,
+    generate_download_link,
+)
 
 hostname = "dt"
 
@@ -55,17 +60,20 @@ def parse_published_datetime(article):
     return dt.isoformat()
 
 
-def dt_feed(shared_state, start_time, request_from):
+def dt_feed(shared_state, start_time, search_category):
     releases = []
     dt = shared_state.values["config"]("Hostnames").get(hostname.lower())
     password = dt
 
-    if "lazylibrarian" in request_from.lower():
+    if search_category == SEARCH_CAT_BOOKS:
         feed_type = "learning/"
-    elif "radarr" in request_from.lower():
+    elif search_category == SEARCH_CAT_MOVIES:
         feed_type = "media/videos/"
-    else:
+    elif search_category == SEARCH_CAT_SHOWS:
         feed_type = "media/tv-show/"
+    else:
+        warn(f"Unknown search category: {search_category}")
+        return releases
 
     url = f"https://{dt}/{feed_type}"
     headers = {"User-Agent": shared_state.values["user_agent"]}
@@ -91,7 +99,7 @@ def dt_feed(shared_state, start_time, request_from):
                     .replace(")", "")
                 )
 
-                if "lazylibrarian" in request_from.lower():
+                if search_category == SEARCH_CAT_BOOKS:
                     # lazylibrarian can only detect specific date formats / issue numbering for magazines
                     title = shared_state.normalize_magazine_title(title)
 
@@ -163,7 +171,7 @@ def dt_feed(shared_state, start_time, request_from):
 def dt_search(
     shared_state,
     start_time,
-    request_from,
+    search_category,
     search_string,
     season=None,
     episode=None,
@@ -172,12 +180,15 @@ def dt_search(
     dt = shared_state.values["config"]("Hostnames").get(hostname.lower())
     password = dt
 
-    if "lazylibrarian" in request_from.lower():
+    if search_category == SEARCH_CAT_BOOKS:
         cat_id = "100"
-    elif "radarr" in request_from.lower():
+    elif search_category == SEARCH_CAT_MOVIES:
         cat_id = "9"
-    else:
+    elif search_category == SEARCH_CAT_SHOWS:
         cat_id = "64"
+    else:
+        warn(f"Unknown search category: {search_category}")
+        return releases
 
     try:
         imdb_id = shared_state.is_imdb_id(search_string)
@@ -230,11 +241,11 @@ def dt_search(
                 )
 
                 if not shared_state.is_valid_release(
-                    title, request_from, search_string, season, episode
+                    title, search_category, search_string, season, episode
                 ):
                     continue
 
-                if "lazylibrarian" in request_from.lower():
+                if search_category == SEARCH_CAT_BOOKS:
                     # lazylibrarian can only detect specific date formats / issue numbering for magazines
                     title = shared_state.normalize_magazine_title(title)
 
