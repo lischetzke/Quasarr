@@ -369,7 +369,7 @@ def setup_packages_routes(app):
         back_btn = render_button("Back", "secondary", {"onclick": "location.href='/'"})
 
         packages_html = f'''
-            <h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+            <h1><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
             <h2>Packages</h2>
 
             {status_message}

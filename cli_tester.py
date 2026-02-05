@@ -485,6 +485,36 @@ class TextInput:
                 return None
 
 
+def press_any_key(message="Press any key to continue..."):
+    kb = KeyBindings()
+
+    def exit_app(event):
+        event.app.exit()
+
+    @kb.add("<any>")
+    def _(event):
+        exit_app(event)
+
+    for key in [
+        Keys.Up,
+        Keys.Down,
+        Keys.Left,
+        Keys.Right,
+        Keys.Enter,
+        Keys.Backspace,
+        Keys.Escape,
+        Keys.Tab,
+    ]:
+        kb.add(key)(exit_app)
+
+    text_control = FormattedTextControl(
+        text=HTML(f"<grey>{message}</grey>"), show_cursor=False
+    )
+    layout = Layout(HSplit([Window(content=text_control, height=1)]))
+    app = Application(layout=layout, key_bindings=kb, full_screen=False)
+    app.run()
+
+
 def validate_imdb(text):
     if text is None:
         return False
@@ -674,7 +704,7 @@ def show_downloads(client):
             console.print(
                 Panel("No active downloads.", title="Downloads", border_style="blue")
             )
-            questionary.press_any_key_to_continue().ask()
+            press_any_key()
             clear_screen()
             return
 
@@ -770,7 +800,7 @@ def handle_results_pager(client, results, category=None, duration=None):
         console.print(
             Panel("[yellow]No results found.[/yellow]", border_style="yellow")
         )
-        questionary.press_any_key_to_continue().ask()
+        press_any_key()
         clear_screen()
         return
 

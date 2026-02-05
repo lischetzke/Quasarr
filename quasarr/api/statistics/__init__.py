@@ -14,7 +14,7 @@ def setup_statistics(app, shared_state):
         stats = stats_helper.get_stats()
 
         stats_html = f"""
-        <h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+        <h1><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
         <h2>Statistics</h2>
         <div class="stats-container">
             <h3>📊 Overview</h3>

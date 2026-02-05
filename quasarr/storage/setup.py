@@ -88,7 +88,7 @@ def render_reconnect_success(message, countdown_seconds=3):
         </script>
     """
 
-    content = f'''<h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+    content = f'''<h1><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
     <h2>✅ Success</h2>
     <p>{message}</p>
     {button_html}
@@ -194,7 +194,7 @@ def _escape_js_for_html_attr(s):
 def hostname_form_html(shared_state, message, show_skip_management=False):
     hostname_fields = """
     <label for="{id}" onclick="showStatusDetail(\'{id}\', \'{label}\', \'{status}\', \'{error_details_for_modal}\', \'{timestamp}\', \'{operation}\', \'{url}\', \'{user}\', \'{password}\', {supports_login})" 
-           style="cursor:pointer; display:inline-flex; align-items:center; gap:4px;" title="{status_title}">
+           style="cursor:default; display:inline-flex; align-items:center; gap:4px;" title="{status_title}">
         <span class="status-indicator" id="status-{id}" data-status="{status}">{status_emoji}</span>
         {label}
     </label>
@@ -558,99 +558,7 @@ def hostname_form_html(shared_state, message, show_skip_management=False):
 </script>
 <script>
     function showStatusDetail(id, label, status, error_details, timestamp, operation, url, user, password, supports_login) {{
-        var statusTextMap = {{
-            ok: 'Operational',
-            error: 'Error',
-            unset: 'Not configured',
-            skipped: 'Login skipped',
-            info: 'Information'
-        }};
-    
-        var emojiMap = {{
-            ok: '🟢',
-            error: '🔴',
-            unset: '⚫️',
-            skipped: '🟡',
-            info: 'ℹ️'
-        }};
-    
-        var content_html = '';
-        if (status === 'error') {{
-            content_html += '<p>' + (error_details || 'No details available.') + '</p>';
-        }} else {{
-            content_html += '<p>' + (error_details || 'No additional details available.') + '</p>';
-        }}
-
-        var timestamp_html = '';
-        if (timestamp) {{
-            var d = new Date(timestamp);
-            var day = ("0" + d.getDate()).slice(-2);
-            var month = ("0" + (d.getMonth() + 1)).slice(-2);
-            var year = d.getFullYear();
-            var hours = ("0" + d.getHours()).slice(-2);
-            var minutes = ("0" + d.getMinutes()).slice(-2);
-            var seconds = ("0" + d.getSeconds()).slice(-2);
-            var formattedTimestamp = day + "." + month + "." + year + " " + hours + ":" + minutes + ":" + seconds;
-
-            if (operation) {{
-                timestamp_html = '<p><small>Occurred in ' + operation + ' at ' + formattedTimestamp + '</small></p>';
-            }} else {{
-                timestamp_html = '<p><small>Occurred at: ' + formattedTimestamp + '</small></p>';
-            }}
-        }}
-        
-        var credentials_html = '';
-        if (url && supports_login) {{
-             var flaresolverrWarning = '';
-             if (id === 'al' && isFlaresolverrSkipped) {{
-                flaresolverrWarning = `
-                    <div style="margin-bottom: 1rem; padding: 0.75rem; background: #fff3cd; border: 1px solid #ffeeba; border-radius: 0.25rem; color: #856404; font-size: 0.875rem;">
-                        <strong>⚠️ FlareSolverr Required</strong><br>
-                        This site requires FlareSolverr, but it was skipped. You must configure it first.
-                        <div style="margin-top: 0.5rem;">
-                            <button class="btn-secondary" style="font-size: 0.75rem; padding: 0.25rem 0.5rem;" onclick="window.location.href='/flaresolverr'">Configure FlareSolverr</button>
-                        </div>
-                    </div>
-                `;
-             }}
-
-             credentials_html = `
-                <div style="margin-top: 1rem; border-top: 1px solid var(--divider-color, #dee2e6); padding-top: 1rem;">
-                    <h4 style="margin-top:0; font-size:1rem;">Credentials</h4>
-                    ${{flaresolverrWarning}}
-                    <div style="margin-bottom: 0.5rem;">
-                        <label style="display:block; font-size: 0.875rem;">Username</label>
-                        <input type="text" id="cred-user-${{id}}" value="${{user}}" style="width: 100%; padding: 0.375rem 0.75rem; border: 1px solid #ced4da; border-radius: 0.25rem;">
-                    </div>
-                    <div style="margin-bottom: 0.5rem;">
-                        <label style="display:block; font-size: 0.875rem;">Password</label>
-                        <input type="password" id="cred-pass-${{id}}" value="${{password}}" style="width: 100%; padding: 0.375rem 0.75rem; border: 1px solid #ced4da; border-radius: 0.25rem;">
-                    </div>
-                    <div id="cred-status-${{id}}" style="margin-bottom: 0.5rem; font-size: 0.875rem; min-height: 1.25em;"></div>
-                    <button class="btn-primary" onclick="saveAndCheckCredentials('${{id}}')">Check & Save Session</button>
-                    <div style="margin-top: 1rem; border-bottom: 1px solid var(--divider-color, #dee2e6);"></div>
-                </div>
-            `;
-        }}
-        
-        var content = content_html + timestamp_html + credentials_html;
-        var title = '<span>' + (emojiMap[status] || 'ℹ️') + '</span> ' + label + ' - ' + (statusTextMap[status] || status);
-        
-        var buttons = '';
-        if (url) {{
-            var href = url;
-            if (!href.startsWith('http://') && !href.startsWith('https://')) {{
-                href = 'https://' + href;
-            }}
-            buttons = `
-                <button class="btn-primary" style="margin-right: auto;" onclick="window.open('${{href}}', '_blank')">Open ${{id.toUpperCase()}}</button>
-                <button class="btn-secondary" onclick="closeModal()">Close</button>
-            `;
-        }} else {{
-            buttons = '<button class="btn-secondary" onclick="closeModal()">Close</button>';
-        }}
-        
-        showModal(title, content, buttons);
+        // Function intentionally left empty to disable modal
     }}
     
     function saveAndCheckCredentials(id) {{

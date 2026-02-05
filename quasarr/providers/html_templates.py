@@ -15,7 +15,7 @@ def render_centered_html(inner_content, footer_content=""):
         <title>Quasarr</title>
         <link rel="icon" href="'''
         + images.favicon
-        + """" type="image/png">
+        + """" type="image/webp">
         <style>
             /* Theme variables */
             :root {
@@ -149,6 +149,12 @@ def render_centered_html(inner_content, footer_content=""):
                 width: 48px;
                 height: 48px;
                 margin-right: 0.5rem;
+            }
+            .inline-icon {
+                width: 1.2em;
+                height: 1.2em;
+                margin-right: 0.25rem;
+                vertical-align: middle;
             }
             /* Form labels and inputs */
             label {
@@ -443,7 +449,7 @@ def render_button(text, button_type="primary", attributes=None):
 
 def render_form(header, form="", script="", footer_content=""):
     content = f'''
-    <h1 onclick="window.location.href='/'"><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+    <h1 onclick="window.location.href='/'"><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
     <h2>{header}</h2>
     {form}
     {script}
@@ -472,7 +478,7 @@ def render_success(message, timeout=10, optional_text=""):
             }}, 1000);
         </script>
     """
-    content = f'''<h1 onclick="window.location.href='/'"><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+    content = f'''<h1 onclick="window.location.href='/'"><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
     <h2>{message}</h2>
     {optional_text}
     {button_html}
@@ -481,11 +487,23 @@ def render_success(message, timeout=10, optional_text=""):
     return render_centered_html(content)
 
 
+def render_success_no_wait(message, optional_text=""):
+    button_html = render_button(
+        "Continue", "primary", {"onclick": "window.location.href='/'"}
+    )
+    content = f'''<h1 onclick="window.location.href='/'"><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+    <h2>{message}</h2>
+    {optional_text}
+    {button_html}
+    '''
+    return render_centered_html(content)
+
+
 def render_fail(message):
     button_html = render_button(
         "Back", "secondary", {"onclick": "window.location.href='/'"}
     )
-    return render_centered_html(f"""<h1 onclick="window.location.href='/'"><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+    return render_centered_html(f"""<h1 onclick="window.location.href='/'"><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
         <h2>{message}</h2>
         {button_html}
     """)

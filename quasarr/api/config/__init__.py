@@ -23,7 +23,6 @@ from quasarr.storage.categories import (
     update_category_emoji,
     update_category_mirrors,
 )
-from quasarr.storage.config import Config
 from quasarr.storage.setup import (
     check_credentials,
     clear_skip_login,
@@ -37,7 +36,6 @@ from quasarr.storage.setup import (
     save_jdownloader_settings,
     verify_jdownloader_credentials,
 )
-from quasarr.storage.sqlite_database import DataBase
 
 
 def setup_config(app, shared_state):
@@ -85,123 +83,6 @@ def setup_config(app, shared_state):
     @app.delete("/api/skip-login/<shorthand>")
     def clear_skip_login_route(shorthand):
         return clear_skip_login(shorthand)
-
-    @app.get("/flaresolverr")
-    def flaresolverr_ui():
-        """Web UI page for configuring FlareSolverr."""
-        skip_db = DataBase("skip_flaresolverr")
-        is_skipped = skip_db.retrieve("skipped")
-        current_url = Config("FlareSolverr").get("url") or ""
-
-        skip_indicator = ""
-        if is_skipped:
-            skip_indicator = """
-            <div class="skip-indicator" style="margin-bottom:1rem; padding:0.75rem; background:var(--code-bg, #f8f9fa); border-radius:0.25rem; font-size:0.875rem;">
-                <span style="color:#dc3545;">⚠️ FlareSolverr setup was skipped</span>
-                <p style="margin:0.5rem 0 0 0; font-size:0.75rem; color:var(--secondary, #6c757d);">
-                    Some sites (like AL) won't work until FlareSolverr is configured.
-                </p>
-            </div>
-            """
-
-        form_content = f'''
-        {skip_indicator}
-        <span><a href="https://github.com/FlareSolverr/FlareSolverr?tab=readme-ov-file#installation" target="_blank">FlareSolverr</a>
-        must be running and reachable to Quasarr for some sites to work.</span><br><br>
-        <label for="url">FlareSolverr URL</label>
-        <input type="text" id="url" name="url" placeholder="http://192.168.0.1:8191/v1" value="{current_url}"><br>
-        '''
-
-        form_html = f"""
-        <form action="/api/flaresolverr" method="post" onsubmit="return handleSubmit(this)">
-            {form_content}
-            {render_button("Save", "primary", {"type": "submit", "id": "submitBtn"})}
-        </form>
-        <p>{render_button("Back", "secondary", {"onclick": "location.href='/';"})}</p>
-        <script>
-        var formSubmitted = false;
-        function handleSubmit(form) {{
-            if (formSubmitted) return false;
-            formSubmitted = true;
-            var btn = document.getElementById('submitBtn');
-            if (btn) {{ btn.disabled = true; btn.textContent = 'Saving...'; }}
-            return true;
-        }}
-        function confirmRestart() {{
-            showModal('Restart Quasarr?', 'Are you sure you want to restart Quasarr now?', 
-                `<button class="btn-secondary" onclick="closeModal()">Cancel</button>
-                 <button class="btn-primary" onclick="performRestart()">Restart</button>`
-            );
-        }}
-        function performRestart() {{
-            closeModal();
-            fetch('/api/restart', {{ method: 'POST' }})
-            .then(response => response.json())
-            .then(data => {{
-                if (data.success) {{
-                    showRestartOverlay();
-                }}
-            }})
-            .catch(error => {{
-                showRestartOverlay();
-            }});
-        }}
-        function showRestartOverlay() {{
-            document.body.innerHTML = `
-              <div style="text-align:center; padding:2rem; font-family:system-ui,-apple-system,sans-serif;">
-                <h2>Restarting Quasarr...</h2>
-                <p id="restartStatus">Waiting <span id="countdown">10</span> seconds...</p>
-                <div id="spinner" style="display:none; margin-top:1rem;">
-                  <div style="display:inline-block; width:24px; height:24px; border:3px solid #ccc; border-top-color:#333; border-radius:50%; animation:spin 1s linear infinite;"></div>
-                  <style>@keyframes spin {{ to {{ transform: rotate(360deg); }} }}</style>
-                </div>
-              </div>
-            `;
-            startCountdown(10);
-        }}
-        function startCountdown(seconds) {{
-            var countdownEl = document.getElementById('countdown');
-            var statusEl = document.getElementById('restartStatus');
-            var spinnerEl = document.getElementById('spinner');
-            var remaining = seconds;
-            var interval = setInterval(function() {{
-                remaining--;
-                if (countdownEl) countdownEl.textContent = remaining;
-                if (remaining <= 0) {{
-                    clearInterval(interval);
-                    statusEl.textContent = 'Reconnecting...';
-                    spinnerEl.style.display = 'block';
-                    tryReconnect();
-                }}
-            }}, 1000);
-        }}
-        function tryReconnect() {{
-            var statusEl = document.getElementById('restartStatus');
-            var attempts = 0;
-            function attempt() {{
-                attempts++;
-                fetch('/', {{ method: 'HEAD', cache: 'no-store' }})
-                .then(response => {{
-                    if (response.ok) {{
-                        statusEl.textContent = 'Connected! Reloading...';
-                        setTimeout(function() {{ window.location.href = '/'; }}, 500);
-                    }} else {{
-                        scheduleRetry();
-                    }}
-                }})
-                .catch(function() {{
-                    scheduleRetry();
-                }});
-            }}
-            function scheduleRetry() {{
-                statusEl.textContent = 'Reconnecting... (attempt ' + attempts + ')';
-                setTimeout(attempt, 1000);
-            }}
-            attempt();
-        }}
-        </script>
-        """
-        return render_form("FlareSolverr", form_html)
 
     @app.post("/api/flaresolverr")
     def set_flaresolverr_url():
@@ -257,17 +138,12 @@ def setup_config(app, shared_state):
             # Prevent deleting default categories
             if cat not in DEFAULT_CATEGORIES:
                 delete_btn = f"""
-                <button class="btn-subtle" onclick="deleteCategory('{cat}')" title="Delete">🗑️</button>
+                <button class="btn-danger" onclick="deleteCategory('{cat}')">Delete</button>
                 """
 
-            # Edit emoji button (for all categories)
+            # Combined edit button
             edit_btn = f"""
-            <button class="btn-subtle" onclick="editEmoji('{cat}', '{emoji}')" title="Edit Emoji">✏️</button>
-            """
-
-            # Edit mirrors button
-            mirrors_btn = f"""
-            <button class="btn-subtle" onclick='editMirrors("{cat}", {mirrors_json})' title="Edit Mirrors">🔗</button>
+            <button class="btn-primary" onclick='editCategory("{cat}", "{emoji}", {mirrors_json})'>Edit</button>
             """
 
             list_items += f"""
@@ -278,9 +154,8 @@ def setup_config(app, shared_state):
                     <span class="category-mirrors">Mirrors: {mirrors_str}</span>
                 </div>
                 <div class="category-actions">
-                    {mirrors_btn}
-                    {edit_btn}
                     {delete_btn}
+                    {edit_btn}
                 </div>
             </div>
             """
@@ -336,35 +211,21 @@ def setup_config(app, shared_state):
                 display: flex;
                 gap: 0.5rem;
                 margin-bottom: 1rem;
-                align-items: center;
+                align-items: stretch;
+            }}
+            .add-category-form input {{
+                margin-bottom: 0 !important;
+            }}
+            .add-category-form button {{
+                margin-top: 0 !important;
             }}
             .add-category-form input[type="text"] {{
                 flex: 1;
             }}
             .emoji-input {{
-                width: 3.5em !important;
+                width: 4em !important;
                 text-align: center;
-            }}
-            .mirrors-selection {{
-                display: flex;
-                flex-direction: column;
-                gap: 0.5rem;
-                max-height: 300px;
-                overflow-y: auto;
-                text-align: left;
-                padding: 0.5rem;
-                border: 1px solid var(--border-color);
-                border-radius: 0.5rem;
-                background: var(--code-bg);
-            }}
-            .mirror-option {{
-                display: flex;
-                align-items: center;
-                gap: 0.5rem;
-            }}
-            .mirror-option.tier1 {{
-                font-weight: bold;
-                color: var(--success-color);
+                flex: 0 0 auto !important;
             }}
             .warning-box {{
                 background: var(--error-bg);
@@ -376,6 +237,46 @@ def setup_config(app, shared_state):
                 font-size: 0.9em;
                 text-align: left;
             }}
+            
+            /* Mirror Picker Redesign */
+            .mirrors-grid {{
+                display: flex;
+                flex-wrap: wrap;
+                gap: 0.5rem;
+                margin-top: 0.5rem;
+            }}
+            .mirror-pill {{
+                padding: 0.5rem 0.75rem;
+                border: 1px solid var(--border-color);
+                border-radius: 2rem;
+                cursor: pointer;
+                font-size: 0.9rem;
+                transition: all 0.2s;
+                user-select: none;
+                background: var(--card-bg);
+                display: flex;
+                align-items: center;
+                gap: 0.25rem;
+            }}
+            .mirror-pill:hover {{
+                border-color: var(--primary);
+            }}
+            .mirror-pill.selected {{
+                background-color: var(--primary);
+                color: white;
+                border-color: var(--primary);
+            }}
+            .mirror-pill.tier1 {{
+                font-weight: 600;
+                border-color: var(--success-color);
+            }}
+            .mirror-pill.tier1.selected {{
+                background-color: var(--success-color);
+                border-color: var(--success-color);
+            }}
+            .mirror-checkbox {{
+                display: none;
+            }}
         </style>
 
         <div class="category-list" id="categoryList">
@@ -383,7 +284,7 @@ def setup_config(app, shared_state):
         </div>
 
         <div class="add-category-form">
-            <input type="text" id="newCategoryEmoji" class="emoji-input" placeholder="📁" maxlength="2" title="Emoji (single char)">
+            <input type="text" id="newCategoryEmoji" class="emoji-input" placeholder="📁" title="Emoji (single char)">
             <input type="text" id="newCategoryName" placeholder="New category name (a-z, 0-9, _)" pattern="[a-z0-9_]+" title="Lowercase letters, numbers and underscores only">
             <button class="btn-primary" onclick="addCategory()">Add</button>
         </div>
@@ -420,26 +321,55 @@ def setup_config(app, shared_state):
             }});
         }}
 
-        function editEmoji(name, currentEmoji) {{
-            const content = `
-                <div style="text-align: center; margin-bottom: 1rem;">
-                    <p>Enter a new emoji for <strong>${{name}}</strong>:</p>
-                    <input type="text" id="editEmojiInput" value="${{currentEmoji}}" maxlength="2" style="font-size: 2em; width: 3em; text-align: center; margin: 0.5rem auto; display: block;">
-                </div>
-            `;
+        function editCategory(name, currentEmoji, currentMirrors) {{
+            let pills = '';
+            ALL_HOSTERS.forEach(hoster => {{
+                const isChecked = currentMirrors.includes(hoster);
+                const isTier1 = TIER1_HOSTERS.includes(hoster);
+                const tierClass = isTier1 ? 'tier1' : '';
+                const selectedClass = isChecked ? 'selected' : '';
+                const star = isTier1 ? '⭐ ' : '';
+                
+                pills += '<label class="mirror-pill ' + tierClass + ' ' + selectedClass + '" onclick="this.classList.toggle(\\'selected\\')">' +
+                         '<input type="checkbox" class="mirror-checkbox" value="' + hoster + '" ' + (isChecked ? 'checked' : '') + ' onchange="this.parentElement.classList.toggle(\\'selected\\', this.checked)">' +
+                         star + hoster +
+                         '</label>';
+            }});
+
+            const content = '<p style="text-align: center;">Mirror-Filter:</p>' +
+                            '<div class="warning-box">' +
+                            '<strong>⚠️ Warning:</strong><br>' +
+                            'Setting specific mirrors will restrict search results. ' +
+                            'If a release does not contain <strong>any</strong> selected mirror, downloading it will fail!' +
+                            '<br><br>' +
+                            '<strong>Use at your own risk! Only starred mirrors (⭐) are recommended.</strong>' +
+                            '</div>' +
+                            '<div class="mirrors-grid">' +
+                            pills +
+                            '</div>' +
+                            '<div style="text-align: center; margin-top: 1.5rem; border-top: 1px solid var(--border-color); padding-top: 1rem;">' +
+                            '<p>Category-Emoji:</p>' +
+                            '<input type="text" id="editEmojiInput" value="' + currentEmoji + '" maxlength="1" style="font-size: 1em; width: 4em; text-align: center; margin: 0.5rem auto; display: block;">' +
+                            '</div>';
             
-            showModal('Edit Emoji', content, 
-                `<button class="btn-secondary" onclick="closeModal()">Cancel</button>
-                 <button class="btn-primary" onclick="performEditEmoji('${{name}}')">Save</button>`
+            showModal('Edit Category: ' + name, content, 
+                '<button class="btn-secondary" onclick="closeModal()">Cancel</button>' +
+                '<button class="btn-primary" onclick="performEditCategory(\\'' + name + '\\')">Save</button>'
             );
         }}
 
-        function performEditEmoji(name) {{
+        function performEditCategory(name) {{
             const emojiInput = document.getElementById('editEmojiInput');
             const emoji = emojiInput.value.trim() || '📁';
             
+            const selectedMirrors = [];
+            document.querySelectorAll('.mirror-checkbox:checked').forEach(cb => {{
+                selectedMirrors.push(cb.value);
+            }});
+            
             closeModal();
             
+            // Update emoji first, then mirrors
             fetch('/api/categories/' + name + '/emoji', {{
                 method: 'POST',
                 headers: {{ 'Content-Type': 'application/json' }},
@@ -448,64 +378,14 @@ def setup_config(app, shared_state):
             .then(response => response.json())
             .then(data => {{
                 if (data.success) {{
-                    window.location.reload();
+                    return fetch('/api/categories/' + name + '/mirrors', {{
+                        method: 'POST',
+                        headers: {{ 'Content-Type': 'application/json' }},
+                        body: JSON.stringify({{ mirrors: selectedMirrors }})
+                    }});
                 }} else {{
-                    showModal('Error', data.message);
+                    throw new Error(data.message);
                 }}
-            }})
-            .catch(error => {{
-                showModal('Error', 'Failed to update emoji: ' + error.message);
-            }});
-        }}
-
-        function editMirrors(name, currentMirrors) {{
-            let checkboxes = '';
-            ALL_HOSTERS.forEach(hoster => {{
-                const isChecked = currentMirrors.includes(hoster) ? 'checked' : '';
-                const isTier1 = TIER1_HOSTERS.includes(hoster);
-                const tierClass = isTier1 ? 'tier1' : '';
-                const labelSuffix = isTier1 ? ' (Recommended)' : '';
-                
-                checkboxes += `
-                    <div class="mirror-option ${{tierClass}}">
-                        <input type="checkbox" id="mirror_${{hoster}}" value="${{hoster}}" ${{isChecked}}>
-                        <label for="mirror_${{hoster}}">${{hoster}}${{labelSuffix}}</label>
-                    </div>
-                `;
-            }});
-
-            const content = `
-                <div class="warning-box">
-                    <strong>⚠️ Warning:</strong> Setting specific mirrors will restrict search results. 
-                    If a release does not contain ANY of the selected mirrors, it will be skipped.
-                    <br><br>
-                    We cannot know in advance if a mirror link is still active.
-                    <br>
-                    <strong>Only Tier 1 mirrors are recommended.</strong>
-                </div>
-                <div class="mirrors-selection">
-                    ${{checkboxes}}
-                </div>
-            `;
-            
-            showModal('Edit Mirrors for ' + name, content, 
-                `<button class="btn-secondary" onclick="closeModal()">Cancel</button>
-                 <button class="btn-primary" onclick="performEditMirrors('${{name}}')">Save</button>`
-            );
-        }}
-
-        function performEditMirrors(name) {{
-            const selectedMirrors = [];
-            document.querySelectorAll('.mirrors-selection input[type="checkbox"]:checked').forEach(cb => {{
-                selectedMirrors.push(cb.value);
-            }});
-            
-            closeModal();
-            
-            fetch('/api/categories/' + name + '/mirrors', {{
-                method: 'POST',
-                headers: {{ 'Content-Type': 'application/json' }},
-                body: JSON.stringify({{ mirrors: selectedMirrors }})
             }})
             .then(response => response.json())
             .then(data => {{
@@ -516,14 +396,14 @@ def setup_config(app, shared_state):
                 }}
             }})
             .catch(error => {{
-                showModal('Error', 'Failed to update mirrors: ' + error.message);
+                showModal('Error', 'Failed to update category: ' + error.message);
             }});
         }}
 
         function deleteCategory(name) {{
             showModal('Delete Category?', 'Are you sure you want to delete category "' + name + '"?', 
-                `<button class="btn-secondary" onclick="closeModal()">Cancel</button>
-                 <button class="btn-danger" onclick="performDeleteCategory('${{name}}')">Delete</button>`
+                '<button class="btn-secondary" onclick="closeModal()">Cancel</button>' +
+                '<button class="btn-danger" onclick="performDeleteCategory(\\'' + name + '\\')">Delete</button>'
             );
         }}
 

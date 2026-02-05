@@ -8,7 +8,7 @@ import quasarr.providers.html_images as images
 from quasarr.api.arr import setup_arr_routes
 from quasarr.api.captcha import setup_captcha_routes
 from quasarr.api.config import setup_config
-from quasarr.api.jdownloader import get_jdownloader_modal_script, get_jdownloader_status
+from quasarr.api.jdownloader import get_jdownloader_status
 from quasarr.api.packages import setup_packages_routes
 from quasarr.api.sponsors_helper import setup_sponsors_helper_routes
 from quasarr.api.statistics import setup_statistics
@@ -51,7 +51,12 @@ def get_api(shared_state_dict, shared_state_lock):
 
         # Get JDownloader status and modal script
         jd_status = get_jdownloader_status(shared_state)
-        jd_modal_script = get_jdownloader_modal_script()
+
+        # Get JDownloader config for the inline form
+        jd_config = Config("JDownloader")
+        jd_user = jd_config.get("user") or ""
+        jd_pass = jd_config.get("password") or ""
+        jd_device = jd_config.get("device") or ""
 
         # Calculate hostname status
         hostnames_config = Config("Hostnames")
@@ -124,20 +129,31 @@ def get_api(shared_state_dict, shared_state_lock):
         status_bars = f"""
             <div class="status-bar">
                 <span class="status-pill {jd_status["status_class"]}" 
-                      onclick="openJDownloaderModal()" 
-                      title="Click to configure JDownloader">
+                      title="JDownloader Status">
                     {jd_status["status_text"]}
                 </span>
                 <span class="status-pill {hostname_status_class}"
-                      onclick="location.href='/hostnames'"
-                      title="Click to configure Hostnames">
+                      title="Hostnames Status">
                     {hostname_status_emoji} {hostname_status_text}
                 </span>
             </div>
         """
 
+        # FlareSolverr status
+        skip_flaresolverr_db = DataBase("skip_flaresolverr")
+        is_flaresolverr_skipped = skip_flaresolverr_db.retrieve("skipped")
+        flaresolverr_url = Config("FlareSolverr").get("url") or ""
+
+        flaresolverr_warning = ""
+        if is_flaresolverr_skipped:
+            flaresolverr_warning = """
+            <div class="alert alert-warning" style="margin-bottom: 15px; padding: 10px;">
+                <span style="font-size: 0.9em;">⚠️ FlareSolverr setup was skipped. Some sites may not work.</span>
+            </div>
+            """
+
         info = f"""
-        <h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+        <h1><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
 
         {status_bars}
         {captcha_hint}
@@ -155,9 +171,9 @@ def get_api(shared_state_dict, shared_state_lock):
                 <span class="action-icon">🌐</span>
                 <span class="action-label">Hostnames</span>
             </a>
-            <a href="/flaresolverr" class="action-card">
-                <span class="action-icon">🛡️</span>
-                <span class="action-label">FlareSolverr</span>
+            <a href="/categories" class="action-card">
+                <span class="action-icon">📁</span>
+                <span class="action-label">Categories</span>
             </a>
         </div>
 
@@ -191,6 +207,67 @@ def get_api(shared_state_dict, shared_state_lock):
             </details>
         </div>
 
+        <div class="section">
+            <details id="jdDetails">
+                <summary id="jdSummary"><img src="{images.jdownloader}" type="image/webp" alt="JDownloader logo" class="inline-icon"/> JDownloader Configuration</summary>
+                <div class="api-settings">
+                    <p class="api-hint"><strong>JDownloader must be running and connected to My JDownloader!</strong></p>
+                    
+                    <div id="jd-login-section">
+                        <div class="input-group">
+                            <label>E-Mail</label>
+                            <div class="input-row">
+                                <input type="text" id="jd-user" placeholder="user@example.org" value="{jd_user}">
+                            </div>
+                        </div>
+                        <div class="input-group">
+                            <label>Password</label>
+                            <div class="input-row">
+                                <input type="password" id="jd-pass" placeholder="Password" value="{jd_pass}">
+                            </div>
+                        </div>
+                        <div id="jd-status" style="margin-bottom: 10px; font-size: 0.9em; min-height: 1.2em;"></div>
+                        <p>{render_button("Verify Credentials", "primary", {"onclick": "verifyJDCredentials()"})}</p>
+                    </div>
+
+                    <div id="jd-device-section" style="display:none; margin-top: 15px; border-top: 1px solid var(--card-border, #dee2e6); padding-top: 15px;">
+                        <input type="hidden" id="jd-current-device" value="{jd_device}">
+                        <div class="input-group">
+                            <label>Select Instance</label>
+                            <div class="input-row">
+                                <select id="jd-device-select" style="flex:1; padding:8px; border-radius:4px; border:1px solid var(--input-border, #ced4da); background:var(--input-bg, #e9ecef); color:var(--fg-color, #212529);"></select>
+                            </div>
+                        </div>
+                        <div id="jd-save-status" style="margin-bottom: 10px; font-size: 0.9em; min-height: 1.2em;"></div>
+                        <p>{render_button("Save", "primary", {"onclick": "saveJDSettings()"})}</p>
+                    </div>
+                </div>
+            </details>
+        </div>
+
+        <div class="section">
+            <details id="flaresolverrDetails">
+                <summary id="flaresolverrSummary">🛡️ FlareSolverr Configuration</summary>
+                <div class="api-settings">
+                    {flaresolverr_warning}
+                    <p class="api-hint">
+                        <a href="https://github.com/FlareSolverr/FlareSolverr?tab=readme-ov-file#installation" target="_blank">FlareSolverr</a>
+                        must be running and reachable to Quasarr for some sites to work.
+                    </p>
+
+                    <form action="/api/flaresolverr" method="post" onsubmit="return handleFlareSolverrSubmit(this)">
+                        <div class="input-group">
+                            <label for="fsUrl">URL</label>
+                            <div class="input-row">
+                                <input type="text" id="fsUrl" name="url" placeholder="http://192.168.0.1:8191/v1" value="{flaresolverr_url}">
+                                <button type="submit" id="fsSubmitBtn">Save</button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </details>
+        </div>
+
         <div class="section help-link">
             <a href="https://github.com/rix1337/Quasarr?tab=readme-ov-file#instructions" target="_blank">
                 📖 Setup Instructions & Documentation
@@ -210,11 +287,7 @@ def get_api(shared_state_dict, shared_state_lock):
                 padding: 8px 16px;
                 border-radius: 0.5rem;
                 font-weight: 500;
-                transition: transform 0.1s ease;
-                cursor: pointer;
-            }}
-            .status-pill:hover {{
-                transform: scale(1.05);
+                cursor: default;
             }}
             .status-pill.success {{
                 background: var(--status-success-bg, #e8f5e9);
@@ -329,11 +402,11 @@ def get_api(shared_state_dict, shared_state_lock):
                 margin: 0;
                 flex-shrink: 0;
             }}
-            #copyUrl, #copyKey {{
+            #copyUrl, #copyKey, #fsSubmitBtn {{
                 background: var(--btn-primary-bg, #007bff);
                 color: white;
             }}
-            #copyUrl:hover, #copyKey:hover {{
+            #copyUrl:hover, #copyKey:hover, #fsSubmitBtn:hover {{
                 background: var(--btn-primary-hover, #0056b3);
             }}
             #toggleKey {{
@@ -483,8 +556,90 @@ def get_api(shared_state_dict, shared_state_lock):
                      <button class="btn-primary" onclick="location.href='/regenerate-api-key'">Regenerate</button>`
                 );
             }}
+            
+            function handleFlareSolverrSubmit(form) {{
+                var btn = document.getElementById('fsSubmitBtn');
+                if (btn) {{ btn.disabled = true; btn.textContent = 'Saving...'; }}
+                return true;
+            }}
+
+            function verifyJDCredentials() {{
+                var user = document.getElementById('jd-user').value;
+                var pass = document.getElementById('jd-pass').value;
+                var statusDiv = document.getElementById('jd-status');
+                
+                statusDiv.innerHTML = 'Verifying...';
+                statusDiv.style.color = 'var(--text-muted, #666)';
+                
+                fetch('/api/jdownloader/verify', {{
+                    method: 'POST',
+                    headers: {{ 'Content-Type': 'application/json' }},
+                    body: JSON.stringify({{ user: user, pass: pass }})
+                }})
+                .then(response => response.json())
+                .then(data => {{
+                    if (data.success) {{
+                        var select = document.getElementById('jd-device-select');
+                        select.innerHTML = '';
+                        var currentDevice = document.getElementById('jd-current-device').value;
+                        data.devices.forEach(device => {{
+                            var opt = document.createElement('option');
+                            opt.value = device;
+                            opt.innerHTML = device;
+                            if (device === currentDevice) {{
+                                opt.selected = true;
+                            }}
+                            select.appendChild(opt);
+                        }});
+                        
+                        document.getElementById('jd-device-section').style.display = 'block';
+                        statusDiv.innerHTML = '✅ Credentials verified';
+                        statusDiv.style.color = 'var(--status-success-color, #2e7d32)';
+                    }} else {{
+                        statusDiv.innerHTML = '❌ ' + (data.message || 'Verification failed');
+                        statusDiv.style.color = 'var(--status-error-color, #c62828)';
+                        document.getElementById('jd-device-section').style.display = 'none';
+                    }}
+                }})
+                .catch(error => {{
+                    statusDiv.innerHTML = '❌ Error: ' + error.message;
+                    statusDiv.style.color = 'var(--status-error-color, #c62828)';
+                }});
+            }}
+
+            function saveJDSettings() {{
+                var user = document.getElementById('jd-user').value;
+                var pass = document.getElementById('jd-pass').value;
+                var device = document.getElementById('jd-device-select').value;
+                var statusDiv = document.getElementById('jd-save-status');
+                
+                statusDiv.innerHTML = 'Saving...';
+                statusDiv.style.color = 'var(--text-muted, #666)';
+                
+                fetch('/api/jdownloader/save', {{
+                    method: 'POST',
+                    headers: {{ 'Content-Type': 'application/json' }},
+                    body: JSON.stringify({{ user: user, pass: pass, device: device }})
+                }})
+                .then(response => response.json())
+                .then(data => {{
+                    if (data.success) {{
+                        statusDiv.innerHTML = '✅ ' + data.message;
+                        statusDiv.style.color = 'var(--status-success-color, #2e7d32)';
+                        setTimeout(function() {{
+                            window.location.reload();
+                        }}, 1000);
+                    }} else {{
+                        statusDiv.innerHTML = '❌ ' + data.message;
+                        statusDiv.style.color = 'var(--status-error-color, #c62828)';
+                    }}
+                }})
+                .catch(error => {{
+                    statusDiv.innerHTML = '❌ Error: ' + error.message;
+                    statusDiv.style.color = 'var(--status-error-color, #c62828)';
+                }});
+            }}
         </script>
-        {jd_modal_script}
         """
         # Add logout link for form auth
         logout_html = '<a href="/logout">Logout</a>' if show_logout_link() else ""

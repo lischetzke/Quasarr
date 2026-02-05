@@ -28,12 +28,10 @@ COMMON_HOSTERS = [
     "Hitfile",  # Turbobit's sibling site. Often seen together.
     "Katfile",  # Very common secondary mirror for smaller uploaders.
     "Alfafile",  # Stable mid-tier host, often seen on DDL blogs.
-    "Icerbox",  # Popular for high-quality movie rips (big files).
     # --- TIER 4: Niche / Backup / User Requested ---
     "Filer",  # Strong in German-speaking areas, niche elsewhere.
     "IronFiles",  # Active. Smaller ecosystem, often specific to certain boards.
     "Fikper",  # Newer player (relative to RG), gained traction in 2024-25.
-    "Hexupload",  # Occasional usage.
     "Mega",  # Active, but functions differently (cloud drive vs. OCH).
 ]
 
@@ -93,6 +91,9 @@ def add_category(name, emj="📁"):
         return False, "Category name cannot be empty."
 
     name = name.strip().lower()
+
+    if len(name) > 20:
+        return False, "Category name must be 20 characters or less."
 
     if not re.match("^[a-z0-9]+$", name):
         return (
