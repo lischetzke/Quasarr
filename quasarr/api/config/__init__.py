@@ -283,10 +283,13 @@ def setup_config(app, shared_state):
             {list_items}
         </div>
 
-        <div class="add-category-form">
-            <input type="text" id="newCategoryEmoji" class="emoji-input" placeholder="📁" title="Emoji (single char)">
-            <input type="text" id="newCategoryName" placeholder="New category name (a-z, 0-9, _)" pattern="[a-z0-9_]+" title="Lowercase letters, numbers and underscores only">
-            <button class="btn-primary" onclick="addCategory()">Add</button>
+        <div class="add-category-form category-list">
+            <div class="category-item">
+                <input type="text" id="newCategoryEmoji" class="emoji-input" placeholder="📁" title="Emoji (single char)">
+                <input type="text" id="newCategoryName" placeholder="New category name (a-z, 0-9, _)" pattern="[a-z0-9_]+" title="Lowercase letters, numbers and underscores only">
+                <button class="btn-primary" onclick="addCategory()">Add</button>
+            </div>
+
         </div>
 
         <p>{render_button("Back", "secondary", {"onclick": "location.href='/'"})}</p>
@@ -336,20 +339,19 @@ def setup_config(app, shared_state):
                          '</label>';
             }});
 
-            const content = '<p style="text-align: center;">Mirror-Filter:</p>' +
+            const content = '<div style="margin-bottom: 1.5rem; border-bottom: 1px solid var(--border-color); padding-bottom: 1rem;">' +
+                            '<h4>Category-Emoji:</h4>' +
+                            '<input type="text" id="editEmojiInput" value="' + currentEmoji + '" maxlength="1" style="font-size: 1em; width: 4em; text-align: center; margin: 0.5rem auto; display: block;">' +
+                            '</div>' +
+                            '<h4>Mirror-Whitelist:</h4>' +
                             '<div class="warning-box">' +
-                            '<strong>⚠️ Warning:</strong><br>' +
-                            'Setting specific mirrors will restrict search results. ' +
-                            'If a release does not contain <strong>any</strong> selected mirror, downloading it will fail!' +
+                            '<strong>⚠️ Warning:</strong><br>This does not affect search results.<br>' +
+                            'If specific mirrors are set, downloads will fail unless the release contains them.' +
                             '<br><br>' +
-                            '<strong>Use at your own risk! Only starred mirrors (⭐) are recommended.</strong>' +
+                            '<strong>Only starred mirrors (⭐) are recommended.</strong>' +
                             '</div>' +
                             '<div class="mirrors-grid">' +
                             pills +
-                            '</div>' +
-                            '<div style="text-align: center; margin-top: 1.5rem; border-top: 1px solid var(--border-color); padding-top: 1rem;">' +
-                            '<p>Category-Emoji:</p>' +
-                            '<input type="text" id="editEmojiInput" value="' + currentEmoji + '" maxlength="1" style="font-size: 1em; width: 4em; text-align: center; margin: 0.5rem auto; display: block;">' +
                             '</div>';
             
             showModal('Edit Category: ' + name, content, 
@@ -426,7 +428,7 @@ def setup_config(app, shared_state):
         }}
         </script>
         """
-        return render_form("Categories", form_html)
+        return render_form("Download Client Categories", form_html)
 
     @app.post("/api/categories")
     def add_category_api():

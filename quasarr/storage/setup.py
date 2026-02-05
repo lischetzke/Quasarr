@@ -168,7 +168,7 @@ def path_config(shared_state):
         return render_reconnect_success(f'Config path set to: "{config_path}"')
 
     info(
-        f'Starting web server for config at: "{shared_state.values["internal_address"]}".'
+        f'Starting web server for config at: "{shared_state.values["external_address"]}".'
     )
     info("Please set desired config path there!")
     quasarr.providers.web_server.temp_server_success = False
@@ -1156,7 +1156,7 @@ def hostnames_config(shared_state):
         return check_credentials(shared_state, shorthand)
 
     info(
-        f'Hostnames not set. Starting web server for config at: "{shared_state.values["internal_address"]}".'
+        f'Hostnames not set. Starting web server for config at: "{shared_state.values["external_address"]}".'
     )
     info("Please set at least one valid hostname there!")
     quasarr.providers.web_server.temp_server_success = False
@@ -1399,7 +1399,7 @@ def hostname_credentials_config(shared_state, shorthand, domain):
 
     info(
         f'"{shorthand.lower()}" credentials required to access download links. '
-        f'Starting web server for config at: "{shared_state.values["internal_address"]}".'
+        f'Starting web server for config at: "{shared_state.values["external_address"]}".'
     )
     info(f"If needed register here: 'https://{domain}'")
     info("Please set your credentials now, or skip to allow Quasarr to launch!")
@@ -1442,7 +1442,7 @@ def flaresolverr_config(shared_state):
 
     info(
         '"flaresolverr" URL is required for some sites (like AL). '
-        f'Starting web server for config at: "{shared_state.values["internal_address"]}".'
+        f'Starting web server for config at: "{shared_state.values["external_address"]}".'
     )
     info("Please enter your FlareSolverr URL now, or skip to allow Quasarr to launch!")
     quasarr.providers.web_server.temp_server_success = False
@@ -1634,7 +1634,7 @@ def jdownloader_config(shared_state):
 
     info(
         f"My-JDownloader-Credentials not set. "
-        f'Starting web server for config at: "{shared_state.values["internal_address"]}".'
+        f'Starting web server for config at: "{shared_state.values["external_address"]}".'
     )
     info("If needed register here: 'https://my.jdownloader.org/login.html#register'")
     info("Please set your credentials now, to allow Quasarr to launch!")

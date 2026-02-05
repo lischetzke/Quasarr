@@ -315,12 +315,13 @@ def render_centered_html(inner_content, footer_content=""):
                 bottom: 0;
                 background: rgba(0, 0, 0, 0.5);
                 display: flex;
-                align-items: center;
                 justify-content: center;
                 z-index: 9999;
                 visibility: hidden;
                 opacity: 0;
                 transition: visibility 0s, opacity 0.2s;
+                overflow-y: auto;
+                padding: 1rem;
             }
             .status-modal-overlay.active {
                 visibility: visible;
@@ -335,6 +336,7 @@ def render_centered_html(inner_content, footer_content=""):
                 box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
                 transform: scale(0.9);
                 transition: transform 0.2s;
+                margin: auto;
             }
             .status-modal-overlay.active .status-modal {
                 transform: scale(1);

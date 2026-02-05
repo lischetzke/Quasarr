@@ -28,21 +28,6 @@ installed in your browser.
 
 ---
 
-## FlareSolverr (Optional)
-
-FlareSolverr is **optional** but **required for some sites** (e.g., AL) that use Cloudflare protection. You can skip
-FlareSolverr during setup and configure it later via the web UI.
-
-If using FlareSolverr, provide your URL including the version path:
-
-```
-http://192.168.1.1:8191/v1
-```
-
-> **Note:** Sites requiring FlareSolverr will show a warning in the console when it's not configured.
-
----
-
 ## Quasarr
 
 > ⚠️ Quasarr requires at least one valid hostname to start. It does not provide or endorse any specific sources, but
@@ -80,6 +65,19 @@ Radarr/Sonarr/LazyLibrarian integration.
 
 ---
 
+## Categories & Mirrors
+
+You can manage categories in the Quasarr Web UI.
+
+* **Setup:** Add or edit categories to organize your downloads.
+* **Mirror Whitelist:**
+    * Inside a category, you can whitelist specific mirrors.
+    * This does not affect search results.
+    * If specific mirrors are set, downloads will fail unless the release contains them.
+* **Emoji:** Will be used in the Packages view on the Quasarr Web UI.
+
+---
+
 ## Radarr / Sonarr
 
 > ⚠️ **Sonarr users:** Set all shows (including anime) to the **Standard** series type. Quasarr cannot find releases for
@@ -88,10 +86,35 @@ Radarr/Sonarr/LazyLibrarian integration.
 
 Add Quasarr as both a **Newznab Indexer** and **SABnzbd Download Client** using your Quasarr URL and API Key.
 
+Be sure to set a category in the **SABnzbd Download client** (default: `movies` for Radarr and `tv` for Sonarr).
+
 <details>
 <summary>Show download status in Radarr/Sonarr</summary>
 
 **Activity → Queue → Options** → Enable `Release Title`
+
+</details>
+
+---
+
+## Prowlarr
+
+Add Quasarr as a **Generic Newznab Indexer**.
+
+* **Url:** Your Quasarr URL
+* **ApiKey:** Your Quasarr API Key
+
+<details>
+<summary>Allowed search parameters and categories</summary>
+
+#### Movies / TV:
+
+* Use IMDb ID, Syntax: `{ImdbId:tt0133093}` and pick category `2000` (Movies) or `5000` (TV)
+* Simple text search is **not** supported.
+
+#### Books/Magazines:
+
+* Use simple text search and pick category`7000` (Books/Magazines).
 
 </details>
 
