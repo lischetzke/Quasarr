@@ -17,7 +17,11 @@ from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostnam
 from quasarr.providers.log import info, warn
 from quasarr.providers.notifications import send_discord_message
 from quasarr.providers.statistics import StatsHelper
-from quasarr.providers.utils import extract_client_type, filter_offline_links
+from quasarr.providers.utils import (
+    download_package,
+    extract_client_type,
+    filter_offline_links,
+)
 from quasarr.storage.categories import (
     download_category_exists,
     get_download_category_mirrors,
@@ -141,7 +145,7 @@ def handle_direct_links(shared_state, links, title, password, package_id):
     urls = [link[0] for link in links]
     info(f"Sending {len(urls)} direct download links for {title}")
 
-    if shared_state.download_package(urls, title, password, package_id):
+    if download_package(urls, title, password, package_id, shared_state):
         StatsHelper(shared_state).increment_package_with_links(urls)
         return {"success": True}
     return {
@@ -163,7 +167,7 @@ def handle_auto_decrypt_links(shared_state, links, title, password, package_id):
 
     info(f"Decrypted <g>{len(decrypted_urls)}</g> download links for {title}")
 
-    if shared_state.download_package(decrypted_urls, title, password, package_id):
+    if download_package(decrypted_urls, title, password, package_id, shared_state):
         StatsHelper(shared_state).increment_package_with_links(decrypted_urls)
         return {"success": True}
     return {"success": False, "reason": "Failed to add decrypted links to linkgrabber"}

@@ -24,6 +24,9 @@ from quasarr.providers.imdb_metadata import get_localized_title, get_year
 from quasarr.providers.log import debug, error, info, warn
 from quasarr.providers.utils import (
     generate_download_link,
+    is_imdb_id,
+    is_valid_release,
+    normalize_magazine_title,
 )
 
 hostname = "by"
@@ -94,7 +97,7 @@ def _parse_posts(
                 title = link_tag.get_text(strip=True)
                 if search_category == SEARCH_CAT_BOOKS:
                     # lazylibrarian can only detect specific date formats / issue numbering for magazines
-                    title = shared_state.normalize_magazine_title(title)
+                    title = normalize_magazine_title(title)
                 else:
                     title = title.replace(" ", ".")
 
@@ -125,7 +128,7 @@ def _parse_posts(
                 title = title_tag.get_text(strip=True)
                 if search_category == SEARCH_CAT_BOOKS:
                     # lazylibrarian can only detect specific date formats / issue numbering for magazines
-                    title = shared_state.normalize_magazine_title(title)
+                    title = normalize_magazine_title(title)
                 else:
                     title = title.replace(" ", ".")
                     if not (
@@ -133,7 +136,7 @@ def _parse_posts(
                     ):
                         continue
 
-                if not shared_state.is_valid_release(
+                if not is_valid_release(
                     title, search_category, search_string, season, episode
                 ):
                     continue
@@ -231,7 +234,7 @@ def by_search(
     by = shared_state.values["config"]("Hostnames").get(hostname)
     password = by
 
-    imdb_id = shared_state.is_imdb_id(search_string)
+    imdb_id = is_imdb_id(search_string)
     if imdb_id:
         title = get_localized_title(shared_state, imdb_id, "de")
         if not title:

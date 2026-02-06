@@ -19,7 +19,11 @@ from quasarr.providers.utils import (
     SEARCH_CAT_BOOKS,
     SEARCH_CAT_MOVIES,
     SEARCH_CAT_SHOWS,
+    convert_to_mb,
     generate_download_link,
+    is_imdb_id,
+    is_valid_release,
+    normalize_magazine_title,
 )
 
 hostname = "dt"
@@ -101,7 +105,7 @@ def dt_feed(shared_state, start_time, search_category):
 
                 if search_category == SEARCH_CAT_BOOKS:
                     # lazylibrarian can only detect specific date formats / issue numbering for magazines
-                    title = shared_state.normalize_magazine_title(title)
+                    title = normalize_magazine_title(title)
 
                 try:
                     imdb_id = re.search(r"tt\d+", str(article)).group()
@@ -117,7 +121,7 @@ def dt_feed(shared_state, start_time, search_category):
                     continue
                 size_info = size_match.group(1).strip()
                 size_item = extract_size(size_info)
-                mb = shared_state.convert_to_mb(size_item)
+                mb = convert_to_mb(size_item)
                 size = mb * 1024 * 1024
 
                 published = parse_published_datetime(article)
@@ -191,7 +195,7 @@ def dt_search(
         return releases
 
     try:
-        imdb_id = shared_state.is_imdb_id(search_string)
+        imdb_id = is_imdb_id(search_string)
         if imdb_id:
             search_string = get_localized_title(shared_state, imdb_id, "en")
             if not search_string:
@@ -240,14 +244,14 @@ def dt_search(
                     .replace(")", "")
                 )
 
-                if not shared_state.is_valid_release(
+                if not is_valid_release(
                     title, search_category, search_string, season, episode
                 ):
                     continue
 
                 if search_category == SEARCH_CAT_BOOKS:
                     # lazylibrarian can only detect specific date formats / issue numbering for magazines
-                    title = shared_state.normalize_magazine_title(title)
+                    title = normalize_magazine_title(title)
 
                 try:
                     imdb_id = re.search(r"tt\d+", str(article)).group()
@@ -262,7 +266,7 @@ def dt_search(
                     debug(f"Size not found in search-article: {title_raw}")
                     continue
                 size_item = extract_size(m.group(1).strip())
-                mb = shared_state.convert_to_mb(size_item)
+                mb = convert_to_mb(size_item)
                 size = mb * 1024 * 1024
 
                 published = parse_published_datetime(article)

@@ -12,8 +12,8 @@ from bs4 import BeautifulSoup
 
 from quasarr.constants import (
     CODEC_REGEX,
-    GERMAN_MONTHS_MAP,
     IMDB_REGEX,
+    MONTHS_MAP,
     RESOLUTION_REGEX,
     SEARCH_CAT_BOOKS,
     SEARCH_CAT_MOVIES,
@@ -23,7 +23,10 @@ from quasarr.constants import (
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.log import debug, error, warn
 from quasarr.providers.utils import (
+    convert_to_mb,
     generate_download_link,
+    is_imdb_id,
+    is_valid_release,
 )
 
 hostname = "mb"
@@ -72,14 +75,14 @@ def _parse_posts(
                 )
                 if m_date:
                     day, mon_name, year, hm = m_date.groups()
-                    mon = GERMAN_MONTHS_MAP.get(mon_name, "01")
+                    mon = MONTHS_MAP.get(mon_name.lower(), "01")
                     dt_obj = datetime.strptime(
                         f"{day}.{mon}.{year} {hm}", "%d.%m.%Y %H:%M"
                     )
                     published = dt_obj.strftime("%a, %d %b %Y %H:%M:%S +0000")
 
             if is_search:
-                if not shared_state.is_valid_release(
+                if not is_valid_release(
                     title, search_category, search_string, season, episode
                 ):
                     continue
@@ -116,7 +119,7 @@ def _parse_posts(
             )
             if size_match:
                 sz = {"size": size_match.group(1), "sizeunit": size_match.group(2)}
-                mb = shared_state.convert_to_mb(sz)
+                mb = convert_to_mb(sz)
                 size_bytes = mb * 1024 * 1024
 
             link = generate_download_link(
@@ -204,7 +207,7 @@ def mb_search(
         return []
 
     password = mb
-    imdb_id = shared_state.is_imdb_id(search_string)
+    imdb_id = is_imdb_id(search_string)
     if imdb_id:
         search_string = imdb_id
 

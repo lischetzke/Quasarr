@@ -19,7 +19,10 @@ from quasarr.constants import (
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.log import debug, info, trace, warn
 from quasarr.providers.utils import (
+    convert_to_mb,
     generate_download_link,
+    is_imdb_id,
+    is_valid_release,
 )
 
 hostname = "dw"
@@ -98,7 +101,7 @@ def dw_feed(shared_state, start_time, search_category):
 
                 size_info = article.find("span").text.strip()
                 size_item = extract_size(size_info)
-                mb = shared_state.convert_to_mb(size_item)
+                mb = convert_to_mb(size_item)
                 size = mb * 1024 * 1024
                 date = article.parent.parent.find(
                     "span", {"class": "date updated"}
@@ -194,14 +197,14 @@ def dw_search(
         )
         return releases
 
-    imdb_id = shared_state.is_imdb_id(search_string)
+    imdb_id = is_imdb_id(search_string)
 
     if results:
         for result in results:
             try:
                 title = result.a.text.strip()
 
-                if not shared_state.is_valid_release(
+                if not is_valid_release(
                     title, search_category, search_string, season, episode
                 ):
                     continue
@@ -223,7 +226,7 @@ def dw_search(
                 source = result.a["href"]
                 size_info = result.find("span").text.strip()
                 size_item = extract_size(size_info)
-                mb = shared_state.convert_to_mb(size_item)
+                mb = convert_to_mb(size_item)
                 size = mb * 1024 * 1024
                 date = result.parent.parent.find(
                     "span", {"class": "date updated"}

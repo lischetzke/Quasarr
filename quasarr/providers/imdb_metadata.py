@@ -12,6 +12,7 @@ import requests
 from bs4 import BeautifulSoup
 
 from quasarr.providers.log import debug, info
+from quasarr.providers.utils import search_string_in_sanitized_title
 
 
 def _get_db(table_name):
@@ -623,7 +624,7 @@ def _match_result(shared_state, title, results, ttype_api, is_api=False):
             if ttype_api == "MOVIE" and found_type not in ["movie", "tvMovie"]:
                 continue
 
-        if shared_state.search_string_in_sanitized_title(title, found_title):
+        if search_string_in_sanitized_title(title, found_title):
             return found_id
 
     for result in results:
@@ -631,7 +632,7 @@ def _match_result(shared_state, title, results, ttype_api, is_api=False):
             result.get("primaryTitle") if is_api else result.get("titleNameText")
         )
         found_id = result.get("id")
-        if shared_state.search_string_in_sanitized_title(title, found_title):
+        if search_string_in_sanitized_title(title, found_title):
             return found_id
 
     return None

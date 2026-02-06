@@ -2,12 +2,16 @@
 # Quasarr
 # Project by https://github.com/rix1337
 
+import json
 import os
 import re
 import socket
 import sys
+import traceback
+import unicodedata
 from base64 import urlsafe_b64decode, urlsafe_b64encode
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import date, datetime, timedelta
 from io import BytesIO
 from urllib.parse import urlparse
 
@@ -16,11 +20,14 @@ from PIL import Image
 
 from quasarr.constants import (
     HOSTNAMES_REQUIRING_LOGIN,
+    MONTHS_MAP,
+    MOVIE_REGEX,
     SEARCH_CAT_BOOKS,
     SEARCH_CAT_MOVIES,
     SEARCH_CAT_SHOWS,
+    SEASON_EP_REGEX,
 )
-from quasarr.providers.log import crit, error, warn
+from quasarr.providers.log import crit, debug, error, trace, warn
 from quasarr.storage.categories import download_category_exists
 
 
@@ -504,3 +511,446 @@ def extract_client_type(request_from):
         return "lazylibrarian"
 
     return client
+
+
+def convert_to_mb(item):
+    size = float(item["size"])
+    unit = item["sizeunit"].upper()
+
+    if unit == "B":
+        size_b = size
+    elif unit == "KB":
+        size_b = size * 1024
+    elif unit == "MB":
+        size_b = size * 1024 * 1024
+    elif unit == "GB":
+        size_b = size * 1024 * 1024 * 1024
+    elif unit == "TB":
+        size_b = size * 1024 * 1024 * 1024 * 1024
+    else:
+        raise ValueError(
+            f"Unsupported size unit {item['name']} {item['size']} {item['sizeunit']}"
+        )
+
+    size_mb = size_b / (1024 * 1024)
+    return int(size_mb)
+
+
+def sanitize_title(title: str) -> str:
+    umlaut_map = {
+        "Ä": "Ae",
+        "ä": "ae",
+        "Ö": "Oe",
+        "ö": "oe",
+        "Ü": "Ue",
+        "ü": "ue",
+        "ß": "ss",
+    }
+    for umlaut, replacement in umlaut_map.items():
+        title = title.replace(umlaut, replacement)
+
+    title = title.encode("ascii", errors="ignore").decode()
+
+    # Replace slashes and spaces with dots
+    title = title.replace("/", "").replace(" ", ".")
+    title = title.strip(".")  # no leading/trailing dots
+    title = title.replace(".-.", "-")  # .-. → -
+
+    # Finally, drop any chars except letters, digits, dots, hyphens, ampersands
+    title = re.sub(r"[^A-Za-z0-9.\-&]", "", title)
+
+    # remove any repeated dots
+    title = re.sub(r"\.{2,}", ".", title)
+    return title
+
+
+def sanitize_string(s):
+    s = s.lower()
+
+    # Remove dots / pluses
+    s = s.replace(".", " ")
+    s = s.replace("+", " ")
+    s = s.replace("_", " ")
+    s = s.replace("-", " ")
+
+    # Umlauts
+    s = re.sub(r"ä", "ae", s)
+    s = re.sub(r"ö", "oe", s)
+    s = re.sub(r"ü", "ue", s)
+    s = re.sub(r"ß", "ss", s)
+
+    # Remove special characters
+    s = re.sub(r"[^a-zA-Z0-9\s]", "", s)
+
+    # Remove season and episode patterns
+    s = re.sub(r"\bs\d{1,3}(e\d{1,3})?\b", "", s)
+
+    # Remove German and English articles
+    articles = r"\b(?:der|die|das|ein|eine|einer|eines|einem|einen|the|a|an|and)\b"
+    s = re.sub(articles, "", s, count=0, flags=re.IGNORECASE)
+
+    # Replace obsolete titles
+    s = s.replace("navy cis", "ncis")
+
+    # Remove extra whitespace
+    s = " ".join(s.split())
+
+    return s
+
+
+def search_string_in_sanitized_title(search_string, title):
+    sanitized_search_string = sanitize_string(search_string)
+    sanitized_title = sanitize_string(title)
+
+    search_regex = r"\b.+\b".join(
+        [re.escape(s) for s in sanitized_search_string.split(" ")]
+    )
+    # Use word boundaries to ensure full word/phrase match
+    if re.search(rf"\b{search_regex}\b", sanitized_title):
+        trace(f"Matched search string: {search_regex} with title: {sanitized_title}")
+        return True
+    else:
+        debug(
+            f"Skipping {title} as it doesn't match search string: {sanitized_search_string}"
+        )
+        return False
+
+
+def is_imdb_id(search_string):
+    if bool(re.fullmatch(r"tt\d{7,}", search_string)):
+        return search_string
+    else:
+        return None
+
+
+def match_in_title(title: str, season: int = None, episode: int = None) -> bool:
+    # ensure season/episode are ints (or None)
+    if isinstance(season, str):
+        try:
+            season = int(season)
+        except ValueError:
+            season = None
+    if isinstance(episode, str):
+        try:
+            episode = int(episode)
+        except ValueError:
+            episode = None
+
+    pattern = re.compile(
+        r"(?i)(?:\.|^)[sS](\d+)(?:-(\d+))?"  # season or season‑range
+        r"(?:[eE](\d+)(?:-(?:[eE]?)(\d+))?)?"  # episode or episode‑range
+        r"(?=[\.-]|$)"
+    )
+
+    matches = pattern.findall(title)
+    if not matches:
+        return False
+
+    for s_start, s_end, e_start, e_end in matches:
+        se_start, se_end = int(s_start), int(s_end or s_start)
+
+        # if a season was requested, ensure it falls in the range
+        if season is not None and not (se_start <= season <= se_end):
+            continue
+
+        # if no episode requested, only accept if the title itself had no episode tag
+        if episode is None:
+            if not e_start:
+                return True
+            else:
+                # title did specify an episode — skip this match
+                continue
+
+        # episode was requested, so title must supply one
+        if not e_start:
+            continue
+
+        ep_start, ep_end = int(e_start), int(e_end or e_start)
+        if ep_start <= episode <= ep_end:
+            return True
+
+    return False
+
+
+def is_valid_release(
+    title: str,
+    search_category: int,
+    search_string: str,
+    season: int = None,
+    episode: int = None,
+) -> bool:
+    """
+    Return True if the given release title is valid for the given search parameters.
+    - title: the release title to test
+    - search_category: numeric search category, 2000 for movies, 5000 for tv shows
+    - search_string: the original search phrase (could be an IMDb id or plain text)
+    - season: desired season number (or None)
+    - episode: desired episode number (or None)
+    """
+    try:
+        is_movie_search = search_category == SEARCH_CAT_MOVIES
+        is_tv_search = search_category == SEARCH_CAT_SHOWS
+        is_docs_search = search_category == SEARCH_CAT_BOOKS
+
+        # if search string is NOT an imdb id check search_string_in_sanitized_title - if not match, it is not valid
+        if not is_docs_search and not is_imdb_id(search_string):
+            if not search_string_in_sanitized_title(search_string, title):
+                debug(
+                    "Skipping {title!r} as it doesn't match sanitized search string: {search_string!r}",
+                    title=title,
+                    search_string=search_string,
+                )
+                return False
+
+        # if it's a movie search, don't allow any TV show titles (check for NO season or episode tags in the title)
+        if is_movie_search:
+            if not MOVIE_REGEX.match(title):
+                debug(
+                    "Skipping {title!r} as title doesn't match movie regex: {pattern!r}",
+                    title=title,
+                    pattern=MOVIE_REGEX.pattern,
+                )
+                return False
+            return True
+
+        # if it's a TV show search, don't allow any movies (check for season or episode tags in the title)
+        if is_tv_search:
+            # must have some S/E tag present
+            if not SEASON_EP_REGEX.search(title):
+                debug(
+                    "Skipping {title!r} as title doesn't match TV show regex: {pattern!r}",
+                    title=title,
+                    pattern=SEASON_EP_REGEX.pattern,
+                )
+                return False
+            # if caller specified a season or episode, double‑check the match
+            if season is not None or episode is not None:
+                if not match_in_title(title, season, episode):
+                    debug(
+                        "Skipping {title!r} as it doesn't match season {season} and episode {episode}",
+                        title=title,
+                        season=season,
+                        episode=episode,
+                    )
+                    return False
+            return True
+
+        # if it's a document search, it should not contain Movie or TV show tags
+        if is_docs_search:
+            # must NOT have any S/E tag present
+            if SEASON_EP_REGEX.search(title):
+                debug(
+                    "Skipping {title!r} as title matches TV show regex: {pattern!r}",
+                    title=title,
+                    pattern=SEASON_EP_REGEX.pattern,
+                )
+                return False
+            return True
+
+        # unknown search source — reject by default
+        debug(f"Skipping {title!r} as search category is unknown: {search_category!r}")
+        return False
+
+    except Exception as e:
+        # log exception message and short stack trace
+        tb = traceback.format_exc()
+        debug(
+            f"Exception in is_valid_release: {e!r}\n{tb}"
+            f"is_valid_release called with "
+            f"title={title!r}, search_category={search_category!r}, "
+            f"search_string={search_string!r}, season={season!r}, episode={episode!r}"
+        )
+        return False
+
+
+def normalize_magazine_title(title: str) -> str:
+    """
+    Massage magazine titles so LazyLibrarian's parser can pick up dates reliably:
+    - Convert date-like patterns into space-delimited numeric tokens (YYYY MM DD or YYYY MM).
+    - Handle malformed "DD.YYYY.YYYY" cases (e.g., 04.2006.2025 → 2025 06 04).
+    - Convert two-part month-year like "3.25" into YYYY MM.
+    - Convert "No/Nr/Sonderheft X.YYYY" when X≤12 into YYYY MM.
+    - Preserve pure issue/volume prefixes and other digit runs untouched.
+    """
+    title = title.strip()
+
+    # 0) Bug: DD.YYYY.YYYY -> treat second YYYY's last two digits as month
+    def repl_bug(match):
+        d = int(match.group(1))
+        m_hint = match.group(2)
+        y = int(match.group(3))
+        m = int(m_hint[-2:])
+        try:
+            date(y, m, d)
+            return f"{y:04d} {m:02d} {d:02d}"
+        except ValueError:
+            return match.group(0)
+
+    title = re.sub(r"\b(\d{1,2})\.(20\d{2})\.(20\d{2})\b", repl_bug, title)
+
+    # 1) DD.MM.YYYY -> "YYYY MM DD"
+    def repl_dmy(match):
+        d, m, y = map(int, match.groups())
+        try:
+            date(y, m, d)
+            return f"{y:04d} {m:02d} {d:02d}"
+        except ValueError:
+            return match.group(0)
+
+    title = re.sub(r"\b(\d{1,2})\.(\d{1,2})\.(\d{4})\b", repl_dmy, title)
+
+    # 2) DD[.]? MonthName YYYY (optional 'vom') -> "YYYY MM DD"
+    def repl_dmony(match):
+        d = int(match.group(1))
+        name = match.group(2)
+        y = int(match.group(3))
+        mm = MONTHS_MAP.get(name.lower())
+        if mm:
+            try:
+                date(y, mm, d)
+                return f"{y:04d} {mm:02d} {d:02d}"
+            except ValueError:
+                pass
+        return match.group(0)
+
+    title = re.sub(
+        r"\b(?:vom\s*)?(\d{1,2})\.?\s+([A-Za-zÄÖÜäöüß]+)\s+(\d{4})\b",
+        repl_dmony,
+        title,
+        flags=re.IGNORECASE,
+    )
+
+    # 3) MonthName YYYY -> "YYYY MM"
+    def repl_mony(match):
+        name = match.group(1)
+        y = int(match.group(2))
+        mm = MONTHS_MAP.get(name.lower())
+        if mm:
+            try:
+                date(y, mm, 1)
+                return f"{y:04d} {mm:02d}"
+            except ValueError:
+                pass
+        return match.group(0)
+
+    title = re.sub(
+        r"\b([A-Za-zÄÖÜäöüß]+)\s+(\d{4})\b", repl_mony, title, flags=re.IGNORECASE
+    )
+
+    # 4) YYYYMMDD -> "YYYY MM DD"
+    def repl_ymd(match):
+        y = int(match.group(1))
+        m = int(match.group(2))
+        d = int(match.group(3))
+        try:
+            date(y, m, d)
+            return f"{y:04d} {m:02d} {d:02d}"
+        except ValueError:
+            return match.group(0)
+
+    title = re.sub(
+        r"\b(20\d{2})(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])\b", repl_ymd, title
+    )
+
+    # 5) YYYYMM -> "YYYY MM"
+    def repl_ym(match):
+        y = int(match.group(1))
+        m = int(match.group(2))
+        try:
+            date(y, m, 1)
+            return f"{y:04d} {m:02d}"
+        except ValueError:
+            return match.group(0)
+
+    title = re.sub(r"\b(20\d{2})(0[1-9]|1[0-2])\b", repl_ym, title)
+
+    # 6) X.YY (month.two-digit-year) -> "YYYY MM" (e.g., 3.25 -> 2025 03)
+    def repl_my2(match):
+        mm = int(match.group(1))
+        yy = int(match.group(2))
+        y = 2000 + yy
+        if 1 <= mm <= 12:
+            try:
+                date(y, mm, 1)
+                return f"{y:04d} {mm:02d}"
+            except ValueError:
+                pass
+        return match.group(0)
+
+    title = re.sub(r"\b([1-9]|1[0-2])\.(\d{2})\b", repl_my2, title)
+
+    # 7) No/Nr/Sonderheft <1-12>.<YYYY> -> "YYYY MM"
+    def repl_nmy(match):
+        num = int(match.group(1))
+        y = int(match.group(2))
+        if 1 <= num <= 12:
+            try:
+                date(y, num, 1)
+                return f"{y:04d} {num:02d}"
+            except ValueError:
+                pass
+        return match.group(0)
+
+    title = re.sub(
+        r"\b(?:No|Nr|Sonderheft)\s*(\d{1,2})\.(\d{4})\b",
+        repl_nmy,
+        title,
+        flags=re.IGNORECASE,
+    )
+
+    return title
+
+
+def get_recently_searched(shared_state, context, timeout_seconds):
+    recently_searched = shared_state.values.get(context, {})
+    threshold = datetime.now() - timedelta(seconds=timeout_seconds)
+    keys_to_remove = [
+        key
+        for key, value in recently_searched.items()
+        if value["timestamp"] <= threshold
+    ]
+    for key in keys_to_remove:
+        debug(f"Removing '{key}' from recently searched memory ({context})...")
+        del recently_searched[key]
+    return recently_searched
+
+
+def download_package(links, title, password, package_id, shared_state):
+    links = [sanitize_url(link) for link in links]
+
+    device = shared_state.get_device()
+    downloaded = device.linkgrabber.add_links(
+        params=[
+            {
+                "autostart": False,
+                "links": json.dumps(links),
+                "packageName": title,
+                "extractPassword": password,
+                "priority": "DEFAULT",
+                "downloadPassword": password,
+                "destinationFolder": "Quasarr/<jd:packagename>",
+                "comment": package_id,
+                "overwritePackagizerRules": True,
+            }
+        ]
+    )
+    return downloaded
+
+
+def sanitize_url(url: str) -> str:
+    # normalize first
+    url = unicodedata.normalize("NFKC", url)
+
+    # 1) real control characters (U+0000–U+001F, U+007F–U+009F)
+    _REAL_CTRL_RE = re.compile(r"[\u0000-\u001f\u007f-\u009f]")
+
+    # 2) *literal* escaped unicode junk: \u0010, \x10, repeated variants
+    _ESCAPED_CTRL_RE = re.compile(r"(?:\\u00[0-1][0-9a-fA-F]|\\x[0-1][0-9a-fA-F])")
+
+    # remove literal escaped control sequences like "\u0010"
+    url = _ESCAPED_CTRL_RE.sub("", url)
+
+    # remove actual control characters if already decoded
+    url = _REAL_CTRL_RE.sub("", url)
+
+    return url.strip()

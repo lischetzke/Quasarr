@@ -14,7 +14,14 @@ from quasarr.constants import SEARCH_CAT_SHOWS
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.imdb_metadata import get_localized_title
 from quasarr.providers.log import debug, info, trace, warn
-from quasarr.providers.utils import generate_download_link
+from quasarr.providers.utils import (
+    convert_to_mb,
+    generate_download_link,
+    get_recently_searched,
+    is_imdb_id,
+    is_valid_release,
+    sanitize_string,
+)
 
 hostname = "sf"
 
@@ -218,7 +225,7 @@ def sf_search(
     sf = shared_state.values["config"]("Hostnames").get(hostname.lower())
     password = check(sf)
 
-    imdb_id_in_search = shared_state.is_imdb_id(search_string)
+    imdb_id_in_search = is_imdb_id(search_string)
     if imdb_id_in_search:
         search_string = get_localized_title(shared_state, imdb_id_in_search, "de")
         if not search_string:
@@ -251,8 +258,8 @@ def sf_search(
 
     results = feed.get("result", [])
     for result in results:
-        sanitized_search_string = shared_state.sanitize_string(search_string)
-        sanitized_title = shared_state.sanitize_string(result.get("title", ""))
+        sanitized_search_string = sanitize_string(search_string)
+        sanitized_title = sanitize_string(result.get("title", ""))
         if not re.search(rf"\b{re.escape(sanitized_search_string)}\b", sanitized_title):
             trace(
                 f"Search string '{search_string}' doesn't match '{result.get('title')}'"
@@ -265,9 +272,7 @@ def sf_search(
         series_id = result.get("url_id")
         context = "recents_sf"
         threshold = 60
-        recently_searched = shared_state.get_recently_searched(
-            shared_state, context, threshold
-        )
+        recently_searched = get_recently_searched(shared_state, context, threshold)
         entry = recently_searched.get(series_id, {})
         ts = entry.get("timestamp")
         use_cache = ts and ts > datetime.now() - timedelta(seconds=threshold)
@@ -357,7 +362,7 @@ def sf_search(
                         .strip()
                     )
                     size_item = extract_size(size_string)
-                    mb = shared_state.convert_to_mb(size_item)
+                    mb = convert_to_mb(size_item)
                 except Exception as e:
                     debug(f"Error extracting size for {title}: {e}")
                     mb = 0
@@ -389,7 +394,7 @@ def sf_search(
 
                             if episodes_in_release:
                                 try:
-                                    mb = shared_state.convert_to_mb(
+                                    mb = convert_to_mb(
                                         {
                                             "size": float(size_item["size"])
                                             // episodes_in_release,
@@ -403,7 +408,7 @@ def sf_search(
                         continue
 
                 # check down here on purpose, because the title may be modified at episode stage
-                if not shared_state.is_valid_release(
+                if not is_valid_release(
                     title, search_category, search_string, season, episode
                 ):
                     continue

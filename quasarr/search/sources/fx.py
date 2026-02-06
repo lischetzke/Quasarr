@@ -12,7 +12,11 @@ from quasarr.constants import SEARCH_CAT_BOOKS, SEARCH_CAT_MOVIES
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.log import debug, info, trace, warn
 from quasarr.providers.utils import (
+    convert_to_mb,
     generate_download_link,
+    is_imdb_id,
+    is_valid_release,
+    sanitize_title,
 )
 
 hostname = "fx"
@@ -75,7 +79,7 @@ def fx_feed(shared_state, start_time, search_category):
                 i = 0
                 for title in titles:
                     link = title["href"]
-                    title = shared_state.sanitize_title(title.text)
+                    title = sanitize_title(title.text)
 
                     try:
                         imdb_link = article.find("a", href=re.compile(r"imdb\.com"))
@@ -93,7 +97,7 @@ def fx_feed(shared_state, start_time, search_category):
                             .strip()
                         )
                         size_item = extract_size(size_info)
-                        mb = shared_state.convert_to_mb(size_item)
+                        mb = convert_to_mb(size_item)
                         size = mb * 1024 * 1024
 
                         link = generate_download_link(
@@ -167,7 +171,7 @@ def fx_search(
         pass
 
     if search_string != "":
-        imdb_id = shared_state.is_imdb_id(search_string)
+        imdb_id = is_imdb_id(search_string)
     else:
         imdb_id = None
 
@@ -214,9 +218,9 @@ def fx_search(
                     i = 0
                     for title in titles:
                         link = title["href"]
-                        title = shared_state.sanitize_title(title.text)
+                        title = sanitize_title(title.text)
 
-                        if not shared_state.is_valid_release(
+                        if not is_valid_release(
                             title, search_category, search_string, season, episode
                         ):
                             continue
@@ -246,7 +250,7 @@ def fx_search(
                                 .strip()
                             )
                             size_item = extract_size(size_info)
-                            mb = shared_state.convert_to_mb(size_item)
+                            mb = convert_to_mb(size_item)
                             size = mb * 1024 * 1024
 
                             link = generate_download_link(

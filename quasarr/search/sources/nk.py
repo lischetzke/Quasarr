@@ -16,7 +16,10 @@ from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostnam
 from quasarr.providers.imdb_metadata import get_localized_title, get_year
 from quasarr.providers.log import debug, info, trace
 from quasarr.providers.utils import (
+    convert_to_mb,
     generate_download_link,
+    is_imdb_id,
+    is_valid_release,
 )
 
 hostname = "nk"
@@ -81,7 +84,7 @@ def nk_search(
 
     source_search = ""
     if search_string != "":
-        imdb_id = shared_state.is_imdb_id(search_string)
+        imdb_id = is_imdb_id(search_string)
         if imdb_id:
             local_title = get_localized_title(shared_state, imdb_id, "de")
             if not local_title:
@@ -159,7 +162,7 @@ def nk_search(
             if release_imdb_id is None:
                 release_imdb_id = imdb_id
 
-            if not shared_state.is_valid_release(
+            if not is_valid_release(
                 title, search_category, search_string, season, episode
             ):
                 continue
@@ -170,7 +173,7 @@ def nk_search(
             size_text = get_release_field(result, "Größe")
             if size_text:
                 size_item = extract_size(size_text)
-                mb = shared_state.convert_to_mb(size_item)
+                mb = convert_to_mb(size_item)
 
             if season != "" and episode == "":
                 mb = 0  # Size unknown for season packs

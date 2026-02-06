@@ -27,6 +27,8 @@ from quasarr.providers.sessions.dl import (
 )
 from quasarr.providers.utils import (
     generate_download_link,
+    is_imdb_id,
+    is_valid_release,
 )
 
 hostname = "dl"
@@ -288,7 +290,7 @@ def _search_single_page(
                 if thread_url.startswith("/"):
                     thread_url = f"https://www.{host}{thread_url}"
 
-                if not shared_state.is_valid_release(
+                if not is_valid_release(
                     title_normalized, search_category, search_string, season, episode
                 ):
                     continue
@@ -354,7 +356,7 @@ def dl_search(
     releases = []
     host = shared_state.values["config"]("Hostnames").get(hostname)
 
-    imdb_id = shared_state.is_imdb_id(search_string)
+    imdb_id = is_imdb_id(search_string)
     if imdb_id:
         title = get_localized_title(shared_state, imdb_id, "de")
         if not title:

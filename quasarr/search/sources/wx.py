@@ -21,6 +21,8 @@ from quasarr.providers.imdb_metadata import get_localized_title, get_year
 from quasarr.providers.log import debug, error, trace, warn
 from quasarr.providers.utils import (
     generate_download_link,
+    is_imdb_id,
+    is_valid_release,
 )
 
 warnings.filterwarnings(
@@ -165,7 +167,7 @@ def wx_search(
         debug(f"<d>Skipping <y>{search_category}</>: unsupported category.</d>")
         return releases
 
-    imdb_id = shared_state.is_imdb_id(search_string)
+    imdb_id = is_imdb_id(search_string)
     if imdb_id:
         debug(f"Received IMDb ID: <y>{imdb_id}</y>")
         title = get_localized_title(shared_state, imdb_id, "de")
@@ -274,7 +276,7 @@ def wx_search(
                     title = html.unescape(main_title)
                     title = title.replace(" ", ".")
 
-                    if shared_state.is_valid_release(
+                    if is_valid_release(
                         title, search_category, search_string, season, episode
                     ):
                         # Skip if we've already seen this exact title
@@ -330,7 +332,7 @@ def wx_search(
                             release_title = html.unescape(release_title)
                             release_title = release_title.replace(" ", ".")
 
-                            if not shared_state.is_valid_release(
+                            if not is_valid_release(
                                 release_title,
                                 search_category,
                                 search_string,

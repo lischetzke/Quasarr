@@ -22,6 +22,8 @@ from quasarr.constants import (
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.utils import (
     generate_download_link,
+    is_imdb_id,
+    is_valid_release,
 )
 
 warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
@@ -253,7 +255,7 @@ def _parse_search_results(
             # Create releases for individual episodes (use calculated episode size)
             for title in unique_episodes:
                 # Validate release against search criteria
-                if not shared_state.is_valid_release(
+                if not is_valid_release(
                     title, search_category, search_string, season, episode
                 ):
                     continue
@@ -289,7 +291,7 @@ def _parse_search_results(
 
             # Also add the main title (season pack) with full size - if not duplicate
             if main_title.lower() not in seen:
-                if shared_state.is_valid_release(
+                if is_valid_release(
                     main_title, search_category, search_string, season, episode
                 ):
                     link = generate_download_link(
@@ -446,7 +448,7 @@ def hs_search(
         return releases
 
     # HS supports direct IMDb ID search
-    imdb_id = shared_state.is_imdb_id(search_string)
+    imdb_id = is_imdb_id(search_string)
     if not imdb_id:
         debug(
             f'"{hostname.upper()}" only supports IMDb ID search, got: {search_string}'

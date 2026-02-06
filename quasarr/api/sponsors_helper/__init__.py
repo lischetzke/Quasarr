@@ -13,6 +13,7 @@ from quasarr.providers.auth import require_api_key
 from quasarr.providers.log import info
 from quasarr.providers.notifications import send_discord_message
 from quasarr.providers.statistics import StatsHelper
+from quasarr.providers.utils import download_package
 from quasarr.storage.categories import (
     get_download_category_from_package_id,
     get_download_category_mirrors,
@@ -121,8 +122,8 @@ def setup_sponsors_helper_routes(app):
             )
 
             if download_links:
-                downloaded = shared_state.download_package(
-                    download_links, title, password, package_id
+                downloaded = download_package(
+                    download_links, title, password, package_id, shared_state
                 )
                 if downloaded:
                     StatsHelper(shared_state).increment_package_with_links(

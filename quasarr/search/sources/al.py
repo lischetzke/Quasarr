@@ -23,7 +23,11 @@ from quasarr.providers.imdb_metadata import get_localized_title, get_year
 from quasarr.providers.log import debug, error, info, trace, warn
 from quasarr.providers.sessions.al import fetch_via_requests_session, invalidate_session
 from quasarr.providers.utils import (
+    convert_to_mb,
     generate_download_link,
+    get_recently_searched,
+    is_imdb_id,
+    sanitize_string,
 )
 
 hostname = "al"
@@ -292,7 +296,7 @@ def al_search(
         warn(f"Unknown search category: {search_category}")
         return releases
 
-    imdb_id = shared_state.is_imdb_id(search_string)
+    imdb_id = is_imdb_id(search_string)
     if imdb_id:
         title = get_localized_title(shared_state, imdb_id, "de")
         if not title:
@@ -355,8 +359,8 @@ def al_search(
             url = title_tag["href"].strip()
             name = title_tag.get_text(strip=True)
 
-            sanitized_search_string = shared_state.sanitize_string(search_string)
-            sanitized_title = shared_state.sanitize_string(name)
+            sanitized_search_string = sanitize_string(search_string)
+            sanitized_title = sanitize_string(name)
             if not sanitized_search_string in sanitized_title:
                 debug(f"Search string '{search_string}' doesn't match '{name}'")
                 continue
@@ -384,9 +388,7 @@ def al_search(
 
             context = "recents_al"
             threshold = 60
-            recently_searched = shared_state.get_recently_searched(
-                shared_state, context, threshold
-            )
+            recently_searched = get_recently_searched(shared_state, context, threshold)
             entry = recently_searched.get(url, {})
             ts = entry.get("timestamp")
             use_cache = ts and ts > datetime.now() - timedelta(seconds=threshold)
@@ -444,7 +446,7 @@ def al_search(
                         size_string = candidates[-1][0]
                         try:
                             size_item = extract_size(size_string)
-                            mb = shared_state.convert_to_mb(size_item)
+                            mb = convert_to_mb(size_item)
                         except Exception as e:
                             debug(f"Error extracting size for {title}: {e}")
 

@@ -18,6 +18,7 @@ from quasarr.providers import obfuscated, shared_state
 from quasarr.providers.html_templates import render_button, render_centered_html
 from quasarr.providers.log import debug, error, info, trace
 from quasarr.providers.statistics import StatsHelper
+from quasarr.providers.utils import download_package
 from quasarr.storage.categories import (
     get_download_category_from_package_id,
     get_download_category_mirrors,
@@ -1144,8 +1145,8 @@ def setup_captcha_routes(app):
             password = data.get("password", "")
 
             # Download the package
-            downloaded = shared_state.download_package(
-                links, title, password, package_id
+            downloaded = download_package(
+                links, title, password, package_id, shared_state
             )
 
             if downloaded:
@@ -1640,8 +1641,8 @@ def setup_captcha_routes(app):
 
             # Download the package
             if links:
-                downloaded = shared_state.download_package(
-                    links, title, password, package_id
+                downloaded = download_package(
+                    links, title, password, package_id, shared_state
                 )
                 if downloaded:
                     StatsHelper(shared_state).increment_package_with_links(links)
@@ -1735,8 +1736,8 @@ def setup_captcha_routes(app):
                     info(f"Decrypted <g>{len(links)}</g> download links for {title}")
                     if not links:
                         raise ValueError("No download links found after decryption")
-                    downloaded = shared_state.download_package(
-                        links, title, password, package_id
+                    downloaded = download_package(
+                        links, title, password, package_id, shared_state
                     )
                     if downloaded:
                         StatsHelper(shared_state).increment_package_with_links(links)

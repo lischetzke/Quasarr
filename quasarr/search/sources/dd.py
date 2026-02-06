@@ -15,7 +15,10 @@ from quasarr.providers.sessions.dd import (
     retrieve_and_validate_session,
 )
 from quasarr.providers.utils import (
+    convert_to_mb,
     generate_download_link,
+    is_imdb_id,
+    is_valid_release,
 )
 
 hostname = "dd"
@@ -62,7 +65,7 @@ def dd_search(
         info(f"Could not retrieve valid session for {dd}")
         return releases
 
-    imdb_id = shared_state.is_imdb_id(search_string)
+    imdb_id = is_imdb_id(search_string)
     if imdb_id:
         search_string = get_localized_title(shared_state, imdb_id, "en")
         if not search_string:
@@ -122,7 +125,7 @@ def dd_search(
                 else:
                     title = release.get("release")
 
-                    if not shared_state.is_valid_release(
+                    if not is_valid_release(
                         title, search_category, search_string, season, episode
                     ):
                         continue
@@ -136,7 +139,7 @@ def dd_search(
 
                     source = f"https://{dd}/"
                     size_item = extract_size(release.get("size"))
-                    mb = shared_state.convert_to_mb(size_item) * 1024 * 1024
+                    mb = convert_to_mb(size_item) * 1024 * 1024
                     published = convert_to_rss_date(release.get("when"))
 
                     link = generate_download_link(

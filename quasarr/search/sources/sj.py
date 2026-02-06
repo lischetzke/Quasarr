@@ -14,7 +14,12 @@ from quasarr.constants import SEARCH_CAT_SHOWS
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.imdb_metadata import get_localized_title
 from quasarr.providers.log import debug, info, trace
-from quasarr.providers.utils import generate_download_link
+from quasarr.providers.utils import (
+    generate_download_link,
+    is_imdb_id,
+    is_valid_release,
+    sanitize_string,
+)
 
 hostname = "sj"
 
@@ -135,7 +140,7 @@ def sj_search(
     sj_host = shared_state.values["config"]("Hostnames").get(hostname)
     password = sj_host
 
-    imdb_id = shared_state.is_imdb_id(search_string)
+    imdb_id = is_imdb_id(search_string)
     if not imdb_id:
         return releases
 
@@ -161,13 +166,13 @@ def sj_search(
         return releases
 
     one_hour_ago = (datetime.now() - timedelta(hours=1)).strftime("%Y-%m-%d %H:%M:%S")
-    sanitized_search_string = shared_state.sanitize_string(localized_title)
+    sanitized_search_string = sanitize_string(localized_title)
 
     for result in results:
         try:
             result_title = result.get_text(strip=True)
 
-            sanitized_title = shared_state.sanitize_string(result_title)
+            sanitized_title = sanitize_string(result_title)
 
             if not re.search(
                 rf"\b{re.escape(sanitized_search_string)}\b", sanitized_title
@@ -203,7 +208,7 @@ def sj_search(
                     if not title:
                         continue
 
-                    if not shared_state.is_valid_release(
+                    if not is_valid_release(
                         title, search_category, search_string, season, episode
                     ):
                         continue

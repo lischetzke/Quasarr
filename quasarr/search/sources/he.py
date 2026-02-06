@@ -19,7 +19,10 @@ from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostnam
 from quasarr.providers.imdb_metadata import get_localized_title, get_year
 from quasarr.providers.log import debug, info, trace, warn
 from quasarr.providers.utils import (
+    convert_to_mb,
     generate_download_link,
+    is_imdb_id,
+    is_valid_release,
 )
 
 hostname = "he"
@@ -92,7 +95,7 @@ def he_search(
 
     source_search = ""
     if search_string != "":
-        imdb_id = shared_state.is_imdb_id(search_string)
+        imdb_id = is_imdb_id(search_string)
         if imdb_id:
             local_title = get_localized_title(shared_state, imdb_id, "en")
             if not local_title:
@@ -165,13 +168,13 @@ def he_search(
             head_split = head_title.split(" – ")
             title = head_split[0].strip()
 
-            if not shared_state.is_valid_release(
+            if not is_valid_release(
                 title, search_category, search_string, season, episode
             ):
                 continue
 
             size_item = extract_size(head_split[1].strip())
-            mb = shared_state.convert_to_mb(size_item)
+            mb = convert_to_mb(size_item)
 
             size = mb * 1024 * 1024
 

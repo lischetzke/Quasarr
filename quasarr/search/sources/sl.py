@@ -23,7 +23,11 @@ from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostnam
 from quasarr.providers.imdb_metadata import get_localized_title
 from quasarr.providers.log import debug, info, warn
 from quasarr.providers.utils import (
+    convert_to_mb,
     generate_download_link,
+    is_imdb_id,
+    is_valid_release,
+    normalize_magazine_title,
 )
 
 hostname = "sl"
@@ -82,7 +86,7 @@ def sl_feed(shared_state, start_time, search_category):
                 title = item.findtext("title").strip()
                 if search_category == SEARCH_CAT_BOOKS:
                     # lazylibrarian can only detect specific date formats / issue numbering for magazines
-                    title = shared_state.normalize_magazine_title(title)
+                    title = normalize_magazine_title(title)
 
                 source = item.findtext("link").strip()
 
@@ -96,7 +100,7 @@ def sl_feed(shared_state, start_time, search_category):
                     continue
                 size_info = size_match.group(1).strip()
                 size_item = extract_size(size_info)
-                mb = shared_state.convert_to_mb(size_item)
+                mb = convert_to_mb(size_item)
                 size = mb * 1024 * 1024
 
                 pubdate = item.findtext("pubDate").strip()
@@ -174,7 +178,7 @@ def sl_search(
         return releases
 
     try:
-        imdb_id = shared_state.is_imdb_id(search_string)
+        imdb_id = is_imdb_id(search_string)
         if imdb_id:
             search_string = get_localized_title(shared_state, imdb_id, "en") or ""
             search_string = html.unescape(search_string)
@@ -237,13 +241,13 @@ def sl_search(
                         a = post.find("h1").find("a")
                         title = a.get_text(strip=True)
 
-                        if not shared_state.is_valid_release(
+                        if not is_valid_release(
                             title, search_category, search_string, season, episode
                         ):
                             continue
 
                         if search_category == SEARCH_CAT_BOOKS:
-                            title = shared_state.normalize_magazine_title(title)
+                            title = normalize_magazine_title(title)
                             imdb_id = None
 
                         source = a["href"]

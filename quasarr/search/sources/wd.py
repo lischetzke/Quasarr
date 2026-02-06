@@ -24,8 +24,12 @@ from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostnam
 from quasarr.providers.imdb_metadata import get_localized_title, get_year
 from quasarr.providers.log import debug, error, info, warn
 from quasarr.providers.utils import (
+    convert_to_mb,
     generate_download_link,
     is_flaresolverr_available,
+    is_imdb_id,
+    is_valid_release,
+    normalize_magazine_title,
 )
 
 hostname = "wd"
@@ -95,14 +99,14 @@ def _parse_rows(
 
             # search context contains non-video releases (ebooks, games, etc.)
             if is_search:
-                if not shared_state.is_valid_release(
+                if not is_valid_release(
                     title, search_category, search_string, season, episode
                 ):
                     continue
 
                 if search_category == SEARCH_CAT_BOOKS:
                     # lazylibrarian can only detect specific date formats / issue numbering for magazines
-                    title = shared_state.normalize_magazine_title(title)
+                    title = normalize_magazine_title(title)
                 else:
                     # drop .XXX. unless user explicitly searched xxx
                     if XXX_REGEX.search(title) and "xxx" not in search_string.lower():
@@ -118,7 +122,7 @@ def _parse_rows(
 
             size_txt = tr.find("span", class_="element-size").get_text(strip=True)
             sz = extract_size(size_txt)
-            mb = shared_state.convert_to_mb(sz)
+            mb = convert_to_mb(sz)
             size_bytes = mb * 1024 * 1024
 
             published = convert_to_rss_date(date_txt) if date_txt else one_hour_ago
@@ -231,7 +235,7 @@ def wd_search(
         )
         return releases
 
-    imdb_id = shared_state.is_imdb_id(search_string)
+    imdb_id = is_imdb_id(search_string)
     if imdb_id:
         search_string = get_localized_title(shared_state, imdb_id, "de")
         if not search_string:

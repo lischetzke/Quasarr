@@ -265,7 +265,7 @@ class SearchExecutor:
                         results_badges[index] = (
                             f"<bg red><white>{source_name}</white></bg red>"
                         )
-                        info(f"Search error: {e}")
+                        warn(f"Search error: {e}")
 
                 bar_str = f" [{' '.join(results_badges)}]"
 
