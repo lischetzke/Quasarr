@@ -9,7 +9,7 @@ from datetime import datetime
 from urllib.parse import parse_qs, urlparse
 from xml.etree import ElementTree
 
-from bottle import abort, request
+from bottle import request
 
 from quasarr.downloads import download
 from quasarr.downloads.packages import delete_package, get_packages
@@ -84,13 +84,16 @@ def setup_arr_routes(app):
 
                 if success:
                     info(f"<y>{title}</y> added successfully!")
+                    nzo_ids.append(package_id)
                 else:
                     info(f"<y>{title}</y> added unsuccessfully! See log for details.")
-                nzo_ids.append(package_id)
             except KeyError:
                 info(f"Failed to download <y>{title}</y> - no package_id returned")
 
-        return {"status": True, "nzo_ids": nzo_ids}
+        response = {"status": True, "nzo_ids": nzo_ids}
+        if not nzo_ids:
+            response["quasarr_error"] = True
+        return response
 
     @app.get("/api")
     @require_api_key
@@ -140,26 +143,29 @@ def setup_arr_routes(app):
                 elif mode == "addurl":
                     raw_name = getattr(request.query, "name", None)
                     if not raw_name:
-                        abort(400, "missing or empty 'name' parameter")
+                        # SABnzbd returns status: False if name is missing
+                        return {"status": False, "nzo_ids": [], "quasarr_error": True}
 
                     # Extract category from request, SABnzbd addurl expects &cat=...
                     category_param = getattr(request.query, "cat", None)
                     download_category = determine_category(request_from, category_param)
 
-                    payload = False
                     try:
                         parsed = urlparse(raw_name)
                         qs = parse_qs(parsed.query)
                         payload = qs.get("payload", [None])[0]
                     except Exception as e:
-                        abort(400, f"invalid URL in 'name': {e}")
+                        info(f"Invalid URL in 'name': {e}")
+                        return {"status": False, "nzo_ids": [], "quasarr_error": True}
                     if not payload:
-                        abort(400, "missing 'payload' parameter in URL")
+                        info("Missing 'payload' parameter in URL")
+                        return {"status": False, "nzo_ids": [], "quasarr_error": True}
 
                     try:
                         parsed_payload = parse_payload(payload)
                     except Exception as e:
-                        abort(400, f"invalid payload format: {e}")
+                        info(f"Invalid payload format: {e}")
+                        return {"status": False, "nzo_ids": [], "quasarr_error": True}
 
                     nzo_ids = []
                     info(f"Attempting download for <y>{parsed_payload['title']}</y>")
@@ -183,21 +189,30 @@ def setup_arr_routes(app):
 
                         if success:
                             info(f'"{title} added successfully!')
+                            nzo_ids.append(package_id)
+                            return {"status": True, "nzo_ids": nzo_ids}
                         else:
                             info(f'"{title} added unsuccessfully! See log for details.')
-                        nzo_ids.append(package_id)
+                            # SABnzbd returns status: True even if operation failed
+                            return {
+                                "status": True,
+                                "nzo_ids": [],
+                                "quasarr_error": True,
+                            }
                     except KeyError:
                         info(
                             f'Failed to download "{parsed_payload["title"]}" - no package_id returned'
                         )
-
-                    return {"status": True, "nzo_ids": nzo_ids}
+                        return {"status": True, "nzo_ids": [], "quasarr_error": True}
 
                 elif mode == "queue" or mode == "history":
                     if request.query.name and request.query.name == "delete":
                         package_id = request.query.value
                         deleted = delete_package(shared_state, package_id)
-                        return {"status": deleted, "nzo_ids": [package_id]}
+                        response = {"status": deleted, "nzo_ids": [package_id]}
+                        if not deleted:
+                            response["quasarr_error"] = True
+                        return response
 
                     packages = get_packages(shared_state)
                     if mode == "queue":
