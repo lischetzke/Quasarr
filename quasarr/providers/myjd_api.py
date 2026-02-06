@@ -294,6 +294,7 @@ class Linkgrabber:
                     "variantID": True,
                     "variants": True,
                     "priority": True,
+                    "uuid": True,
                 }
             ]
         resp = self.device.action(self.url + "/queryLinks", params)
@@ -324,6 +325,7 @@ class Linkgrabber:
                     "saveTo": True,
                     "maxResults": -1,
                     "startAt": 0,
+                    "uuid": True,
                 }
             ]
         resp = self.device.action("/linkgrabberv2/queryPackages", params)
@@ -364,6 +366,11 @@ class Downloads:
         resp = self.device.action(self.url + "/cleanup", params)
         return resp
 
+    def remove_links(self, links_ids, packages_ids):
+        params = [links_ids, packages_ids]
+        resp = self.device.action(self.url + "/removeLinks", params)
+        return resp
+
     def query_links(
         self,
         params=None,
@@ -391,6 +398,7 @@ class Downloads:
                     "running": True,
                     "skipped": True,
                     "extractionStatus": True,
+                    "uuid": True,
                 }
             ]
         resp = self.device.action(self.url + "/queryLinks", params)
@@ -421,6 +429,7 @@ class Downloads:
                     "saveTo": True,
                     "maxResults": -1,
                     "startAt": 0,
+                    "uuid": True,
                 }
             ]
         resp = self.device.action(self.url + "/queryPackages", params)

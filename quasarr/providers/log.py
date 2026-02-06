@@ -14,6 +14,10 @@ from wcwidth import wcswidth, wrap
 if TYPE_CHECKING:
     from loguru import Message
 
+from dotenv import load_dotenv
+
+load_dotenv(override=True)
+
 
 def get_log_max_width() -> int:
     try:

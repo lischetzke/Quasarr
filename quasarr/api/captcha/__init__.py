@@ -353,7 +353,7 @@ def setup_captcha_routes(app):
         check_package_exists(package_id)
 
         package_selector = render_package_selector(package_id, title)
-        failed_warning = render_failed_attempts_warning(package_id)
+        failed_warning = render_failed_attempts_warning(package_id, title=title)
 
         source_button = ""
         if original_url:
@@ -369,7 +369,7 @@ def setup_captcha_routes(app):
                 {render_userscript_section(url, package_id, title, password, "hide")}
             {source_button}
             <p>
-                {render_button("Delete Package", "secondary", {"onclick": f"location.href='/captcha/delete/{package_id}'"})}
+                {render_button("Delete Package", "secondary", {"onclick": f"location.href='/captcha/delete/{package_id}?title={quote(title)}'"})}
             </p>
             <p>
                 {render_button("Back", "secondary", {"onclick": "location.href='/'"})}
@@ -399,7 +399,7 @@ def setup_captcha_routes(app):
         check_package_exists(package_id)
 
         package_selector = render_package_selector(package_id, title)
-        failed_warning = render_failed_attempts_warning(package_id)
+        failed_warning = render_failed_attempts_warning(package_id, title=title)
 
         source_button = ""
         if original_url:
@@ -415,7 +415,7 @@ def setup_captcha_routes(app):
                 {render_userscript_section(url, package_id, title, password, "junkies")}
             {source_button}
             <p>
-                {render_button("Delete Package", "secondary", {"onclick": f"location.href='/captcha/delete/{package_id}'"})}
+                {render_button("Delete Package", "secondary", {"onclick": f"location.href='/captcha/delete/{package_id}?title={quote(title)}'"})}
             </p>
             <p>
                 {render_button("Back", "secondary", {"onclick": "location.href='/'"})}
@@ -446,7 +446,7 @@ def setup_captcha_routes(app):
         url = urls[0][0] if isinstance(urls[0], (list, tuple)) else urls[0]
 
         package_selector = render_package_selector(package_id, title)
-        failed_warning = render_failed_attempts_warning(package_id)
+        failed_warning = render_failed_attempts_warning(package_id, title=title)
 
         source_button = ""
         if original_url:
@@ -462,7 +462,7 @@ def setup_captcha_routes(app):
                 {render_userscript_section(url, package_id, title, password, "keeplinks")}
             {source_button}
             <p>
-                {render_button("Delete Package", "secondary", {"onclick": f"location.href='/captcha/delete/{package_id}'"})}
+                {render_button("Delete Package", "secondary", {"onclick": f"location.href='/captcha/delete/{package_id}?title={quote(title)}'"})}
             </p>
             <p>
                 {render_button("Back", "secondary", {"onclick": "location.href='/'"})}
@@ -493,7 +493,7 @@ def setup_captcha_routes(app):
         url = urls[0][0] if isinstance(urls[0], (list, tuple)) else urls[0]
 
         package_selector = render_package_selector(package_id, title)
-        failed_warning = render_failed_attempts_warning(package_id)
+        failed_warning = render_failed_attempts_warning(package_id, title=title)
 
         source_button = ""
         if original_url:
@@ -509,7 +509,7 @@ def setup_captcha_routes(app):
                 {render_userscript_section(url, package_id, title, password, "tolink")}
             {source_button}
             <p>
-                {render_button("Delete Package", "secondary", {"onclick": f"location.href='/captcha/delete/{package_id}'"})}
+                {render_button("Delete Package", "secondary", {"onclick": f"location.href='/captcha/delete/{package_id}?title={quote(title)}'"})}
             </p>
             <p>
                 {render_button("Back", "secondary", {"onclick": "location.href='/'"})}
@@ -795,7 +795,7 @@ def setup_captcha_routes(app):
         """
 
     def render_failed_attempts_warning(
-        package_id, include_delete_button=True, fallback_url=None
+        package_id, title=None, include_delete_button=True, fallback_url=None
     ):
         """Render a warning block that shows after 2+ failed attempts per package_id.
         Uses localStorage to track attempts by package_id to ensure reliable tracking
@@ -813,10 +813,14 @@ def setup_captcha_routes(app):
 
         delete_button = ""
         if include_delete_button:
+            delete_url = f"/captcha/delete/{package_id}"
+            if title:
+                delete_url += f"?title={quote(title)}"
+
             delete_button = render_button(
                 "Delete Package",
                 "primary",
-                {"onclick": f"location.href='/captcha/delete/{package_id}'"},
+                {"onclick": f"location.href='{delete_url}'"},
             )
 
         fallback_link = ""
@@ -916,7 +920,7 @@ def setup_captcha_routes(app):
         )
 
         package_selector = render_package_selector(package_id, title)
-        failed_warning = render_failed_attempts_warning(package_id)
+        failed_warning = render_failed_attempts_warning(package_id, title=title)
 
         source_button = ""
         if original_url:
@@ -982,7 +986,7 @@ def setup_captcha_routes(app):
 
             {source_button}
             <p>
-                {render_button("Delete Package", "secondary", {"onclick": f"location.href='/captcha/delete/{package_id}'"})}
+                {render_button("Delete Package", "secondary", {"onclick": f"location.href='/captcha/delete/{package_id}?title={quote(title)}'"})}
             </p>
             <p>
                 {render_button("Back", "secondary", {"onclick": "location.href='/'"})}
@@ -1194,7 +1198,8 @@ def setup_captcha_routes(app):
 
     @app.get("/captcha/delete/<package_id>")
     def delete_captcha_package(package_id):
-        success = delete_package(shared_state, package_id)
+        title = request.query.get("title")
+        success = delete_package(shared_state, package_id, title)
 
         # Check if there are more CAPTCHAs to solve after deletion
         remaining_protected = shared_state.get_db("protected").retrieve_all_titles()
@@ -1259,7 +1264,7 @@ def setup_captcha_routes(app):
                 <p style="max-width: 370px; word-wrap: break-word; overflow-wrap: break-word;"><b>Package:</b> {title}</p>
                 <p><b>Error:</b> No download links available for this package.</p>
                 <p>
-                    {render_button("Delete Package", "secondary", {"onclick": f"location.href='/captcha/delete/{package_id}'"})}
+                    {render_button("Delete Package", "secondary", {"onclick": f"location.href='/captcha/delete/{package_id}?title={quote(title)}'"})}
                 </p>
                 <p>
                     {render_button("Back", "secondary", {"onclick": "location.href='/'"})}
@@ -1320,7 +1325,10 @@ def setup_captcha_routes(app):
         filecrypt_fallback_url = f"/captcha/filecrypt?data={quote(fallback_encoded)}"
 
         failed_warning = render_failed_attempts_warning(
-            package_id, include_delete_button=False, fallback_url=filecrypt_fallback_url
+            package_id,
+            title=title,
+            include_delete_button=False,
+            fallback_url=filecrypt_fallback_url,
         )  # Delete button is already below
 
         # Escape title for safe use in JavaScript string
@@ -1470,7 +1478,7 @@ def setup_captcha_routes(app):
             + source_button_html
             + f"""
             <p>
-                {render_button("Delete Package", "secondary", {"onclick": f"location.href='/captcha/delete/{package_id}'"})}
+                {render_button("Delete Package", "secondary", {"onclick": f"location.href='/captcha/delete/{package_id}?title={quote(title)}'"})}
             </p>
             </div>
             <div id="back-button-section">

@@ -158,8 +158,8 @@ def update_category_mirrors(name, mirrors):
 
     data["mirrors"] = mirrors
     db.update_store(name, json.dumps(data))
-    info(f"Updated mirrors for category: {name} to {mirrors}")
-    return True, f"Category '{name}' mirrors updated successfully."
+    info(f"Updated mirror-whitelist for category: {name} to {mirrors}")
+    return True, f"Category '{name}' mirror-whitelist updated successfully."
 
 
 def delete_category(name):
