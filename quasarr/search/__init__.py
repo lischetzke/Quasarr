@@ -33,6 +33,7 @@ from quasarr.search.sources.sj import sj_feed, sj_search
 from quasarr.search.sources.sl import sl_feed, sl_search
 from quasarr.search.sources.wd import wd_feed, wd_search
 from quasarr.search.sources.wx import wx_feed, wx_search
+from quasarr.storage.categories import get_search_category_sources
 
 
 def get_search_results(
@@ -77,29 +78,19 @@ def get_search_results(
     wd = config.get("wd")
     wx = config.get("wx")
 
+    # Filter out sources that are not in the search category's whitelist
+    whitelisted_sources = get_search_category_sources(search_category)
+
+    if whitelisted_sources:
+        debug(
+            f"Using whitelist for category <g>{search_category}</g>: {', '.join([s.upper() for s in whitelisted_sources])}"
+        )
+
     start_time = time.time()
     search_executor = SearchExecutor()
 
     # Mappings
-    imdb_movies_map = [
-        ("al", al, al_search),
-        ("by", by, by_search),
-        ("dd", dd, dd_search),
-        ("dl", dl, dl_search),
-        ("dt", dt, dt_search),
-        ("dw", dw, dw_search),
-        ("fx", fx, fx_search),
-        ("he", he, he_search),
-        ("hs", hs, hs_search),
-        ("mb", mb, mb_search),
-        ("nk", nk, nk_search),
-        ("nx", nx, nx_search),
-        ("sl", sl, sl_search),
-        ("wd", wd, wd_search),
-        ("wx", wx, wx_search),
-    ]
-
-    imdb_shows_map = [
+    imdb_map = [
         ("al", al, al_search),
         ("by", by, by_search),
         ("dd", dd, dd_search),
@@ -126,7 +117,6 @@ def get_search_results(
         ("dt", dt, dt_search),
         ("nx", nx, nx_search),
         ("sl", sl, sl_search),
-        ("wd", wd, wd_search),
     ]
 
     feed_map = [
@@ -165,16 +155,16 @@ def get_search_results(
         if search_category == SEARCH_CAT_MOVIES:
             args = (shared_state, start_time, search_category, imdb_id)
             kwargs = {}
-            for name, url, func in imdb_movies_map:
-                if url:
+            for name, url, func in imdb_map:
+                if url and (not whitelisted_sources or name in whitelisted_sources):
                     search_executor.add(
                         func, args, kwargs, use_cache=True, source_name=name.upper()
                     )
         elif search_category == SEARCH_CAT_SHOWS:
             args = (shared_state, start_time, search_category, imdb_id)
             kwargs = {"season": season, "episode": episode}
-            for name, url, func in imdb_shows_map:
-                if url:
+            for name, url, func in imdb_map:
+                if url and (not whitelisted_sources or name in whitelisted_sources):
                     search_executor.add(
                         func, args, kwargs, use_cache=True, source_name=name.upper()
                     )
@@ -188,7 +178,7 @@ def get_search_results(
             args = (shared_state, start_time, search_category, search_phrase)
             kwargs = {}
             for name, url, func in phrase_map:
-                if url:
+                if url and (not whitelisted_sources or name in whitelisted_sources):
                     search_executor.add(func, args, kwargs, source_name=name.upper())
         else:
             warn(
@@ -200,7 +190,7 @@ def get_search_results(
         kwargs = {}
         use_pagination = False
         for name, url, func in feed_map:
-            if url:
+            if url and (not whitelisted_sources or name in whitelisted_sources):
                 search_executor.add(func, args, kwargs, source_name=name.upper())
 
     debug(f"Starting <g>{len(search_executor.searches)}</g> searches for {stype}...")

@@ -11,7 +11,7 @@ from urllib.parse import urlparse
 
 from quasarr.providers.jd_cache import JDPackageCache
 from quasarr.providers.log import debug, info, trace
-from quasarr.storage.categories import get_category_from_package_id
+from quasarr.storage.categories import get_download_category_from_package_id
 
 # =============================================================================
 # CONSTANTS
@@ -548,7 +548,7 @@ def get_packages(shared_state, _cache=None):
                     bytes_total = 0
                     mb = mb_left = 0
                 package_id = package["comment"]
-                category = get_category_from_package_id(package_id)
+                category = get_download_category_from_package_id(package_id)
                 package_type = "linkgrabber"
                 package_uuid = package["uuid"]
 
@@ -576,7 +576,7 @@ def get_packages(shared_state, _cache=None):
 
                 name = f"[{status}] {details.get('name', 'unknown')}"
                 package_id = package["comment"]
-                category = get_category_from_package_id(package_id)
+                category = get_download_category_from_package_id(package_id)
                 package_type = "downloader"
                 package_uuid = package["uuid"]
 
@@ -586,7 +586,7 @@ def get_packages(shared_state, _cache=None):
                 mb = mb_left = details.get("size_mb") or 0
                 bytes_total = 0  # Protected packages don't have reliable byte data
                 package_id = package.get("package_id")
-                category = get_category_from_package_id(package_id)
+                category = get_download_category_from_package_id(package_id)
                 package_type = "protected"
                 package_uuid = None
 
@@ -637,7 +637,7 @@ def get_packages(shared_state, _cache=None):
             package_id = package.get("comment")
             # Use package_id if available, otherwise use uuid as fallback for non-Quasarr packages
             effective_id = package_id or package.get("uuid")
-            category = get_category_from_package_id(package_id)
+            category = get_download_category_from_package_id(package_id)
 
             error = package.get("error")
             fail_message = ""

@@ -23,7 +23,7 @@ from quasarr.providers.utils import (
 )
 from quasarr.providers.version import get_version
 from quasarr.search import get_search_results
-from quasarr.storage.categories import get_categories
+from quasarr.storage.categories import get_download_categories
 
 
 def setup_arr_routes(app):
@@ -115,14 +115,14 @@ def setup_arr_routes(app):
                     return {"version": f"Quasarr {get_version()}"}
                 elif mode == "get_cats":
                     # Dynamic categories
-                    cats = get_categories()
+                    cats = get_download_categories()
                     # SABnzbd usually returns '*' as the first category
                     if "*" not in cats:
                         cats.insert(0, "*")
                     return {"categories": cats}
                 elif mode == "get_config":
                     # Dynamic categories for config
-                    cats = get_categories()
+                    cats = get_download_categories()
                     cat_configs = [{"name": "*", "order": 0, "dir": ""}]
                     for i, cat in enumerate(cats):
                         if cat == "*":

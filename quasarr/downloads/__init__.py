@@ -30,7 +30,10 @@ from quasarr.providers.log import info, warn
 from quasarr.providers.notifications import send_discord_message
 from quasarr.providers.statistics import StatsHelper
 from quasarr.providers.utils import extract_client_type, filter_offline_links
-from quasarr.storage.categories import category_exists, get_category_mirrors
+from quasarr.storage.categories import (
+    download_category_exists,
+    get_download_category_mirrors,
+)
 
 # =============================================================================
 # CRYPTER CONFIGURATION
@@ -98,7 +101,7 @@ def generate_deterministic_package_id(title, source_key, client_type, category):
     normalized_client = client_type.lower().strip() if client_type else "unknown"
 
     # Determine category
-    if category and category_exists(category):
+    if category and download_category_exists(category):
         final_category = category
     else:
         # Fallback to client type mapping
@@ -412,7 +415,7 @@ def download(
     label = None
     detected_source_key = None
 
-    mirrors = get_category_mirrors(category, lowercase=True)
+    mirrors = get_download_category_mirrors(category, lowercase=True)
 
     for key, getter in SOURCE_GETTERS.items():
         hostname = config.get(key)

@@ -14,8 +14,8 @@ from quasarr.providers.log import info
 from quasarr.providers.notifications import send_discord_message
 from quasarr.providers.statistics import StatsHelper
 from quasarr.storage.categories import (
-    get_category_from_package_id,
-    get_category_mirrors,
+    get_download_category_from_package_id,
+    get_download_category_mirrors,
 )
 from quasarr.storage.config import Config
 
@@ -58,8 +58,8 @@ def setup_sponsors_helper_routes(app):
     @require_api_key
     @require_helper_active
     def mirrors_api(package_id):
-        category = get_category_from_package_id(package_id)
-        mirrors = get_category_mirrors(category)
+        category = get_download_category_from_package_id(package_id)
+        mirrors = get_download_category_mirrors(category)
         return {"mirrors": mirrors}
 
     @app.get("/sponsors_helper/api/to_decrypt/")

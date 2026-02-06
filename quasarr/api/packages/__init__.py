@@ -9,13 +9,13 @@ from quasarr.api.jdownloader import get_jdownloader_disconnected_page
 from quasarr.downloads.packages import delete_package, get_packages
 from quasarr.providers import shared_state
 from quasarr.providers.html_templates import render_button, render_centered_html
-from quasarr.storage.categories import get_category_emoji
+from quasarr.storage.categories import get_download_category_emoji
 
 
 def _get_category_emoji(cat):
     if cat == "not_quasarr":
         return "❓"
-    return get_category_emoji(cat)
+    return get_download_category_emoji(cat)
 
 
 def _format_size(mb=None, bytes_val=None):

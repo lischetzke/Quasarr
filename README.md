@@ -70,10 +70,14 @@ Radarr/Sonarr/LazyLibrarian integration.
 You can manage categories in the Quasarr Web UI.
 
 * **Setup:** Add or edit categories to organize your downloads.
-* **Mirror Whitelist:**
+* **Download Mirror Whitelist:**
     * Inside a category, you can whitelist specific mirrors.
     * This does not affect search results.
     * If specific mirrors are set, downloads will fail unless the release contains them.
+* **Search Hostname Whitelist:**
+    * Inside a category, you can whitelist specific hostnames.
+    * This affects search results.
+    * If specific hostnames are set, only these will be searched by the given category.
 * **Emoji:** Will be used in the Packages view on the Quasarr Web UI.
 
 ---

@@ -19,8 +19,8 @@ from quasarr.providers.html_templates import render_button, render_centered_html
 from quasarr.providers.log import debug, error, info, trace
 from quasarr.providers.statistics import StatsHelper
 from quasarr.storage.categories import (
-    get_category_from_package_id,
-    get_category_mirrors,
+    get_download_category_from_package_id,
+    get_download_category_mirrors,
 )
 
 
@@ -1715,8 +1715,8 @@ def setup_captcha_routes(app):
             title = data.get("title")
             link = data.get("link")
             password = data.get("password")
-            category = get_category_from_package_id(package_id)
-            mirrors = get_category_mirrors(category, lowercase=True)
+            category = get_download_category_from_package_id(package_id)
+            mirrors = get_download_category_mirrors(category, lowercase=True)
 
             if token:
                 info(

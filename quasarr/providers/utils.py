@@ -15,7 +15,7 @@ import requests
 from PIL import Image
 
 from quasarr.providers.log import crit, error, warn
-from quasarr.storage.categories import category_exists
+from quasarr.storage.categories import download_category_exists
 
 # Fallback user agent when FlareSolverr is not available
 FALLBACK_USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"
@@ -455,7 +455,7 @@ def determine_category(request_from, category=None):
     Determine the category based on the provided category or the client type.
     If category is not provided or invalid, falls back to default mapping based on request_from.
     """
-    if category and category_exists(category):
+    if category and download_category_exists(category):
         return category
 
     client_type = extract_client_type(request_from)
