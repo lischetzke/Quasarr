@@ -11,13 +11,15 @@ from datetime import datetime
 import requests
 from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning
 
+from quasarr.constants import (
+    SEARCH_CAT_BOOKS,
+    SEARCH_CAT_MOVIES,
+    SEARCH_CAT_SHOWS,
+)
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.imdb_metadata import get_localized_title, get_year
 from quasarr.providers.log import debug, error, trace, warn
 from quasarr.providers.utils import (
-    SEARCH_CAT_BOOKS,
-    SEARCH_CAT_MOVIES,
-    SEARCH_CAT_SHOWS,
     generate_download_link,
 )
 

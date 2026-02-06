@@ -14,16 +14,14 @@ from urllib.parse import urlparse
 import requests
 from PIL import Image
 
+from quasarr.constants import (
+    HOSTNAMES_REQUIRING_LOGIN,
+    SEARCH_CAT_BOOKS,
+    SEARCH_CAT_MOVIES,
+    SEARCH_CAT_SHOWS,
+)
 from quasarr.providers.log import crit, error, warn
 from quasarr.storage.categories import download_category_exists
-
-# Fallback user agent when FlareSolverr is not available
-FALLBACK_USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"
-
-# Search Categories
-SEARCH_CAT_MOVIES = 2000
-SEARCH_CAT_SHOWS = 5000
-SEARCH_CAT_BOOKS = 7000
 
 
 class Unbuffered(object):
@@ -193,8 +191,7 @@ def is_site_usable(shared_state, shorthand):
     if not hostname:
         return False
 
-    login_required_sites = ["al", "dd", "dl", "nx"]
-    if shorthand not in login_required_sites:
+    if shorthand not in HOSTNAMES_REQUIRING_LOGIN:
         return True  # No login needed, hostname is enough
 
     # Check if login was skipped
@@ -202,7 +199,8 @@ def is_site_usable(shared_state, shorthand):
         return False  # Hostname set but login was skipped
 
     # Check for credentials
-    config = shared_state.values["config"](shorthand.upper())
+    section = "JUNKIES" if shorthand in ["dj", "sj"] else shorthand.upper()
+    config = shared_state.values["config"](section)
     user = config.get("user")
     password = config.get("password")
 

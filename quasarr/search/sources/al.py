@@ -8,6 +8,11 @@ from urllib.parse import quote_plus, urljoin
 
 from bs4 import BeautifulSoup
 
+from quasarr.constants import (
+    SEARCH_CAT_BOOKS,
+    SEARCH_CAT_MOVIES,
+    SEARCH_CAT_SHOWS,
+)
 from quasarr.downloads.sources.al import (
     guess_title,
     parse_info_from_download_item,
@@ -18,9 +23,6 @@ from quasarr.providers.imdb_metadata import get_localized_title, get_year
 from quasarr.providers.log import debug, error, info, trace, warn
 from quasarr.providers.sessions.al import fetch_via_requests_session, invalidate_session
 from quasarr.providers.utils import (
-    SEARCH_CAT_BOOKS,
-    SEARCH_CAT_MOVIES,
-    SEARCH_CAT_SHOWS,
     generate_download_link,
 )
 

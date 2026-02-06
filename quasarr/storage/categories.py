@@ -7,61 +7,14 @@ import re
 
 import emoji
 
+from quasarr.constants import (
+    DEFAULT_DOWNLOAD_CATEGORIES,
+    DEFAULT_DOWNLOAD_CATEGORY_EMOJIS,
+    SEARCH_CATEGORIES,
+)
+
 from ..providers.log import debug, info
 from .sqlite_database import DataBase
-
-DEFAULT_DOWNLOAD_CATEGORIES = ["movies", "tv", "docs"]
-DEFAULT_DOWNLOAD_CATEGORY_EMOJIS = {"movies": "🎬", "tv": "📺", "docs": "📄"}
-
-SEARCH_CATEGORIES = {
-    "2000": {"name": "Movies", "emoji": "🎬"},
-    "5000": {"name": "TV", "emoji": "📺"},
-    "7000": {"name": "Books", "emoji": "📚"},
-}
-
-# As of 01.02.2026
-COMMON_HOSTERS = [
-    # --- TIER 1: The Standards (Required for most downloaders) ---
-    "Rapidgator",  # Global King. Most files are here.
-    "DDownload",  # The "Euro Standard". Cheaper alternative to RG.
-    # --- TIER 2: Very Popular / High Retention ---
-    "1fichier",  # Massive retention, cheap, very popular in France/Global.
-    "Keep2Share",  # "Premium" tier. High speeds, expensive, very stable.
-    "Nitroflare",  # Old guard. Expensive, but essential for some exclusive content.
-    # --- TIER 3: Common Mirrors (The "Third Link") ---
-    "Turbobit",  # Everywhere, but often disliked by free users.
-    "Hitfile",  # Turbobit's sibling site. Often seen together.
-    "Katfile",  # Very common secondary mirror for smaller uploaders.
-    "Alfafile",  # Stable mid-tier host, often seen on DDL blogs.
-    # --- TIER 4: Niche / Backup / User Requested ---
-    "Filer",  # Strong in German-speaking areas, niche elsewhere.
-    "IronFiles",  # Active. Smaller ecosystem, often specific to certain boards.
-    "Fikper",  # Newer player (relative to RG), gained traction in 2024-25.
-    "Mega",  # Active, but functions differently (cloud drive vs. OCH).
-]
-
-TIER_1_HOSTERS = ["Rapidgator", "DDownload"]
-
-SEARCH_SOURCES = [
-    "al",
-    "by",
-    "dd",
-    "dl",
-    "dt",
-    "dj",
-    "dw",
-    "fx",
-    "he",
-    "hs",
-    "mb",
-    "nk",
-    "nx",
-    "sf",
-    "sj",
-    "sl",
-    "wd",
-    "wx",
-]
 
 
 def get_download_categories():

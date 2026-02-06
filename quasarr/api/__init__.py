@@ -12,6 +12,7 @@ from quasarr.api.jdownloader import get_jdownloader_status
 from quasarr.api.packages import setup_packages_routes
 from quasarr.api.sponsors_helper import setup_sponsors_helper_routes
 from quasarr.api.statistics import setup_statistics
+from quasarr.constants import HOSTNAMES_REQUIRING_LOGIN
 from quasarr.providers import shared_state
 from quasarr.providers.auth import add_auth_hook, add_auth_routes, show_logout_link
 from quasarr.providers.hostname_issues import get_all_hostname_issues
@@ -62,7 +63,6 @@ def get_api(shared_state_dict, shared_state_lock):
         hostnames_config = Config("Hostnames")
         skip_login_db = DataBase("skip_login")
         hostname_issues = get_all_hostname_issues()
-        login_required_sites = ["al", "dd", "dl", "nx"]
 
         working_count = 0
         total_count = 0
@@ -74,7 +74,7 @@ def get_api(shared_state_dict, shared_state_lock):
             # Skip unset hostnames and skipped logins
             if not current_value:
                 continue
-            if shorthand in login_required_sites:
+            if shorthand in HOSTNAMES_REQUIRING_LOGIN:
                 skip_val = skip_login_db.retrieve(shorthand)
                 if skip_val and str(skip_val).lower() == "true":
                     continue

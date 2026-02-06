@@ -2,20 +2,14 @@
 # Quasarr
 # Project by https://github.com/rix1337
 
-import re
-
 import requests
 from bs4 import BeautifulSoup
 
+from quasarr.constants import AFFILIATE_REGEX, FILECRYPT_REGEX
 from quasarr.providers.hostname_issues import mark_hostname_issue
 from quasarr.providers.log import debug, info
 
 hostname = "hs"
-
-FILECRYPT_REGEX = re.compile(
-    r"https?://(?:www\.)?filecrypt\.(?:cc|co|to)/[Cc]ontainer/[A-Za-z0-9]+\.html", re.I
-)
-AFFILIATE_REGEX = re.compile(r"af\.php\?v=([a-zA-Z0-9]+)")
 
 
 def normalize_mirror_name(name):

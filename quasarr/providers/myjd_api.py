@@ -42,7 +42,7 @@ from quasarr.providers.log import debug, info
 from quasarr.providers.version import get_version
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-BS = 16
+_BS = 16
 
 
 class MYJDException(BaseException):
@@ -58,7 +58,7 @@ class RequestTimeoutException(BaseException):
 
 
 def pad(s):
-    return s + ((BS - len(s) % BS) * chr(BS - len(s) % BS)).encode()
+    return s + ((_BS - len(s) % _BS) * chr(_BS - len(s) % _BS)).encode()
 
 
 def unpad(s):

@@ -8,15 +8,16 @@ import time
 from datetime import datetime, timedelta
 
 import requests
+from bs4 import BeautifulSoup
 
+from quasarr.constants import SEARCH_CAT_SHOWS
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.imdb_metadata import get_localized_title
 from quasarr.providers.log import debug, info, trace, warn
-from quasarr.providers.utils import SEARCH_CAT_SHOWS, generate_download_link
+from quasarr.providers.utils import generate_download_link
 
 hostname = "sf"
 
-from bs4 import BeautifulSoup
 
 check = lambda s: s.replace(
     "".join(chr((ord(c) - 97 - 7) % 26 + 97) for c in "ylhr"),

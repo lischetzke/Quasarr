@@ -8,11 +8,10 @@ import time
 import requests
 from bs4 import BeautifulSoup
 
+from quasarr.constants import SEARCH_CAT_BOOKS, SEARCH_CAT_MOVIES
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.log import debug, info, trace, warn
 from quasarr.providers.utils import (
-    SEARCH_CAT_BOOKS,
-    SEARCH_CAT_MOVIES,
     generate_download_link,
 )
 

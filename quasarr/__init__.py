@@ -13,6 +13,7 @@ from dotenv import load_dotenv
 
 import quasarr.providers.web_server
 from quasarr.api import get_api
+from quasarr.constants import FALLBACK_USER_AGENT, HOSTNAMES_REQUIRING_LOGIN
 from quasarr.providers import shared_state, version
 from quasarr.providers.log import (
     crit,
@@ -24,7 +25,6 @@ from quasarr.providers.log import (
 )
 from quasarr.providers.notifications import send_discord_message
 from quasarr.providers.utils import (
-    FALLBACK_USER_AGENT,
     Unbuffered,
     check_flaresolverr,
     check_ip,
@@ -127,11 +127,10 @@ def run():
 
         # Check credentials for login-required hostnames
         skip_login_db = DataBase("skip_login")
-        login_required_sites = ["al", "dd", "dj", "dl", "nx", "sj"]
 
         quasarr.providers.web_server.temp_server_success = False
 
-        for site in login_required_sites:
+        for site in HOSTNAMES_REQUIRING_LOGIN:
             hostname = Config("Hostnames").get(site)
             if hostname:
                 # dj and sj share the same credentials under JUNKIES

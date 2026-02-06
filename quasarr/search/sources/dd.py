@@ -6,6 +6,7 @@ import html
 import time
 from datetime import datetime, timezone
 
+from quasarr.constants import SEARCH_CAT_BOOKS
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.imdb_metadata import get_localized_title, get_year
 from quasarr.providers.log import debug, error, info, warn
@@ -14,7 +15,6 @@ from quasarr.providers.sessions.dd import (
     retrieve_and_validate_session,
 )
 from quasarr.providers.utils import (
-    SEARCH_CAT_BOOKS,
     generate_download_link,
 )
 

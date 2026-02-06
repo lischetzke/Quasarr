@@ -2,7 +2,6 @@
 # Quasarr
 # Project by https://github.com/rix1337
 
-import re
 import time
 import warnings
 from datetime import datetime
@@ -10,9 +9,18 @@ from datetime import datetime
 import requests
 from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning
 
+from quasarr.constants import (
+    BITRATE_REGEX,
+    DATE_REGEX,
+    EPISODE_DURATION_REGEX,
+    EPISODE_EXTRACT_REGEX,
+    IMDB_REGEX,
+    SEARCH_CAT_BOOKS,
+    SIZE_REGEX,
+    TRAILING_GARBAGE_PATTERN,
+)
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.utils import (
-    SEARCH_CAT_BOOKS,
     generate_download_link,
 )
 
@@ -20,28 +28,6 @@ warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
 from quasarr.providers.log import debug, warn
 
 hostname = "hs"
-
-FILECRYPT_REGEX = re.compile(r"filecrypt\.(?:cc|co|to)/container/", re.I)
-SIZE_REGEX = re.compile(r"Größe[:\s]*(\d+(?:[.,]\d+)?)\s*(MB|GB|TB)", re.I)
-IMDB_REGEX = re.compile(r"imdb\.com/title/(tt\d+)", re.I)
-DATE_REGEX = re.compile(r"(\d{2}\.\d{2}\.\d{2}),?\s*(\d{1,2}:\d{2})")
-# Pattern to extract individual episode release names from text
-# Matches: Title.S02E03.Info-GROUP (group name starts after hyphen)
-EPISODE_EXTRACT_REGEX = re.compile(
-    r"([A-Za-z][A-Za-z0-9.]+\.S\d{2}E\d{2}[A-Za-z0-9.]*-[A-Za-z][A-Za-z0-9]*)", re.I
-)
-# Pattern to clean trailing common words that may be attached to group names
-# e.g., -WAYNEAvg -> -WAYNE, -GROUPBitrate -> -GROUP
-TRAILING_GARBAGE_PATTERN = re.compile(
-    r"(Avg|Bitrate|Size|Größe|Video|Audio|Duration|Release|Info).*$", re.I
-)
-# Pattern to extract average bitrate (e.g., "Avg. Bitrate: 10,6 Mb/s" or "6 040 kb/s")
-# Note: Numbers may contain spaces as thousand separators (e.g., "6 040")
-BITRATE_REGEX = re.compile(
-    r"(?:Avg\.?\s*)?Bitrate[:\s]*([\d\s]+(?:[.,]\d+)?)\s*(kb/s|Mb/s|mb/s)", re.I
-)
-# Pattern to extract episode duration (e.g., "Dauer: 60 Min. pro Folge")
-EPISODE_DURATION_REGEX = re.compile(r"Dauer[:\s]*(\d+)\s*Min\.?\s*pro\s*Folge", re.I)
 
 
 def convert_to_rss_date(date_str):

@@ -13,14 +13,16 @@ from urllib.parse import quote_plus
 import requests
 from bs4 import BeautifulSoup
 
+from quasarr.constants import (
+    SEARCH_CAT_BOOKS,
+    SEARCH_CAT_MOVIES,
+    SEARCH_CAT_SHOWS,
+)
 from quasarr.providers.cloudflare import ensure_session_cf_bypassed
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.imdb_metadata import get_localized_title
 from quasarr.providers.log import debug, info, warn
 from quasarr.providers.utils import (
-    SEARCH_CAT_BOOKS,
-    SEARCH_CAT_MOVIES,
-    SEARCH_CAT_SHOWS,
     generate_download_link,
 )
 

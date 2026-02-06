@@ -3,69 +3,19 @@
 # Project by https://github.com/rix1337
 
 import json
-import re
 import time
 import traceback
 from collections import defaultdict
 from urllib.parse import urlparse
 
+from quasarr.constants import (
+    ARCHIVE_EXTENSIONS,
+    EXTRACTION_COMPLETE_MARKERS,
+    PACKAGE_ID_PATTERN,
+)
 from quasarr.providers.jd_cache import JDPackageCache
 from quasarr.providers.log import debug, info, trace
 from quasarr.storage.categories import get_download_category_from_package_id
-
-# =============================================================================
-# CONSTANTS
-# =============================================================================
-
-PACKAGE_ID_PREFIX = "Quasarr_"
-# Regex for strict Quasarr ID validation: Quasarr_{category}_{32_char_hash}
-PACKAGE_ID_PATTERN = re.compile(r"^Quasarr_[a-z]+_[a-f0-9]{32}$")
-
-# Known archive extensions for file detection
-ARCHIVE_EXTENSIONS = frozenset(
-    [
-        ".rar",
-        ".zip",
-        ".7z",
-        ".tar",
-        ".gz",
-        ".bz2",
-        ".xz",
-        ".001",
-        ".002",
-        ".003",
-        ".004",
-        ".005",
-        ".006",
-        ".007",
-        ".008",
-        ".009",
-        ".r00",
-        ".r01",
-        ".r02",
-        ".r03",
-        ".r04",
-        ".r05",
-        ".r06",
-        ".r07",
-        ".r08",
-        ".r09",
-        ".part1.rar",
-        ".part01.rar",
-        ".part001.rar",
-        ".part2.rar",
-        ".part02.rar",
-        ".part002.rar",
-    ]
-)
-
-# JDownloader extraction complete status markers (checked case-insensitively)
-# Add new languages here as needed
-EXTRACTION_COMPLETE_MARKERS = (
-    "extraction ok",  # English
-    "entpacken ok",  # German
-)
-
 
 # =============================================================================
 # HELPER FUNCTIONS

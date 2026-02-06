@@ -10,14 +10,16 @@ import time
 
 from bottle import request, response
 
+from quasarr.constants import (
+    COMMON_HOSTERS,
+    DEFAULT_DOWNLOAD_CATEGORIES,
+    HOSTNAMES,
+    SEARCH_CATEGORIES,
+    TIER_1_HOSTERS,
+)
 from quasarr.providers.html_templates import render_button, render_form
 from quasarr.providers.log import info
 from quasarr.storage.categories import (
-    COMMON_HOSTERS,
-    DEFAULT_DOWNLOAD_CATEGORIES,
-    SEARCH_CATEGORIES,
-    SEARCH_SOURCES,
-    TIER_1_HOSTERS,
     add_download_category,
     delete_download_category,
     get_download_categories,
@@ -202,7 +204,7 @@ def setup_config(app, shared_state):
         # Prepare hosters list for JS
         hosters_js = json.dumps(COMMON_HOSTERS)
         tier1_js = json.dumps(TIER_1_HOSTERS)
-        search_sources_js = json.dumps(SEARCH_SOURCES)
+        search_sources_js = json.dumps(HOSTNAMES)
 
         form_html = f"""
         <style>
@@ -354,7 +356,7 @@ def setup_config(app, shared_state):
         <script>
         const ALL_HOSTERS = {hosters_js};
         const TIER1_HOSTERS = {tier1_js};
-        const SEARCH_SOURCES = {search_sources_js};
+        const HOSTNAMES = {search_sources_js};
 
         function addCategory() {{
             const nameInput = document.getElementById('newCategoryName');
@@ -420,7 +422,7 @@ def setup_config(app, shared_state):
 
         function editSearchCategory(catId, name, currentSearchSources) {{
             let searchPills = '';
-            SEARCH_SOURCES.forEach(source => {{
+            HOSTNAMES.forEach(source => {{
                 const isChecked = currentSearchSources.includes(source);
                 const selectedClass = isChecked ? 'selected' : '';
                 

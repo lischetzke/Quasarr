@@ -84,12 +84,12 @@ class TitleCleaner:
 class IMDbAPI:
     """Tier 1: api.imdbapi.dev - Primary, fast, comprehensive."""
 
-    BASE_URL = "https://api.imdbapi.dev"
+    _BASE_URL = "https://api.imdbapi.dev"
 
     @staticmethod
     def get_title(imdb_id):
         try:
-            response = requests.get(f"{IMDbAPI.BASE_URL}/titles/{imdb_id}", timeout=30)
+            response = requests.get(f"{IMDbAPI._BASE_URL}/titles/{imdb_id}", timeout=30)
             response.raise_for_status()
             return response.json()
         except Exception as e:
@@ -100,7 +100,7 @@ class IMDbAPI:
     def get_akas(imdb_id):
         try:
             response = requests.get(
-                f"{IMDbAPI.BASE_URL}/titles/{imdb_id}/akas", timeout=30
+                f"{IMDbAPI._BASE_URL}/titles/{imdb_id}/akas", timeout=30
             )
             response.raise_for_status()
             return response.json().get("akas", [])
@@ -112,7 +112,7 @@ class IMDbAPI:
     def search_titles(query):
         try:
             response = requests.get(
-                f"{IMDbAPI.BASE_URL}/search/titles?query={quote(query)}&limit=5",
+                f"{IMDbAPI._BASE_URL}/search/titles?query={quote(query)}&limit=5",
                 timeout=30,
             )
             response.raise_for_status()
@@ -125,7 +125,7 @@ class IMDbAPI:
 class IMDbCDN:
     """Tier 2: v2.sg.media-imdb.com - Fast fallback for English data."""
 
-    CDN_URL = "https://v2.sg.media-imdb.com/suggestion"
+    _CDN_URL = "https://v2.sg.media-imdb.com/suggestion"
 
     @staticmethod
     def _get_cdn_data(imdb_id, language, user_agent):
@@ -140,7 +140,7 @@ class IMDbCDN:
             }
 
             first_char = imdb_id[0].lower()
-            url = f"{IMDbCDN.CDN_URL}/{first_char}/{imdb_id}.json"
+            url = f"{IMDbCDN._CDN_URL}/{first_char}/{imdb_id}.json"
 
             response = requests.get(url, headers=headers, timeout=5)
             response.raise_for_status()
@@ -188,7 +188,7 @@ class IMDbCDN:
             }
 
             first_char = clean_query[0]
-            url = f"{IMDbCDN.CDN_URL}/{first_char}/{clean_query}.json"
+            url = f"{IMDbCDN._CDN_URL}/{first_char}/{clean_query}.json"
 
             response = requests.get(url, headers=headers, timeout=5)
 
@@ -215,7 +215,7 @@ class IMDbCDN:
 class IMDbFlareSolverr:
     """Tier 3: FlareSolverr - Robust fallback using browser automation."""
 
-    WEB_URL = "https://www.imdb.com"
+    _WEB_URL = "https://www.imdb.com"
 
     @staticmethod
     def _request(url):
@@ -250,7 +250,7 @@ class IMDbFlareSolverr:
     @staticmethod
     def get_poster(imdb_id):
         html_content = IMDbFlareSolverr._request(
-            f"{IMDbFlareSolverr.WEB_URL}/title/{imdb_id}/"
+            f"{IMDbFlareSolverr._WEB_URL}/title/{imdb_id}/"
         )
         if html_content:
             try:
@@ -269,7 +269,7 @@ class IMDbFlareSolverr:
     def get_localized_title(imdb_id, language):
         # FlareSolverr doesn't reliably support headers for localization.
         # Instead, we scrape the release info page which lists AKAs.
-        url = f"{IMDbFlareSolverr.WEB_URL}/title/{imdb_id}/releaseinfo"
+        url = f"{IMDbFlareSolverr._WEB_URL}/title/{imdb_id}/releaseinfo"
         html_content = IMDbFlareSolverr._request(url)
 
         if html_content:
@@ -323,7 +323,7 @@ class IMDbFlareSolverr:
 
     @staticmethod
     def search_titles(query, ttype):
-        url = f"{IMDbFlareSolverr.WEB_URL}/find/?q={quote(query)}&s=tt&ttype={ttype}&ref_=fn_{ttype}"
+        url = f"{IMDbFlareSolverr._WEB_URL}/find/?q={quote(query)}&s=tt&ttype={ttype}&ref_=fn_{ttype}"
         html_content = IMDbFlareSolverr._request(url)
 
         if html_content:

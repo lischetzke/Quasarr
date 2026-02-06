@@ -9,6 +9,14 @@ from html import unescape
 
 from bs4 import BeautifulSoup
 
+from quasarr.constants import (
+    CODEC_REGEX,
+    RESOLUTION_REGEX,
+    SEARCH_CAT_BOOKS,
+    SEARCH_CAT_MOVIES,
+    SEARCH_CAT_SHOWS,
+    XXX_REGEX,
+)
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.imdb_metadata import get_localized_title, get_year
 from quasarr.providers.log import debug, info, trace, warn
@@ -18,17 +26,10 @@ from quasarr.providers.sessions.dl import (
     retrieve_and_validate_session,
 )
 from quasarr.providers.utils import (
-    SEARCH_CAT_BOOKS,
-    SEARCH_CAT_MOVIES,
-    SEARCH_CAT_SHOWS,
     generate_download_link,
 )
 
 hostname = "dl"
-
-RESOLUTION_REGEX = re.compile(r"\d{3,4}p", re.I)
-CODEC_REGEX = re.compile(r"x264|x265|h264|h265|hevc|avc", re.I)
-XXX_REGEX = re.compile(r"\.xxx\.", re.I)
 
 
 def convert_to_rss_date(iso_date_str):

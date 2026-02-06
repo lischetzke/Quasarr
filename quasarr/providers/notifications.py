@@ -7,11 +7,9 @@ import os
 
 import requests
 
+from quasarr.constants import SUPPRESS_NOTIFICATIONS
 from quasarr.providers.imdb_metadata import get_imdb_id_from_title, get_poster_link
 from quasarr.providers.log import info
-
-# Discord message flag for suppressing notifications
-SUPPRESS_NOTIFICATIONS = 1 << 12  # 4096
 
 silent = False
 if os.getenv("SILENT"):

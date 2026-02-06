@@ -6,6 +6,7 @@ import re
 
 from bs4 import BeautifulSoup, NavigableString
 
+from quasarr.constants import COMMON_TLDS
 from quasarr.providers.hostname_issues import mark_hostname_issue
 from quasarr.providers.log import debug, info
 from quasarr.providers.sessions.dl import (
@@ -16,21 +17,6 @@ from quasarr.providers.sessions.dl import (
 from quasarr.providers.utils import check_links_online_status, generate_status_url
 
 hostname = "dl"
-
-# Common TLDs to strip for mirror name comparison
-COMMON_TLDS = {
-    ".com",
-    ".net",
-    ".io",
-    ".cc",
-    ".to",
-    ".me",
-    ".org",
-    ".co",
-    ".de",
-    ".eu",
-    ".info",
-}
 
 
 def normalize_mirror_name(name):

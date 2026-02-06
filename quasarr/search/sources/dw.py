@@ -9,12 +9,16 @@ import time
 import requests
 from bs4 import BeautifulSoup
 
-from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
-from quasarr.providers.log import debug, info, trace, warn
-from quasarr.providers.utils import (
+from quasarr.constants import (
+    ENGLISH_MONTHS,
+    GERMAN_MONTHS,
     SEARCH_CAT_BOOKS,
     SEARCH_CAT_MOVIES,
     SEARCH_CAT_SHOWS,
+)
+from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
+from quasarr.providers.log import debug, info, trace, warn
+from quasarr.providers.utils import (
     generate_download_link,
 )
 
@@ -22,36 +26,7 @@ hostname = "dw"
 
 
 def convert_to_rss_date(date_str):
-    german_months = [
-        "Januar",
-        "Februar",
-        "März",
-        "April",
-        "Mai",
-        "Juni",
-        "Juli",
-        "August",
-        "September",
-        "Oktober",
-        "November",
-        "Dezember",
-    ]
-    english_months = [
-        "January",
-        "February",
-        "March",
-        "April",
-        "May",
-        "June",
-        "July",
-        "August",
-        "September",
-        "October",
-        "November",
-        "December",
-    ]
-
-    for german, english in zip(german_months, english_months, strict=False):
+    for german, english in zip(GERMAN_MONTHS, ENGLISH_MONTHS, strict=False):
         if german in date_str:
             date_str = date_str.replace(german, english)
             break

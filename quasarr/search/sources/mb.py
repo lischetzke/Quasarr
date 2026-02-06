@@ -10,36 +10,23 @@ from urllib.parse import quote_plus
 import requests
 from bs4 import BeautifulSoup
 
-from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
-from quasarr.providers.log import debug, error, warn
-from quasarr.providers.utils import (
+from quasarr.constants import (
+    CODEC_REGEX,
+    GERMAN_MONTHS_MAP,
+    IMDB_REGEX,
+    RESOLUTION_REGEX,
     SEARCH_CAT_BOOKS,
     SEARCH_CAT_MOVIES,
     SEARCH_CAT_SHOWS,
+    XXX_REGEX,
+)
+from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
+from quasarr.providers.log import debug, error, warn
+from quasarr.providers.utils import (
     generate_download_link,
 )
 
 hostname = "mb"
-XXX_REGEX = re.compile(r"\.xxx\.", re.I)
-RESOLUTION_REGEX = re.compile(r"\d{3,4}p", re.I)
-CODEC_REGEX = re.compile(r"x264|x265|h264|h265|hevc|avc", re.I)
-IMDB_REGEX = re.compile(r"imdb\.com/title/(tt\d+)")
-
-# map German month names to numbers
-GERMAN_MONTHS = {
-    "Januar": "01",
-    "Februar": "02",
-    "März": "03",
-    "April": "04",
-    "Mai": "05",
-    "Juni": "06",
-    "Juli": "07",
-    "August": "08",
-    "September": "09",
-    "Oktober": "10",
-    "November": "11",
-    "Dezember": "12",
-}
 
 
 def convert_to_rss_date(date_str):
@@ -85,7 +72,7 @@ def _parse_posts(
                 )
                 if m_date:
                     day, mon_name, year, hm = m_date.groups()
-                    mon = GERMAN_MONTHS.get(mon_name, "01")
+                    mon = GERMAN_MONTHS_MAP.get(mon_name, "01")
                     dt_obj = datetime.strptime(
                         f"{day}.{mon}.{year} {hm}", "%d.%m.%Y %H:%M"
                     )

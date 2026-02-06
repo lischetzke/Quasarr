@@ -12,6 +12,14 @@ from datetime import date, datetime, timedelta
 from urllib import parse
 
 import quasarr
+from quasarr.constants import (
+    MOVIE_REGEX,
+    SEARCH_CAT_BOOKS,
+    SEARCH_CAT_MOVIES,
+    SEARCH_CAT_SHOWS,
+    SEASON_EP_REGEX,
+    SHARE_HOSTERS,
+)
 from quasarr.providers.log import debug, error, info, trace, warn
 from quasarr.providers.myjd_api import (
     Jddevice,
@@ -20,40 +28,11 @@ from quasarr.providers.myjd_api import (
     RequestTimeoutException,
     TokenExpiredException,
 )
-from quasarr.providers.utils import (
-    SEARCH_CAT_BOOKS,
-    SEARCH_CAT_MOVIES,
-    SEARCH_CAT_SHOWS,
-)
 from quasarr.storage.config import Config
 from quasarr.storage.sqlite_database import DataBase
 
 values = {}
 lock = None
-
-# regex to detect season/episode tags for series filtering during search
-SEASON_EP_REGEX = re.compile(
-    r"(?i)(?:S\d{1,3}(?:E\d{1,3}(?:-\d{1,3})?)?|S\d{1,3}-\d{1,3})"
-)
-# regex to filter out season/episode tags for movies
-MOVIE_REGEX = re.compile(
-    r"^(?!.*(?:S\d{1,3}(?:E\d{1,3}(?:-\d{1,3})?)?|S\d{1,3}-\d{1,3})).*$", re.IGNORECASE
-)
-# List of known file hosters that should not be used as search/feed sites
-SHARE_HOSTERS = {
-    "rapidgator",
-    "ddownload",
-    "keep2share",
-    "1fichier",
-    "katfile",
-    "filer",
-    "turbobit",
-    "nitroflare",
-    "filefactory",
-    "uptobox",
-    "mediafire",
-    "mega",
-}
 
 
 def set_state(manager_dict, manager_lock):

@@ -11,11 +11,11 @@ from urllib.parse import urljoin
 import requests
 from bs4 import BeautifulSoup
 
+from quasarr.constants import SEARCH_CAT_BOOKS
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.imdb_metadata import get_localized_title, get_year
 from quasarr.providers.log import debug, info, trace
 from quasarr.providers.utils import (
-    SEARCH_CAT_BOOKS,
     generate_download_link,
 )
 

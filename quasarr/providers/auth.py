@@ -17,26 +17,26 @@ from quasarr.providers.version import get_version
 from quasarr.storage.config import Config
 
 # Auth configuration from environment
-AUTH_USER = os.environ.get("USER", "")
-AUTH_PASS = os.environ.get("PASS", "")
-AUTH_TYPE = os.environ.get("AUTH", "form").lower()
+_AUTH_USER = os.environ.get("USER", "")
+_AUTH_PASS = os.environ.get("PASS", "")
+_AUTH_TYPE = os.environ.get("AUTH", "form").lower()
 
 # Cookie settings
-COOKIE_NAME = "quasarr_session"
-COOKIE_MAX_AGE = 30 * 24 * 60 * 60  # 30 days
+_COOKIE_NAME = "quasarr_session"
+_COOKIE_MAX_AGE = 30 * 24 * 60 * 60  # 30 days
 
 # Stable secret derived from PASS (restart-safe)
-_SECRET_KEY = hashlib.sha256(AUTH_PASS.encode("utf-8")).digest()
+_SECRET_KEY = hashlib.sha256(_AUTH_PASS.encode("utf-8")).digest()
 
 
 def is_auth_enabled():
     """Check if authentication is enabled (both USER and PASS set)."""
-    return bool(AUTH_USER and AUTH_PASS)
+    return bool(_AUTH_USER and _AUTH_PASS)
 
 
 def is_form_auth():
     """Check if form-based auth is enabled."""
-    return AUTH_TYPE == "form"
+    return _AUTH_TYPE == "form"
 
 
 def _b64encode(data: bytes) -> str:
@@ -67,7 +67,7 @@ def _create_session_cookie(user: str) -> str:
     """
     payload = {
         "u": _mask_user(user),
-        "exp": int(time.time()) + COOKIE_MAX_AGE,
+        "exp": int(time.time()) + _COOKIE_MAX_AGE,
     }
     raw = json.dumps(payload, separators=(",", ":")).encode("utf-8")
     sig = _sign(raw)
@@ -76,7 +76,7 @@ def _create_session_cookie(user: str) -> str:
 
 def _invalidate_cookie():
     try:
-        response.delete_cookie(COOKIE_NAME, path="/")
+        response.delete_cookie(_COOKIE_NAME, path="/")
     except Exception:
         pass
 
@@ -99,7 +99,7 @@ def _verify_session_cookie(value: str) -> bool:
 
         payload = json.loads(raw.decode("utf-8"))
 
-        if payload.get("u") != _mask_user(AUTH_USER):
+        if payload.get("u") != _mask_user(_AUTH_USER):
             raise ValueError
 
         if int(time.time()) > int(payload.get("exp", 0)):
@@ -119,14 +119,14 @@ def check_basic_auth():
     try:
         decoded = base64.b64decode(auth[6:]).decode("utf-8")
         user, passwd = decoded.split(":", 1)
-        return user == AUTH_USER and passwd == AUTH_PASS
+        return user == _AUTH_USER and passwd == _AUTH_PASS
     except:
         return False
 
 
 def check_form_auth():
     """Check session cookie. Returns True if valid."""
-    cookie = request.get_cookie(COOKIE_NAME)
+    cookie = request.get_cookie(_COOKIE_NAME)
     return bool(cookie and _verify_session_cookie(cookie))
 
 
@@ -228,13 +228,13 @@ def _handle_login_post():
     password = request.forms.get("password", "")
     next_url = request.forms.get("next", "/")
 
-    if username == AUTH_USER and password == AUTH_PASS:
+    if username == _AUTH_USER and password == _AUTH_PASS:
         cookie = _create_session_cookie(username)
         secure_flag = request.url.startswith("https://")
         response.set_cookie(
-            COOKIE_NAME,
+            _COOKIE_NAME,
             cookie,
-            max_age=COOKIE_MAX_AGE,
+            max_age=_COOKIE_MAX_AGE,
             path="/",
             httponly=True,
             secure=secure_flag,
