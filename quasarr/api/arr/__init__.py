@@ -66,17 +66,25 @@ def setup_arr_routes(app):
             download_category = determine_category(request_from, category_param)
 
             info(f"Attempting download for <y>{title}</y>")
-            downloaded = download(
-                shared_state,
-                request_from,
-                download_category,
-                title,
-                url,
-                size_mb,
-                password,
-                imdb_id,
-                source_key,
-            )
+            try:
+                downloaded = download(
+                    shared_state,
+                    request_from,
+                    download_category,
+                    title,
+                    url,
+                    size_mb,
+                    password,
+                    imdb_id,
+                    source_key,
+                )
+            except Exception as e:
+                if type(e).__name__ == "TokenExpiredException":
+                    warn(
+                        f"Download failed for <y>{title}</y>: MyJDownloader token expired."
+                    )
+                    continue
+                raise e
             try:
                 success = downloaded["success"]
                 package_id = downloaded["package_id"]

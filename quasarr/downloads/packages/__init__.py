@@ -801,137 +801,128 @@ def delete_package(shared_state, package_id, package_title=None):
             )
 
             # Perform deletion based on package type
-            if package_type == "linkgrabber":
+            if package_type in ["linkgrabber", "downloader"]:
                 if not package_uuid:
                     debug(
-                        "delete_package: Cannot delete linkgrabber package - UUID is missing"
+                        f"delete_package: Cannot delete {package_type} package - UUID is missing"
                     )
                     continue
 
-                ids = get_links_matching_package_uuid(package, cache.linkgrabber_links)
-                # Proceed even if ids is empty, but ensure we pass the package ID
+                # Collect link IDs if available in cache
+                lg_link_ids = []
+                dl_link_ids = []
+
+                if package_type == "linkgrabber":
+                    lg_link_ids = get_links_matching_package_uuid(
+                        package, cache.linkgrabber_links
+                    )
+                elif package_type == "downloader":
+                    dl_link_ids = get_links_matching_package_uuid(
+                        package, cache.downloader_links
+                    )
+
                 debug(
-                    f"delete_package: Deleting package {package_uuid} with {len(ids)} links from linkgrabber"
+                    f"delete_package: Deleting package {package_uuid} from BOTH Linkgrabber and Downloader"
                 )
+
+                # 1. Delete from Linkgrabber
                 try:
-                    resp = shared_state.get_device().linkgrabber.cleanup(
+                    shared_state.get_device().linkgrabber.cleanup(
                         "DELETE_ALL",
                         "REMOVE_LINKS_AND_DELETE_FILES",
                         "SELECTED",
-                        ids,
+                        lg_link_ids,
                         [package_uuid],
                     )
-                    debug(f"delete_package: Cleanup response: {resp}")
-
-                    # Verify deletion
-                    time.sleep(1.0)
-                    current_packages = (
-                        shared_state.get_device().linkgrabber.query_packages()
-                    )
-                    current_uuids = [p.get("uuid") for p in current_packages]
-                    debug(
-                        f"delete_package: Current UUIDs after delete: {current_uuids}"
-                    )
-
-                    if any(p.get("uuid") == package_uuid for p in current_packages):
-                        info(
-                            f"Verification failed: Package {deleted_title} still exists in linkgrabber"
-                        )
-                    else:
-                        info(f"Deleted package <y>{deleted_title}</y> from linkgrabber")
-                        success = True
                 except Exception as e:
                     debug(f"delete_package: Linkgrabber cleanup failed: {e}")
 
-            elif package_type == "downloader":
-                if not package_uuid:
-                    debug(
-                        "delete_package: Cannot delete downloader package - UUID is missing"
-                    )
-                    continue
-
-                ids = get_links_matching_package_uuid(package, cache.downloader_links)
-                # Proceed even if ids is empty, but ensure we pass the package ID
-                debug(
-                    f"delete_package: Deleting package {package_uuid} with {len(ids)} links from downloader"
-                )
+                # 2. Delete from Downloader
                 try:
-                    resp = shared_state.get_device().downloads.cleanup(
+                    shared_state.get_device().downloads.cleanup(
                         "DELETE_ALL",
                         "REMOVE_LINKS_AND_DELETE_FILES",
                         "SELECTED",
-                        ids,
+                        dl_link_ids,
                         [package_uuid],
                     )
-                    debug(f"delete_package: Cleanup response: {resp}")
-
-                    # Verify deletion
-                    time.sleep(1.0)
-                    current_packages = (
-                        shared_state.get_device().downloads.query_packages()
-                    )
-                    current_uuids = [p.get("uuid") for p in current_packages]
-                    debug(
-                        f"delete_package: Current UUIDs after delete: {current_uuids}"
-                    )
-
-                    if any(p.get("uuid") == package_uuid for p in current_packages):
-                        info(
-                            f"Verification failed: Package {deleted_title} still exists in downloader"
-                        )
-                    else:
-                        info(f"Deleted package <y>{deleted_title}</y> from downloader")
-                        success = True
                 except Exception as e:
                     debug(f"delete_package: Downloads cleanup failed: {e}")
 
-            elif package_type == "protected":
-                db_id = package.get("package_id") or package.get("nzo_id")
+                # 3. Verify deletion from BOTH
+                time.sleep(1.0)
+
+                lg_gone = True
+                try:
+                    current_lg_packages = (
+                        shared_state.get_device().linkgrabber.query_packages()
+                    )
+                    if any(p.get("uuid") == package_uuid for p in current_lg_packages):
+                        info(
+                            f"Verification failed: Package {deleted_title} still exists in linkgrabber"
+                        )
+                        lg_gone = False
+                except Exception:
+                    pass
+
+                dl_gone = True
+                try:
+                    current_dl_packages = (
+                        shared_state.get_device().downloads.query_packages()
+                    )
+                    if any(p.get("uuid") == package_uuid for p in current_dl_packages):
+                        info(
+                            f"Verification failed: Package {deleted_title} still exists in downloader"
+                        )
+                        dl_gone = False
+                except Exception:
+                    pass
+
+                if lg_gone and dl_gone:
+                    info(f"Deleted package <y>{deleted_title}</y> from JDownloader")
+                    success = True
+
+            elif package_type in ["protected", "failed"]:
+                db_id = package.get("nzo_id")
                 if not db_id:
                     debug(
-                        "delete_package: Cannot delete protected package - package_id is missing"
+                        f"delete_package: Cannot delete {package_type} package - ID is missing"
                     )
                     continue
 
-                debug(f"delete_package: Deleting from protected DB: {db_id}")
+                debug(
+                    f"delete_package: Deleting {db_id} from BOTH Protected and Failed DBs"
+                )
+
+                # 1. Delete from Protected
                 try:
                     shared_state.get_db("protected").delete(db_id)
-
-                    # Verify deletion
-                    if shared_state.get_db("protected").retrieve(db_id):
-                        info(
-                            f"Verification failed: Package {deleted_title} still exists in protected DB"
-                        )
-                    else:
-                        info(
-                            f"Deleted package <y>{deleted_title}</y> from protected DB"
-                        )
-                        success = True
                 except Exception as e:
                     debug(f"delete_package: Protected DB delete exception: {e}")
 
-            elif package_type == "failed":
-                db_id = package.get("uuid")  # For failed packages, uuid is the DB key
-                if not db_id:
-                    debug(
-                        "delete_package: Cannot delete failed package - uuid is missing"
-                    )
-                    continue
-
-                debug(f"delete_package: Deleting from failed DB: {db_id}")
+                # 2. Delete from Failed
                 try:
                     shared_state.get_db("failed").delete(db_id)
-
-                    # Verify deletion
-                    if shared_state.get_db("failed").retrieve(db_id):
-                        info(
-                            f"Verification failed: Package {deleted_title} still exists in failed DB"
-                        )
-                    else:
-                        info(f"Deleted package <y>{deleted_title}</y> from failed DB")
-                        success = True
                 except Exception as e:
                     debug(f"delete_package: Failed DB delete exception: {e}")
+
+                # 3. Verify deletion from BOTH
+                protected_exists = shared_state.get_db("protected").retrieve(db_id)
+                failed_exists = shared_state.get_db("failed").retrieve(db_id)
+
+                if protected_exists:
+                    info(
+                        f"Verification failed: Package {deleted_title} still exists in protected DB"
+                    )
+
+                if failed_exists:
+                    info(
+                        f"Verification failed: Package {deleted_title} still exists in failed DB"
+                    )
+
+                if not protected_exists and not failed_exists:
+                    info(f"Deleted package <y>{deleted_title}</y> from DBs")
+                    success = True
 
         return success
 

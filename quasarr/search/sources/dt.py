@@ -117,7 +117,7 @@ def dt_feed(shared_state, start_time, search_category):
                     r"(\d+(?:\.\d+)?\s*(?:GB|MB|KB|TB))", body_text, re.IGNORECASE
                 )
                 if not size_match:
-                    warn(f"Size not found in article: {article}")
+                    warn(f"Size not found in article for {title_raw}")
                     continue
                 size_info = size_match.group(1).strip()
                 size_item = extract_size(size_info)
@@ -263,7 +263,7 @@ def dt_search(
                     r"(\d+(?:\.\d+)?\s*(?:GB|MB|KB|TB))", body_text, re.IGNORECASE
                 )
                 if not m:
-                    debug(f"Size not found in search-article: {title_raw}")
+                    debug(f"Size not found in search-article for {title_raw}")
                     continue
                 size_item = extract_size(m.group(1).strip())
                 mb = convert_to_mb(size_item)

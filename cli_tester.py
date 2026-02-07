@@ -37,10 +37,15 @@ try:
         TaskProgressColumn,
         TextColumn,
     )
+    from rich.table import Table
 except ImportError:
     print("Please install 'rich' and 'questionary' to use this tool.")
     print("uv sync --group dev")
     sys.exit(1)
+
+from dotenv import load_dotenv
+
+load_dotenv(override=True)
 
 # --- Configuration & Constants ---
 DEFAULT_URL = "http://localhost:8080"
@@ -671,41 +676,77 @@ class QuasarrClient:
 
         resp = self._get(params, user_agent)
         if not resp:
-            return False
+            return None, "Request failed"
 
-        data = resp.json()
+        try:
+            data = resp.json()
+        except Exception:
+            return None, "Invalid JSON response"
+
         # Check for quasarr_error flag
         if data.get("quasarr_error"):
-            return False
+            return None, data.get("quasarr_error")
 
         # Also check status and nzo_ids as a fallback
         if data.get("status", False) and data.get("nzo_ids"):
-            return data.get("nzo_ids")
-        return False
+            return data.get("nzo_ids"), None
+        return None, "Unknown error"
 
     def delete_download(self, nzo_id):
         resp = self._get(
             {"mode": "queue", "name": "delete", "value": nzo_id}, USER_AGENT_RADARR
         )
         if not resp:
-            return False
+            return False, "Request failed"
 
-        data = resp.json()
+        try:
+            data = resp.json()
+        except Exception:
+            return False, "Invalid JSON response"
+
         if data.get("quasarr_error"):
-            return False
+            return False, data.get("quasarr_error")
 
-        return data.get("status", False)
+        if data.get("status", False):
+            return True, None
+        return False, "Unknown error"
 
     def fail_download(self, package_id):
         try:
-            self.session.delete(
+            resp = self.session.delete(
                 f"{self.url}/sponsors_helper/api/fail/",
                 params={"apikey": self.api_key},
                 json={"package_id": package_id},
                 timeout=30,
-            ).raise_for_status()
+            )
+            resp.raise_for_status()
             return True
-        except:
+        except Exception as e:
+            if hasattr(e, "response") and e.response is not None:
+                console.print(
+                    f"[red]Fail download error: {e.response.status_code} - {e.response.text}[/red]"
+                )
+            else:
+                console.print(f"[red]Fail download error: {e}[/red]")
+            return False
+
+    def enable_sponsor_status(self):
+        try:
+            resp = self.session.put(
+                f"{self.url}/sponsors_helper/api/set_sponsor_status/",
+                params={"apikey": self.api_key},
+                json={"activate": True},
+                timeout=30,
+            )
+            resp.raise_for_status()
+            return True
+        except Exception as e:
+            if hasattr(e, "response") and e.response is not None:
+                console.print(
+                    f"[red]Enable sponsor status error: {e.response.status_code} - {e.response.text}[/red]"
+                )
+            else:
+                console.print(f"[red]Enable sponsor status error: {e}[/red]")
             return False
 
 
@@ -827,12 +868,14 @@ def show_downloads(client):
             time.sleep(2)
         elif action == "delete":
             if questionary.confirm(f"Delete '{name}'?").ask():
-                if LoadingScreen(
+                res = LoadingScreen(
                     f"Deleting {name}", client.delete_download, nzo_id
-                ).run():
+                ).run()
+                if res and res[0]:
                     console.print("[green]Deleted[/green]")
                 else:
-                    console.print("[red]Failed[/red]")
+                    err = res[1] if res else "Cancelled"
+                    console.print(f"[red]Failed: {err}[/red]")
                 time.sleep(1)
         elif action == "fail":
             if questionary.confirm(f"Mark '{name}' failed?").ask():
@@ -876,7 +919,7 @@ def handle_results_pager(client, results, category=None, duration=None):
             break
         item, last_idx = result
 
-        success = LoadingScreen(
+        res = LoadingScreen(
             f"Adding: {item['title']}",
             client.add_download,
             item["title"],
@@ -886,10 +929,10 @@ def handle_results_pager(client, results, category=None, duration=None):
 
         clear_screen()
 
-        if success:
+        if res and res[0]:
             console.print(f"[green]✅ Added '{item['title']}'[/green]")
-        elif success is False:
-            console.print(f"[red]❌ Failed to add '{item['title']}'[/red]")
+        elif res:
+            console.print(f"[red]❌ Failed to add '{item['title']}': {res[1]}[/red]")
         else:
             console.print("[yellow]⚠️ Cancelled[/yellow]")
         time.sleep(1)
@@ -1112,12 +1155,13 @@ def handle_hostname_test(client, interactive=True):
             {"feed": feed_type, "category": category, "host": host, "item": item}
         )
 
-    # Pick oldest per host per feed
-    items_to_download = []
+    # Prepare tasks: Group by host/feed, candidates reversed (Oldest -> Newest)
+    tasks_to_process = []
     for _key, items in items_by_feed_host.items():
-        # Assume feed order is Newest -> Oldest, so last item is oldest
-        oldest_item = items[-1]
-        items_to_download.append(oldest_item)
+        candidates = list(reversed(items))
+        tasks_to_process.append(
+            {"feed": _key[0], "host": _key[1], "candidates": candidates}
+        )
 
     if interactive:
         clear_screen()
@@ -1125,7 +1169,7 @@ def handle_hostname_test(client, interactive=True):
         console.print("[dim]Keys: [Ctrl+C] Cancel Operation[/dim]")
         console.print("")
 
-    if not items_to_download:
+    if not tasks_to_process:
         console.print("[bold red]Error: No items to download found.[/bold red]")
         if interactive:
             press_any_key()
@@ -1135,8 +1179,46 @@ def handle_hostname_test(client, interactive=True):
     results = []
     attempted_titles = set()
     console.print(
-        f"[cyan]Attempting to add {len(items_to_download)} downloads...[/cyan]"
+        f"[cyan]Attempting to add {len(tasks_to_process)} downloads (with retries)...[/cyan]"
     )
+
+    def process_download_task(task):
+        feed = task["feed"]
+        host = task["host"]
+        candidates = task["candidates"]
+
+        # Try up to 3 candidates
+        limit = min(3, len(candidates))
+        last_error = "No candidates"
+        last_title = "Unknown"
+
+        for i in range(limit):
+            candidate = candidates[i]
+            title = candidate["item"]["title"]
+            link = candidate["item"]["link"]
+            category = candidate["category"]
+            last_title = title
+
+            nzo_ids, error = client.add_download(title, link, category=category)
+            if nzo_ids:
+                return {
+                    "feed": feed,
+                    "host": host,
+                    "title": title,
+                    "success": True,
+                    "nzo_ids": nzo_ids,
+                    "error": None,
+                }
+            last_error = error
+
+        return {
+            "feed": feed,
+            "host": host,
+            "title": last_title,
+            "success": False,
+            "nzo_ids": None,
+            "error": last_error,
+        }
 
     try:
         with Progress(
@@ -1147,39 +1229,22 @@ def handle_hostname_test(client, interactive=True):
             transient=True,
         ) as progress:
             task_id = progress.add_task(
-                "Adding downloads...", total=len(items_to_download)
+                "Adding downloads...", total=len(tasks_to_process)
             )
 
             with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-                future_to_entry = {
-                    executor.submit(
-                        client.add_download,
-                        entry["item"]["title"],
-                        entry["item"]["link"],
-                        category=entry["category"],
-                    ): entry
-                    for entry in items_to_download
+                future_to_task = {
+                    executor.submit(process_download_task, task): task
+                    for task in tasks_to_process
                 }
 
-                for future in concurrent.futures.as_completed(future_to_entry):
-                    entry = future_to_entry[future]
-                    attempted_titles.add(entry["item"]["title"])
+                for future in concurrent.futures.as_completed(future_to_task):
                     try:
-                        nzo_ids = future.result()
-                        success = bool(nzo_ids)
+                        res = future.result()
+                        attempted_titles.add(res["title"])
+                        results.append(res)
                     except Exception:
-                        success = False
-                        nzo_ids = None
-
-                    results.append(
-                        {
-                            "feed": entry["feed"],
-                            "host": entry["host"],
-                            "title": entry["item"]["title"],
-                            "success": success,
-                            "nzo_ids": nzo_ids,
-                        }
-                    )
+                        pass
                     progress.advance(task_id)
     except KeyboardInterrupt:
         console.print("[red]Cancelled adding downloads.[/red]")
@@ -1192,6 +1257,31 @@ def handle_hostname_test(client, interactive=True):
         Panel("Summary of Hostname Test", title="Results", border_style="blue")
     )
 
+    # Stats for summary
+    stats = {
+        "movie": {
+            "results": 0,
+            "dl_success": 0,
+            "dl_fail": 0,
+            "del_success": 0,
+            "del_fail": 0,
+        },
+        "tv": {
+            "results": 0,
+            "dl_success": 0,
+            "dl_fail": 0,
+            "del_success": 0,
+            "del_fail": 0,
+        },
+        "doc": {
+            "results": 0,
+            "dl_success": 0,
+            "dl_fail": 0,
+            "del_success": 0,
+            "del_fail": 0,
+        },
+    }
+
     # Group results by feed type
     grouped_results = {}
     for res in results:
@@ -1199,6 +1289,13 @@ def handle_hostname_test(client, interactive=True):
         if feed not in grouped_results:
             grouped_results[feed] = []
         grouped_results[feed].append(res)
+
+        if feed in stats:
+            stats[feed]["results"] += 1
+            if res["success"]:
+                stats[feed]["dl_success"] += 1
+            else:
+                stats[feed]["dl_fail"] += 1
 
     for feed, res_list in grouped_results.items():
         console.print(
@@ -1229,10 +1326,12 @@ def handle_hostname_test(client, interactive=True):
 
     # Collect nzo_ids from results
     nzo_ids_to_delete = set()
+    nzo_id_to_feed = {}
     for res in results:
         if res.get("nzo_ids"):
             for nid in res["nzo_ids"]:
                 nzo_ids_to_delete.add(nid)
+                nzo_id_to_feed[nid] = res["feed"]
 
     # Also fetch current queue/history to find items by name (for failed adds that might be stuck)
     try:
@@ -1261,6 +1360,8 @@ def handle_hostname_test(client, interactive=True):
         pass
 
     deleted_count = 0
+    deletion_errors = []
+
     if not nzo_ids_to_delete:
         pass
     else:
@@ -1284,10 +1385,21 @@ def handle_hostname_test(client, interactive=True):
 
                     for future in concurrent.futures.as_completed(future_to_id):
                         try:
-                            if future.result():
+                            nzo_id = future_to_id[future]
+                            feed = nzo_id_to_feed.get(nzo_id)
+                            success, error = future.result()
+                            if success:
                                 deleted_count += 1
+                                if feed in stats:
+                                    stats[feed]["del_success"] += 1
+                            else:
+                                if feed in stats:
+                                    stats[feed]["del_fail"] += 1
+                                deletion_errors.append(f"ID {nzo_id}: {error}")
                         except Exception:
-                            pass
+                            if feed in stats:
+                                stats[feed]["del_fail"] += 1
+                            deletion_errors.append(f"ID {nzo_id}: Exception")
                         progress.advance(task_id)
 
             console.print(f"[green]Deleted {deleted_count} downloads.[/green]")
@@ -1297,6 +1409,60 @@ def handle_hostname_test(client, interactive=True):
     if interactive:
         time.sleep(2)
 
+    # Print Summary Table
+    table = Table(title="Bulk Test Summary")
+    table.add_column("Feed", style="cyan")
+    table.add_column("Downloads (Success/Total)", justify="right")
+    table.add_column("Deletions (Success/Total)", justify="right")
+
+    for feed in ["movie", "tv", "doc"]:
+        data = stats[feed]
+        total_dl = data["results"]
+        dl_success = data["dl_success"]
+
+        total_del = data["del_success"] + data["del_fail"]
+        del_success = data["del_success"]
+
+        dl_style = (
+            "green"
+            if dl_success == total_dl and total_dl > 0
+            else "red"
+            if dl_success == 0 and total_dl > 0
+            else "yellow"
+        )
+        del_style = (
+            "green"
+            if del_success == total_del and total_del > 0
+            else "red"
+            if del_success == 0 and total_del > 0
+            else "yellow"
+        )
+
+        table.add_row(
+            feed.upper(),
+            f"[{dl_style}]{dl_success}/{total_dl}[/{dl_style}]",
+            f"[{del_style}]{del_success}/{total_del}[/{del_style}]",
+        )
+    console.print(table)
+    console.print("")
+
+    # Show failures
+    failures = [r for r in results if not r["success"]]
+    if failures or deletion_errors:
+        console.print("[bold red]Failures:[/bold red]")
+        if failures:
+            console.print("[red]Downloads:[/red]")
+            for f in failures:
+                console.print(
+                    f"  - {f['feed'].upper()} / {f['host'].upper()}: {f['error']} ({f['title']})"
+                )
+
+        if deletion_errors:
+            console.print("[red]Deletions:[/red]")
+            for err in deletion_errors:
+                console.print(f"  - {err}")
+        console.print("")
+
     # Error Checks
     successful_downloads = len([r for r in results if r["success"]])
 
@@ -1305,6 +1471,8 @@ def handle_hostname_test(client, interactive=True):
         console.print(
             "[bold red]Error: No downloads were successfully added.[/bold red]"
         )
+        if interactive:
+            press_any_key()
         return False
 
     # If we deleted fewer than we successfully added (by ID), that's definitely an error.
@@ -1315,7 +1483,12 @@ def handle_hostname_test(client, interactive=True):
         console.print(
             f"[bold red]Error: Mismatch! Added {successful_downloads} but deleted {deleted_count}.[/bold red]"
         )
+        if interactive:
+            press_any_key()
         return False
+
+    if interactive:
+        press_any_key()
 
     return True
 
@@ -1367,11 +1540,13 @@ def run_cli():
             choice = MenuSelector(
                 "Main Menu",
                 [
+                    ("🧪 Test All Hostnames", "test_hostnames"),
                     ("🔍 Searches", "search"),
                     ("🗞️ Feeds", "feeds"),
                     ("⬇️ Downloads", "downloads"),
-                    ("🧪 Test All Hostnames", "test_hostnames"),
+                    ("🔓 Enable Sponsor Status", "enable_sponsor"),
                     ("🌐 Open Web UI", "web"),
+                    ("🚪 Exit", "exit"),
                 ],
                 allow_back=False,
             ).run()
@@ -1383,8 +1558,19 @@ def run_cli():
                 show_downloads(client)
             elif choice == "test_hostnames":
                 handle_hostname_test(client)
+            elif choice == "enable_sponsor":
+                if LoadingScreen(
+                    "Enabling Sponsor Status", client.enable_sponsor_status
+                ).run():
+                    console.print("[green]Sponsor status enabled![/green]")
+                else:
+                    console.print("[red]Failed to enable sponsor status.[/red]")
+                time.sleep(2)
             elif choice == "web":
                 webbrowser.open(client.url)
+            elif choice == "exit":
+                if questionary.confirm("Are you sure you want to exit?").ask():
+                    sys.exit(0)
             elif choice is None:
                 sys.exit(0)
         except KeyboardInterrupt:

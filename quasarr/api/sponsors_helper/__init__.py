@@ -187,11 +187,47 @@ def setup_sponsors_helper_routes(app):
         try:
             StatsHelper(shared_state).increment_failed_decryptions_automatic()
 
-            data = request.json
+            data = request.json or {}
             package_id = data.get("package_id")
+            # SponsorsHelper might send 'name' or 'title'
+            title = data.get("name") or data.get("title")
 
-            data = json.loads(shared_state.get_db("protected").retrieve(package_id))
-            title = data.get("title")
+            # 1. Try to find package in Protected DB if ID is missing but Title exists
+            if not package_id and title:
+                try:
+                    protected_packages = shared_state.get_db(
+                        "protected"
+                    ).retrieve_all_titles()
+                    for pkg in protected_packages:
+                        # pkg is (id, json_str)
+                        try:
+                            pkg_data = json.loads(pkg[1])
+                            if pkg_data.get("title") == title:
+                                package_id = pkg[0]
+                                info(
+                                    f"Found package ID <y>{package_id}</y> for title <y>{title}</y>"
+                                )
+                                break
+                        except Exception:
+                            pass
+                except Exception as e:
+                    info(f"Error searching protected DB by title: {e}")
+
+            # 2. If we have an ID, try to get canonical title from DB (if not provided or to verify)
+            if package_id:
+                try:
+                    db_entry = shared_state.get_db("protected").retrieve(package_id)
+                    if db_entry:
+                        db_data = json.loads(db_entry)
+                        # Prefer DB title if available
+                        if db_data.get("title"):
+                            title = db_data.get("title")
+                except Exception:
+                    # If retrieval fails, we stick with the title we have (or "Unknown")
+                    pass
+
+            if not title:
+                title = "Unknown"
 
             if package_id:
                 info(
@@ -203,10 +239,29 @@ def setup_sponsors_helper_routes(app):
                     shared_state,
                     reason="Too many failed attempts by SponsorsHelper",
                 )
-                if failed:
+
+                # Always try to delete from protected, even if fail() returns False
+                try:
                     shared_state.get_db("protected").delete(package_id)
+                except Exception as e:
+                    info(f"Error deleting from protected DB: {e}")
+
+                # Verify deletion
+                try:
+                    if shared_state.get_db("protected").retrieve(package_id):
+                        info(
+                            f"Verification failed: Package {package_id} still exists in protected DB"
+                        )
+                except Exception:
+                    pass
+
+                if failed:
                     send_discord_message(shared_state, title=title, case="failed")
                     return f'Package <y>{title}</y> with ID <y>{package_id}</y> marked as failed!"'
+                else:
+                    return f"Package <y>{title}</y> processed."
+            else:
+                return abort(400, "Missing package_id")
         except Exception as e:
             info(f"Error moving to failed: {e}")
 
