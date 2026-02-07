@@ -95,6 +95,13 @@ def _parse_posts(
                 except AttributeError:
                     link_tag = table.find("a")
                 title = link_tag.get_text(strip=True)
+                if not title:
+                    try:
+                        title = link_tag.get("title", "")
+                    except:
+                        pass
+                if not title:
+                    continue
                 if search_category == SEARCH_CAT_BOOKS:
                     # lazylibrarian can only detect specific date formats / issue numbering for magazines
                     title = normalize_magazine_title(title)
