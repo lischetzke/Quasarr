@@ -50,6 +50,7 @@ def render_centered_html(inner_content, footer_content=""):
                     --card-bg: #2d3748;
                     --card-shadow: rgba(0, 0, 0, 0.5);
                     --card-border: #4a5568;
+                    --primary: #6366f1;
                     --code-bg: #2c2f33;
                     --info-border: #4a8c4a;
                     --setup-border: var(--primary);

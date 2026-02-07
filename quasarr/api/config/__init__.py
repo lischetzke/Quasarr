@@ -56,7 +56,7 @@ def setup_config(app, shared_state):
     @app.get("/hostnames")
     def hostnames_ui():
         message = """<p>
-            At least one hostname must be kept.
+            Use status buttons to change credentials and check for errors.
         </p>"""
         back_button = f"""<p>
                         {render_button("Back", "secondary", {"onclick": "location.href='/'"})}

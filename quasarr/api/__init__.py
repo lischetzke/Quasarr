@@ -247,7 +247,7 @@ def get_api(shared_state_dict, shared_state_lock):
 
         <div class="section">
             <details id="flaresolverrDetails">
-                <summary id="flaresolverrSummary">🛡️ FlareSolverr Configuration</summary>
+                <summary id="flaresolverrSummary"><img src="{images.flaresolverr}" type="image/webp" alt="JDownloader logo" class="inline-icon"/> FlareSolverr Configuration</summary>
                 <div class="api-settings">
                     {flaresolverr_warning}
                     <p class="api-hint">

@@ -193,12 +193,13 @@ def _escape_js_for_html_attr(s):
 
 def hostname_form_html(shared_state, message, show_skip_management=False):
     hostname_fields = """
-    <label for="{id}" onclick="showStatusDetail(\'{id}\', \'{label}\', \'{status}\', \'{error_details_for_modal}\', \'{timestamp}\', \'{operation}\', \'{url}\', \'{user}\', \'{password}\', {supports_login})" 
-           style="cursor:pointer; display:inline-flex; align-items:center; gap:4px;" title="{status_title}">
-        <span class="status-indicator" id="status-{id}" data-status="{status}">{status_emoji}</span>
-        {label}
-    </label>
-    <input type="text" id="{id}" name="{id}" placeholder="example.com" autocorrect="off" autocomplete="off" value="{value}"><br>
+    <div class="hostname-row">
+        <button type="button" class="{btn_class}" onclick="showStatusDetail(\'{id}\', \'{label}\', \'{status}\', \'{error_details_for_modal}\', \'{timestamp}\', \'{operation}\', \'{url}\', \'{user}\', \'{password}\', {supports_login})" title="{status_title}">
+            <span class="status-indicator" id="status-{id}" data-status="{status}">{status_emoji}</span>
+            {label}
+        </button>
+        <input type="text" id="{id}" name="{id}" placeholder="example.com" autocorrect="off" autocomplete="off" value="{value}">
+    </div>
     """
 
     skip_indicator = """
@@ -264,6 +265,8 @@ def hostname_form_html(shared_state, message, show_skip_management=False):
             user = site_config.get("user") or ""
             password = site_config.get("password") or ""
 
+        btn_class = "btn-secondary" if status == "unset" else "btn-primary"
+
         field_html.append(
             hostname_fields.format(
                 id=field_id,
@@ -281,6 +284,7 @@ def hostname_form_html(shared_state, message, show_skip_management=False):
                 user=_escape_js_for_html_attr(user),
                 password=_escape_js_for_html_attr(password),
                 supports_login=supports_login,
+                btn_class=btn_class,
             )
         )
 
@@ -355,6 +359,26 @@ def hostname_form_html(shared_state, message, show_skip_management=False):
     }}
     .btn-subtle:hover {{
         background: var(--btn-subtle-bg, #e9ecef);
+    }}
+    .hostname-row {{
+        display: flex;
+        gap: 0.5rem;
+        margin-bottom: 0.75rem;
+        align-items: stretch;
+    }}
+    .hostname-row button {{
+        margin-top: 0;
+        margin-bottom: 0;
+        white-space: nowrap;
+        min-width: 6rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.4rem;
+    }}
+    .hostname-row input {{
+        flex: 1;
+        margin-bottom: 0;
     }}
 </style>
 
