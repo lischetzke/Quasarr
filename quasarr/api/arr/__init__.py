@@ -295,15 +295,20 @@ def setup_arr_routes(app):
                             cats = [int(c) for c in cat_param.split(",")]
                             if 2000 in cats:
                                 search_category = 2000
+                            elif 5000 in cats:
+                                search_category = 5000
                             elif 7000 in cats:
                                 search_category = 7000
                             else:
-                                search_category = (
-                                    5000  # Default to TV if ambiguous or 5000 present
+                                # Derive cat from user agent if mismatch
+                                search_category = determine_search_category(
+                                    request_from
                                 )
                         except ValueError:
+                            # Derive cat from user agent if not in cats
                             search_category = determine_search_category(request_from)
                     else:
+                        # Derive cat from user agent if not provided
                         search_category = determine_search_category(request_from)
 
                     if mode == "movie":
