@@ -15,7 +15,7 @@ def render_centered_html(inner_content, footer_content=""):
         <title>Quasarr</title>
         <link rel="icon" href="'''
         + images.favicon
-        + """" type="image/png">
+        + """" type="image/webp">
         <style>
             /* Theme variables */
             :root {
@@ -50,6 +50,7 @@ def render_centered_html(inner_content, footer_content=""):
                     --card-bg: #2d3748;
                     --card-shadow: rgba(0, 0, 0, 0.5);
                     --card-border: #4a5568;
+                    --primary: #6366f1;
                     --code-bg: #2c2f33;
                     --info-border: #4a8c4a;
                     --setup-border: var(--primary);
@@ -149,6 +150,12 @@ def render_centered_html(inner_content, footer_content=""):
                 width: 48px;
                 height: 48px;
                 margin-right: 0.5rem;
+            }
+            .inline-icon {
+                width: 1.2em;
+                height: 1.2em;
+                margin-right: 0.25rem;
+                vertical-align: middle;
             }
             /* Form labels and inputs */
             label {
@@ -264,6 +271,21 @@ def render_centered_html(inner_content, footer_content=""):
                 border-color: #41464b;
                 box-shadow: 0 2px 6px rgba(108, 117, 125, 0.4);
             }
+            .btn-danger {
+                background-color: var(--error-color);
+                color: #fff;
+                border: 1.5px solid var(--error-border);
+            }
+            .btn-danger:hover {
+                background-color: #c82333;
+                border-color: #bd2130;
+                box-shadow: 0 2px 6px rgba(220, 53, 69, 0.4);
+            }
+            .btn-sm {
+                padding: 0.25rem 0.5rem;
+                font-size: 0.875rem;
+                margin-top: 0;
+            }
             a {
                 color: var(--link-color);
                 text-decoration: none;
@@ -294,12 +316,13 @@ def render_centered_html(inner_content, footer_content=""):
                 bottom: 0;
                 background: rgba(0, 0, 0, 0.5);
                 display: flex;
-                align-items: center;
                 justify-content: center;
                 z-index: 9999;
                 visibility: hidden;
                 opacity: 0;
                 transition: visibility 0s, opacity 0.2s;
+                overflow-y: auto;
+                padding: 1rem;
             }
             .status-modal-overlay.active {
                 visibility: visible;
@@ -314,6 +337,7 @@ def render_centered_html(inner_content, footer_content=""):
                 box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
                 transform: scale(0.9);
                 transition: transform 0.2s;
+                margin: auto;
             }
             .status-modal-overlay.active .status-modal {
                 transform: scale(1);
@@ -428,7 +452,7 @@ def render_button(text, button_type="primary", attributes=None):
 
 def render_form(header, form="", script="", footer_content=""):
     content = f'''
-    <h1 onclick="window.location.href='/'"><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+    <h1 onclick="window.location.href='/'"><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
     <h2>{header}</h2>
     {form}
     {script}
@@ -457,7 +481,7 @@ def render_success(message, timeout=10, optional_text=""):
             }}, 1000);
         </script>
     """
-    content = f'''<h1 onclick="window.location.href='/'"><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+    content = f'''<h1 onclick="window.location.href='/'"><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
     <h2>{message}</h2>
     {optional_text}
     {button_html}
@@ -466,11 +490,23 @@ def render_success(message, timeout=10, optional_text=""):
     return render_centered_html(content)
 
 
+def render_success_no_wait(message, optional_text=""):
+    button_html = render_button(
+        "Continue", "primary", {"onclick": "window.location.href='/'"}
+    )
+    content = f'''<h1 onclick="window.location.href='/'"><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+    <h2>{message}</h2>
+    {optional_text}
+    {button_html}
+    '''
+    return render_centered_html(content)
+
+
 def render_fail(message):
     button_html = render_button(
         "Back", "secondary", {"onclick": "window.location.href='/'"}
     )
-    return render_centered_html(f"""<h1 onclick="window.location.href='/'"><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+    return render_centered_html(f"""<h1 onclick="window.location.href='/'"><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
         <h2>{message}</h2>
         {button_html}
     """)

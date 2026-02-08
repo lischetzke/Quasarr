@@ -12,7 +12,7 @@ from quasarr.providers.sessions.dd import (
 hostname = "dd"
 
 
-def get_dd_download_links(shared_state, url, mirror, title, password):
+def get_dd_download_links(shared_state, url, mirrors, title, password):
     """
     KEEP THE SIGNATURE EVEN IF SOME PARAMETERS ARE UNUSED!
 
@@ -67,9 +67,9 @@ def get_dd_download_links(shared_state, url, mirror, title, password):
                 elif release.get("release") == title:
                     filtered_links = []
                     for link in release["links"]:
-                        if mirror and mirror not in link["hostname"]:
+                        if mirrors and not any(m in link["hostname"] for m in mirrors):
                             debug(
-                                f'Skipping link from "{link["hostname"]}" (not the desired mirror "{mirror}")!'
+                                f'Skipping link from "{link["hostname"]}" (not in desired mirrors "{mirrors}")!'
                             )
                             continue
 

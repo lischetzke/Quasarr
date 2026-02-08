@@ -6,33 +6,43 @@ import html
 import time
 import traceback
 import warnings
-from base64 import urlsafe_b64encode
 from datetime import datetime
 
 import requests
 from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning
 
+from quasarr.constants import (
+    SEARCH_CAT_BOOKS,
+    SEARCH_CAT_MOVIES,
+    SEARCH_CAT_SHOWS,
+)
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.imdb_metadata import get_localized_title, get_year
 from quasarr.providers.log import debug, error, trace, warn
+from quasarr.providers.utils import (
+    generate_download_link,
+    is_imdb_id,
+    is_valid_release,
+)
 
 warnings.filterwarnings(
     "ignore", category=XMLParsedAsHTMLWarning
 )  # we dont want to use lxml
 
 hostname = "wx"
-supported_mirrors = []
 
 
-def wx_feed(shared_state, start_time, request_from, mirror=None):
+def wx_feed(shared_state, start_time, search_category):
     """
     Fetch latest releases from RSS feed.
     """
     releases = []
     host = shared_state.values["config"]("Hostnames").get(hostname)
 
-    if "lazylibrarian" in request_from.lower():
-        debug(f"<d>Skipping {request_from}: unsupported media type.</d>")
+    if search_category == SEARCH_CAT_BOOKS:
+        debug(
+            f"<d>Skipping <y>{search_category}</y> on <g>{hostname.upper()}</g> (category not supported)!</d>"
+        )
         return releases
 
     rss_url = f"https://{host}/rss"
@@ -94,12 +104,15 @@ def wx_feed(shared_state, start_time, request_from, mirror=None):
                 imdb_id = None
                 password = host.upper()
 
-                payload = urlsafe_b64encode(
-                    f"{title}|{source}|{mirror}|{mb}|{password}|{imdb_id or ''}|{hostname}".encode(
-                        "utf-8"
-                    )
-                ).decode("utf-8")
-                link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
+                link = generate_download_link(
+                    shared_state,
+                    title,
+                    source,
+                    mb,
+                    password,
+                    imdb_id or "",
+                    hostname,
+                )
 
                 releases.append(
                     {
@@ -108,7 +121,6 @@ def wx_feed(shared_state, start_time, request_from, mirror=None):
                             "hostname": hostname,
                             "imdb_id": imdb_id,
                             "link": link,
-                            "mirror": mirror,
                             "size": size,
                             "date": published,
                             "source": source,
@@ -139,9 +151,8 @@ def wx_feed(shared_state, start_time, request_from, mirror=None):
 def wx_search(
     shared_state,
     start_time,
-    request_from,
+    search_category,
     search_string,
-    mirror=None,
     season=None,
     episode=None,
 ):
@@ -152,11 +163,11 @@ def wx_search(
     releases = []
     host = shared_state.values["config"]("Hostnames").get(hostname)
 
-    if "lazylibrarian" in request_from.lower():
-        debug(f"<d>Skipping {request_from}: unsupported media type.</d>")
+    if search_category == SEARCH_CAT_BOOKS:
+        debug(f"<d>Skipping <y>{search_category}</>: unsupported category.</d>")
         return releases
 
-    imdb_id = shared_state.is_imdb_id(search_string)
+    imdb_id = is_imdb_id(search_string)
     if imdb_id:
         debug(f"Received IMDb ID: <y>{imdb_id}</y>")
         title = get_localized_title(shared_state, imdb_id, "de")
@@ -191,10 +202,13 @@ def wx_search(
         "sortOrder": "desc",
     }
 
-    if "sonarr" in request_from.lower():
+    if search_category == SEARCH_CAT_SHOWS:
         params["types"] = "series,anime"
-    elif "radarr" in request_from.lower():
+    elif search_category == SEARCH_CAT_MOVIES:
         params["types"] = "movie"
+    else:
+        warn(f"Unknown search category: {search_category}")
+        return releases
 
     trace(f"Searching: '{search_string}'")
 
@@ -262,8 +276,8 @@ def wx_search(
                     title = html.unescape(main_title)
                     title = title.replace(" ", ".")
 
-                    if shared_state.is_valid_release(
-                        title, request_from, search_string, season, episode
+                    if is_valid_release(
+                        title, search_category, search_string, season, episode
                     ):
                         # Skip if we've already seen this exact title
                         if title in seen_titles:
@@ -279,12 +293,15 @@ def wx_search(
                                 )
                             password = f"www.{host}"
 
-                            payload = urlsafe_b64encode(
-                                f"{title}|{source}|{mirror}|0|{password}|{item_imdb_id}|{hostname}".encode(
-                                    "utf-8"
-                                )
-                            ).decode("utf-8")
-                            link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
+                            link = generate_download_link(
+                                shared_state,
+                                title,
+                                source,
+                                0,
+                                password,
+                                item_imdb_id,
+                                hostname,
+                            )
 
                             releases.append(
                                 {
@@ -293,7 +310,6 @@ def wx_search(
                                         "hostname": hostname,
                                         "imdb_id": item_imdb_id,
                                         "link": link,
-                                        "mirror": mirror,
                                         "size": 0,
                                         "date": published,
                                         "source": source,
@@ -316,9 +332,9 @@ def wx_search(
                             release_title = html.unescape(release_title)
                             release_title = release_title.replace(" ", ".")
 
-                            if not shared_state.is_valid_release(
+                            if not is_valid_release(
                                 release_title,
-                                request_from,
+                                search_category,
                                 search_string,
                                 season,
                                 episode,
@@ -352,12 +368,15 @@ def wx_search(
                             release_size = release.get("size", 0)
                             password = f"www.{host}"
 
-                            payload = urlsafe_b64encode(
-                                f"{release_title}|{release_source}|{mirror}|{release_size}|{password}|{item_imdb_id}|{hostname}".encode(
-                                    "utf-8"
-                                )
-                            ).decode("utf-8")
-                            link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
+                            link = generate_download_link(
+                                shared_state,
+                                release_title,
+                                release_source,
+                                release_size,
+                                password,
+                                item_imdb_id,
+                                hostname,
+                            )
 
                             releases.append(
                                 {
@@ -366,7 +385,6 @@ def wx_search(
                                         "hostname": hostname,
                                         "imdb_id": item_imdb_id,
                                         "link": link,
-                                        "mirror": mirror,
                                         "size": release_size,
                                         "date": release_published,
                                         "source": release_source,

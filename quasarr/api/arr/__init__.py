@@ -9,84 +9,42 @@ from datetime import datetime
 from urllib.parse import parse_qs, urlparse
 from xml.etree import ElementTree
 
-from bottle import abort, request
+from bottle import request
 
 from quasarr.downloads import download
 from quasarr.downloads.packages import delete_package, get_packages
 from quasarr.providers import shared_state
 from quasarr.providers.auth import require_api_key
 from quasarr.providers.log import debug, error, info, warn
+from quasarr.providers.utils import (
+    determine_category,
+    determine_search_category,
+    parse_payload,
+)
 from quasarr.providers.version import get_version
 from quasarr.search import get_search_results
-
-
-def parse_payload(payload_str):
-    """
-    Parse the base64-encoded payload string into its components.
-
-    Supports both legacy 6-field format and new 7-field format:
-    - Legacy (6 fields): title|url|mirror|size_mb|password|imdb_id
-    - New (7 fields): title|url|mirror|size_mb|password|imdb_id|source_key
-
-    Returns:
-        dict with keys: title, url, mirror, size_mb, password, imdb_id, source_key
-    """
-    decoded = urlsafe_b64decode(payload_str.encode()).decode()
-    parts = decoded.split("|")
-
-    if len(parts) == 6:
-        # Legacy format - no source_key provided
-        title, url, mirror, size_mb, password, imdb_id = parts
-        source_key = None
-    elif len(parts) == 7:
-        # New format with source_key
-        title, url, mirror, size_mb, password, imdb_id, source_key = parts
-    else:
-        raise ValueError(f"expected 6 or 7 fields, got {len(parts)}")
-
-    return {
-        "title": title,
-        "url": url,
-        "mirror": None if mirror == "None" else mirror,
-        "size_mb": size_mb,
-        "password": password if password else None,
-        "imdb_id": imdb_id if imdb_id else None,
-        "source_key": source_key if source_key else None,
-    }
+from quasarr.storage.categories import get_download_categories
 
 
 def setup_arr_routes(app):
-    def check_user_agent():
-        user_agent = request.headers.get("User-Agent") or ""
-        if not any(
-            tool in user_agent.lower()
-            for tool in ["radarr", "sonarr", "lazylibrarian", "python-requests"]
-        ):
-            msg = f"Unsupported User-Agent: {user_agent}. Quasarr as a compatibility layer must be called by Radarr, Sonarr or LazyLibrarian directly."
-            info(msg)
-            abort(406, msg)
-        return user_agent
-
     @app.get("/download/")
     def fake_nzb_file():
         payload = request.query.payload
         decoded_payload = urlsafe_b64decode(payload).decode("utf-8").split("|")
 
-        # Support both 6 and 7 field formats
         title = decoded_payload[0]
         url = decoded_payload[1]
-        mirror = decoded_payload[2]
-        size_mb = decoded_payload[3]
-        password = decoded_payload[4]
-        imdb_id = decoded_payload[5]
-        source_key = decoded_payload[6] if len(decoded_payload) > 6 else ""
+        size_mb = decoded_payload[2]
+        password = decoded_payload[3]
+        imdb_id = decoded_payload[4]
+        source_key = decoded_payload[5]
 
-        return f'<nzb><file title="{title}" url="{url}" mirror="{mirror}" size_mb="{size_mb}" password="{password}" imdb_id="{imdb_id}" source_key="{source_key}"/></nzb>'
+        return f'<nzb><file title="{title}" url="{url}" size_mb="{size_mb}" password="{password}" imdb_id="{imdb_id}" source_key="{source_key}"/></nzb>'
 
     @app.post("/api")
     @require_api_key
     def download_fake_nzb_file():
-        request_from = check_user_agent()
+        request_from = request.headers.get("User-Agent") or ""
         downloads = request.files.getall("name")
         nzo_ids = []  # naming structure for package IDs expected in newznab
 
@@ -97,29 +55,36 @@ def setup_arr_routes(app):
             title = sax_utils.unescape(root.find(".//file").attrib["title"])
 
             url = root.find(".//file").attrib["url"]
-            mirror = (
-                None
-                if (mirror := root.find(".//file").attrib.get("mirror")) == "None"
-                else mirror
-            )
 
             size_mb = root.find(".//file").attrib["size_mb"]
             password = root.find(".//file").attrib.get("password")
             imdb_id = root.find(".//file").attrib.get("imdb_id")
             source_key = root.find(".//file").attrib.get("source_key") or None
 
+            # Extract category from request, SABnzbd addfile expects &cat=...
+            category_param = getattr(request.query, "cat", None)
+            download_category = determine_category(request_from, category_param)
+
             info(f"Attempting download for <y>{title}</y>")
-            downloaded = download(
-                shared_state,
-                request_from,
-                title,
-                url,
-                mirror,
-                size_mb,
-                password,
-                imdb_id,
-                source_key,
-            )
+            try:
+                downloaded = download(
+                    shared_state,
+                    request_from,
+                    download_category,
+                    title,
+                    url,
+                    size_mb,
+                    password,
+                    imdb_id,
+                    source_key,
+                )
+            except Exception as e:
+                if type(e).__name__ == "TokenExpiredException":
+                    warn(
+                        f"Download failed for <y>{title}</y>: MyJDownloader token expired."
+                    )
+                    continue
+                raise e
             try:
                 success = downloaded["success"]
                 package_id = downloaded["package_id"]
@@ -127,19 +92,21 @@ def setup_arr_routes(app):
 
                 if success:
                     info(f"<y>{title}</y> added successfully!")
+                    nzo_ids.append(package_id)
                 else:
                     info(f"<y>{title}</y> added unsuccessfully! See log for details.")
-                nzo_ids.append(package_id)
             except KeyError:
                 info(f"Failed to download <y>{title}</y> - no package_id returned")
 
-        return {"status": True, "nzo_ids": nzo_ids}
+        response = {"status": True, "nzo_ids": nzo_ids}
+        if not nzo_ids:
+            response["quasarr_error"] = True
+        return response
 
     @app.get("/api")
-    @app.get("/api/<mirror>")
     @require_api_key
-    def quasarr_api(mirror=None):
-        request_from = check_user_agent()
+    def quasarr_api():
+        request_from = request.headers.get("User-Agent") or ""
 
         api_type = (
             "arr_download_client"
@@ -158,33 +125,25 @@ def setup_arr_routes(app):
                 elif mode == "version":
                     return {"version": f"Quasarr {get_version()}"}
                 elif mode == "get_cats":
-                    return {"categories": ["*", "movies", "tv", "docs"]}
+                    # Dynamic categories
+                    cats = get_download_categories()
+                    # SABnzbd usually returns '*' as the first category
+                    if "*" not in cats:
+                        cats.insert(0, "*")
+                    return {"categories": cats}
                 elif mode == "get_config":
+                    # Dynamic categories for config
+                    cats = get_download_categories()
+                    cat_configs = [{"name": "*", "order": 0, "dir": ""}]
+                    for i, cat in enumerate(cats):
+                        if cat == "*":
+                            continue
+                        cat_configs.append({"name": cat, "order": i + 1, "dir": ""})
+
                     return {
                         "config": {
                             "misc": {"quasarr": True, "complete_dir": "/tmp/"},
-                            "categories": [
-                                {
-                                    "name": "*",
-                                    "order": 0,
-                                    "dir": "",
-                                },
-                                {
-                                    "name": "movies",
-                                    "order": 1,
-                                    "dir": "",
-                                },
-                                {
-                                    "name": "tv",
-                                    "order": 2,
-                                    "dir": "",
-                                },
-                                {
-                                    "name": "docs",
-                                    "order": 3,
-                                    "dir": "",
-                                },
-                            ],
+                            "categories": cat_configs,
                         }
                     }
                 elif mode == "fullstatus":
@@ -192,22 +151,29 @@ def setup_arr_routes(app):
                 elif mode == "addurl":
                     raw_name = getattr(request.query, "name", None)
                     if not raw_name:
-                        abort(400, "missing or empty 'name' parameter")
+                        # SABnzbd returns status: False if name is missing
+                        return {"status": False, "nzo_ids": [], "quasarr_error": True}
 
-                    payload = False
+                    # Extract category from request, SABnzbd addurl expects &cat=...
+                    category_param = getattr(request.query, "cat", None)
+                    download_category = determine_category(request_from, category_param)
+
                     try:
                         parsed = urlparse(raw_name)
                         qs = parse_qs(parsed.query)
                         payload = qs.get("payload", [None])[0]
                     except Exception as e:
-                        abort(400, f"invalid URL in 'name': {e}")
+                        info(f"Invalid URL in 'name': {e}")
+                        return {"status": False, "nzo_ids": [], "quasarr_error": True}
                     if not payload:
-                        abort(400, "missing 'payload' parameter in URL")
+                        info("Missing 'payload' parameter in URL")
+                        return {"status": False, "nzo_ids": [], "quasarr_error": True}
 
                     try:
                         parsed_payload = parse_payload(payload)
                     except Exception as e:
-                        abort(400, f"invalid payload format: {e}")
+                        info(f"Invalid payload format: {e}")
+                        return {"status": False, "nzo_ids": [], "quasarr_error": True}
 
                     nzo_ids = []
                     info(f"Attempting download for <y>{parsed_payload['title']}</y>")
@@ -215,9 +181,9 @@ def setup_arr_routes(app):
                     downloaded = download(
                         shared_state,
                         request_from,
+                        download_category,
                         parsed_payload["title"],
                         parsed_payload["url"],
-                        parsed_payload["mirror"],
                         parsed_payload["size_mb"],
                         parsed_payload["password"],
                         parsed_payload["imdb_id"],
@@ -231,21 +197,30 @@ def setup_arr_routes(app):
 
                         if success:
                             info(f'"{title} added successfully!')
+                            nzo_ids.append(package_id)
+                            return {"status": True, "nzo_ids": nzo_ids}
                         else:
                             info(f'"{title} added unsuccessfully! See log for details.')
-                        nzo_ids.append(package_id)
+                            # SABnzbd returns status: True even if operation failed
+                            return {
+                                "status": True,
+                                "nzo_ids": [],
+                                "quasarr_error": True,
+                            }
                     except KeyError:
                         info(
                             f'Failed to download "{parsed_payload["title"]}" - no package_id returned'
                         )
-
-                    return {"status": True, "nzo_ids": nzo_ids}
+                        return {"status": True, "nzo_ids": [], "quasarr_error": True}
 
                 elif mode == "queue" or mode == "history":
                     if request.query.name and request.query.name == "delete":
                         package_id = request.query.value
                         deleted = delete_package(shared_state, package_id)
-                        return {"status": deleted, "nzo_ids": [package_id]}
+                        response = {"status": deleted, "nzo_ids": [package_id]}
+                        if not deleted:
+                            response["quasarr_error"] = True
+                        return response
 
                     packages = get_packages(shared_state)
                     if mode == "queue":
@@ -271,11 +246,6 @@ def setup_arr_routes(app):
         elif api_type == "arr_indexer":
             # this builds a mock Newznab API response based on Quasarr search
             try:
-                if mirror:
-                    debug(
-                        f'Search will only return releases that match this mirror: "{mirror}"'
-                    )
-
                 mode = request.query.t
                 if mode == "caps":
                     info(f"Providing indexer capability information to {request_from}")
@@ -295,8 +265,8 @@ def setup_arr_routes(app):
                                     <movie-search available="yes" supportedParams="imdbid" />
                                   </searching>
                                   <categories>
-                                    <category id="5000" name="TV" />
                                     <category id="2000" name="Movies" />
+                                    <category id="5000" name="TV" />
                                     <category id="7000" name="Books">
                                   </category>
                                   </categories>
@@ -316,14 +286,39 @@ def setup_arr_routes(app):
                         debug(f"Error parsing limit parameter: {e}")
                         limit = 1000
 
+                    # Extract category from request, fallback to user agent based
+                    cat_param = getattr(request.query, "cat", None)
+                    if cat_param:
+                        try:
+                            # Handle comma-separated categories (e.g. "5000,5030,5040")
+                            # We just take the first one or check if any match our main categories
+                            cats = [int(c) for c in cat_param.split(",")]
+                            if 2000 in cats:
+                                search_category = 2000
+                            elif 5000 in cats:
+                                search_category = 5000
+                            elif 7000 in cats:
+                                search_category = 7000
+                            else:
+                                # Derive cat from user agent if mismatch
+                                search_category = determine_search_category(
+                                    request_from
+                                )
+                        except ValueError:
+                            # Derive cat from user agent if not in cats
+                            search_category = determine_search_category(request_from)
+                    else:
+                        # Derive cat from user agent if not provided
+                        search_category = determine_search_category(request_from)
+
                     if mode == "movie":
                         # supported params: imdbid
                         imdb_id = getattr(request.query, "imdbid", "")
                         releases = get_search_results(
                             shared_state,
                             request_from,
+                            search_category,
                             imdb_id=imdb_id,
-                            mirror=mirror,
                             offset=offset,
                             limit=limit,
                         )
@@ -336,8 +331,8 @@ def setup_arr_routes(app):
                         releases = get_search_results(
                             shared_state,
                             request_from,
+                            search_category,
                             imdb_id=imdb_id,
-                            mirror=mirror,
                             season=season,
                             episode=episode,
                             offset=offset,
@@ -351,8 +346,8 @@ def setup_arr_routes(app):
                         releases = get_search_results(
                             shared_state,
                             request_from,
+                            search_category,
                             search_phrase=search_phrase,
-                            mirror=mirror,
                             offset=offset,
                             limit=limit,
                         )
@@ -363,8 +358,8 @@ def setup_arr_routes(app):
                             releases = get_search_results(
                                 shared_state,
                                 request_from,
+                                search_category,
                                 search_phrase=search_phrase,
-                                mirror=mirror,
                                 offset=offset,
                                 limit=limit,
                             )

@@ -5,19 +5,26 @@
 import html
 import re
 import time
-from base64 import urlsafe_b64encode
 from datetime import datetime, timedelta
 
 import requests
+from bs4 import BeautifulSoup
 
+from quasarr.constants import SEARCH_CAT_SHOWS
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.imdb_metadata import get_localized_title
 from quasarr.providers.log import debug, info, trace, warn
+from quasarr.providers.utils import (
+    convert_to_mb,
+    generate_download_link,
+    get_recently_searched,
+    is_imdb_id,
+    is_valid_release,
+    sanitize_string,
+)
 
 hostname = "sf"
-supported_mirrors = ["1fichier", "ddownload", "katfile", "rapidgator", "turbobit"]
 
-from bs4 import BeautifulSoup
 
 check = lambda s: s.replace(
     "".join(chr((ord(c) - 97 - 7) % 26 + 97) for c in "ylhr"),
@@ -95,21 +102,14 @@ def parse_mirrors(base_url, entry):
     return mirrors
 
 
-def sf_feed(shared_state, start_time, request_from, mirror=None):
+def sf_feed(shared_state, start_time, search_category):
     releases = []
     sf = shared_state.values["config"]("Hostnames").get(hostname.lower())
     password = check(sf)
 
-    if not "sonarr" in request_from.lower():
+    if search_category != SEARCH_CAT_SHOWS:  # Only TV supported
         debug(
-            f'<d>Skipping {request_from} search on "{hostname.upper()}" (unsupported media type)!</d>'
-        )
-        return releases
-
-    if mirror and mirror not in supported_mirrors:
-        debug(
-            f'Mirror "{mirror}" not supported by "{hostname.upper()}". Supported mirrors: {supported_mirrors}.'
-            " Skipping search!"
+            f"<d>Skipping <y>{search_category}</y> on <g>{hostname.upper()}</g> (category not supported)!</d>"
         )
         return releases
 
@@ -151,12 +151,15 @@ def sf_feed(shared_state, start_time, request_from, mirror=None):
                         mb = 0  # size info is missing here
                         imdb_id = None  # imdb info is missing here
 
-                        payload = urlsafe_b64encode(
-                            f"{title}|{source}|{mirror}|{mb}|{password}|{imdb_id}|{hostname}".encode(
-                                "utf-8"
-                            )
-                        ).decode("utf-8")
-                        link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
+                        link = generate_download_link(
+                            shared_state,
+                            title,
+                            source,
+                            mb,
+                            password,
+                            imdb_id,
+                            hostname,
+                        )
                     except:
                         continue
 
@@ -178,7 +181,6 @@ def sf_feed(shared_state, start_time, request_from, mirror=None):
                                 "hostname": hostname.lower(),
                                 "imdb_id": imdb_id,
                                 "link": link,
-                                "mirror": mirror,
                                 "size": size,
                                 "date": published,
                                 "source": source,
@@ -214,9 +216,8 @@ def extract_size(text):
 def sf_search(
     shared_state,
     start_time,
-    request_from,
+    search_category,
     search_string,
-    mirror=None,
     season=None,
     episode=None,
 ):
@@ -224,7 +225,7 @@ def sf_search(
     sf = shared_state.values["config"]("Hostnames").get(hostname.lower())
     password = check(sf)
 
-    imdb_id_in_search = shared_state.is_imdb_id(search_string)
+    imdb_id_in_search = is_imdb_id(search_string)
     if imdb_id_in_search:
         search_string = get_localized_title(shared_state, imdb_id_in_search, "de")
         if not search_string:
@@ -232,15 +233,9 @@ def sf_search(
             return releases
         search_string = html.unescape(search_string)
 
-    if not "sonarr" in request_from.lower():
+    if search_category != SEARCH_CAT_SHOWS:  # Only TV supported
         debug(
-            f'<d>Skipping {request_from} search on "{hostname.upper()}" (unsupported media type)!</d>'
-        )
-        return releases
-
-    if mirror and mirror not in supported_mirrors:
-        debug(
-            f'Mirror "{mirror}" not supported by "{hostname.upper()}". Supported: {supported_mirrors}.'
+            f"<d>Skipping <y>{search_category}</y> on <g>{hostname.upper()}</g> (category not supported)!</d>"
         )
         return releases
 
@@ -263,8 +258,8 @@ def sf_search(
 
     results = feed.get("result", [])
     for result in results:
-        sanitized_search_string = shared_state.sanitize_string(search_string)
-        sanitized_title = shared_state.sanitize_string(result.get("title", ""))
+        sanitized_search_string = sanitize_string(search_string)
+        sanitized_title = sanitize_string(result.get("title", ""))
         if not re.search(rf"\b{re.escape(sanitized_search_string)}\b", sanitized_title):
             trace(
                 f"Search string '{search_string}' doesn't match '{result.get('title')}'"
@@ -277,9 +272,7 @@ def sf_search(
         series_id = result.get("url_id")
         context = "recents_sf"
         threshold = 60
-        recently_searched = shared_state.get_recently_searched(
-            shared_state, context, threshold
-        )
+        recently_searched = get_recently_searched(shared_state, context, threshold)
         entry = recently_searched.get(series_id, {})
         ts = entry.get("timestamp")
         use_cache = ts and ts > datetime.now() - timedelta(seconds=threshold)
@@ -357,11 +350,7 @@ def sf_search(
                 title = details.find("small").text.strip()
 
                 mirrors = parse_mirrors(f"https://{sf}", details)
-                source = (
-                    mirror
-                    and mirrors["season"].get(mirror)
-                    or next(iter(mirrors["season"].values()), None)
-                )
+                source = next(iter(mirrors["season"].values()), None)
                 if not source:
                     debug(f"No source mirror found for {title}")
                     continue
@@ -373,7 +362,7 @@ def sf_search(
                         .strip()
                     )
                     size_item = extract_size(size_string)
-                    mb = shared_state.convert_to_mb(size_item)
+                    mb = convert_to_mb(size_item)
                 except Exception as e:
                     debug(f"Error extracting size for {title}: {e}")
                     mb = 0
@@ -397,16 +386,7 @@ def sf_search(
                                 title = re.sub(
                                     r"(S\d{1,3})", rf"\1E{episode:02d}", title
                                 )
-                                if mirror:
-                                    if mirror not in episode_data["links"]:
-                                        debug(
-                                            f"Mirror '{mirror}' does not exist for '{title}' episode {episode}'"
-                                        )
-                                    else:
-                                        source = episode_data["links"][mirror]
-
-                                else:
-                                    source = next(iter(episode_data["links"].values()))
+                                source = next(iter(episode_data["links"].values()))
                             else:
                                 debug(
                                     f"Episode '{episode}' data not found in mirrors for '{title}'"
@@ -414,7 +394,7 @@ def sf_search(
 
                             if episodes_in_release:
                                 try:
-                                    mb = shared_state.convert_to_mb(
+                                    mb = convert_to_mb(
                                         {
                                             "size": float(size_item["size"])
                                             // episodes_in_release,
@@ -428,15 +408,20 @@ def sf_search(
                         continue
 
                 # check down here on purpose, because the title may be modified at episode stage
-                if not shared_state.is_valid_release(
-                    title, request_from, search_string, season, episode
+                if not is_valid_release(
+                    title, search_category, search_string, season, episode
                 ):
                     continue
 
-                payload = urlsafe_b64encode(
-                    f"{title}|{source}|{mirror}|{mb}|{password}|{imdb_id}|{hostname}".encode()
-                ).decode()
-                link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
+                link = generate_download_link(
+                    shared_state,
+                    title,
+                    source,
+                    mb,
+                    password,
+                    imdb_id,
+                    hostname,
+                )
                 size_bytes = mb * 1024 * 1024
 
                 releases.append(
@@ -446,7 +431,6 @@ def sf_search(
                             "hostname": hostname.lower(),
                             "imdb_id": imdb_id,
                             "link": link,
-                            "mirror": mirror,
                             "size": size_bytes,
                             "date": one_hour_ago,
                             "source": f"https://{sf}/{series_id}/{season}"

@@ -5,28 +5,34 @@
 import html
 import re
 import time
-from base64 import urlsafe_b64encode
 from datetime import datetime, timedelta
 from urllib.parse import quote, quote_plus
 
 import requests
 from bs4 import BeautifulSoup
 
+from quasarr.constants import (
+    CODEC_REGEX,
+    RESOLUTION_REGEX,
+    SEARCH_CAT_BOOKS,
+    SEARCH_CAT_MOVIES,
+    SEARCH_CAT_SHOWS,
+    XXX_REGEX,
+)
 from quasarr.providers.cloudflare import flaresolverr_get, is_cloudflare_challenge
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.imdb_metadata import get_localized_title, get_year
-from quasarr.providers.log import debug, error, info
-from quasarr.providers.utils import is_flaresolverr_available
+from quasarr.providers.log import debug, error, info, warn
+from quasarr.providers.utils import (
+    convert_to_mb,
+    generate_download_link,
+    is_flaresolverr_available,
+    is_imdb_id,
+    is_valid_release,
+    normalize_magazine_title,
+)
 
 hostname = "wd"
-supported_mirrors = ["rapidgator", "ddownload", "katfile", "fikper", "turbobit"]
-
-# regex to detect porn-tag .XXX. (case-insensitive, dots included)
-XXX_REGEX = re.compile(r"\.xxx\.", re.I)
-# regex to detect video resolution
-RESOLUTION_REGEX = re.compile(r"\d{3,4}p", re.I)
-# regex to detect video codec tags
-CODEC_REGEX = re.compile(r"x264|x265|h264|h265|hevc|avc", re.I)
 
 
 def convert_to_rss_date(date_str):
@@ -53,8 +59,7 @@ def _parse_rows(
     shared_state,
     url_base,
     password,
-    mirror_filter,
-    request_from=None,
+    search_category=None,
     search_string=None,
     season=None,
     episode=None,
@@ -62,8 +67,6 @@ def _parse_rows(
 ):
     """
     Walk the <table> rows, extract one release per row.
-    Only include rows with at least one supported mirror.
-    If mirror_filter provided, only include rows where mirror_filter is present.
 
     Context detection:
       - feed when search_string is None
@@ -96,14 +99,14 @@ def _parse_rows(
 
             # search context contains non-video releases (ebooks, games, etc.)
             if is_search:
-                if not shared_state.is_valid_release(
-                    title, request_from, search_string, season, episode
+                if not is_valid_release(
+                    title, search_category, search_string, season, episode
                 ):
                     continue
 
-                if "lazylibrarian" in request_from.lower():
+                if search_category == SEARCH_CAT_BOOKS:
                     # lazylibrarian can only detect specific date formats / issue numbering for magazines
-                    title = shared_state.normalize_magazine_title(title)
+                    title = normalize_magazine_title(title)
                 else:
                     # drop .XXX. unless user explicitly searched xxx
                     if XXX_REGEX.search(title) and "xxx" not in search_string.lower():
@@ -117,26 +120,21 @@ def _parse_rows(
                     if " " in title:
                         continue
 
-            hoster_names = tr.find("span", class_="button-warezkorb")[
-                "data-hoster-names"
-            ]
-            mirrors = [m.strip().lower() for m in hoster_names.split(",")]
-            valid = [m for m in mirrors if m in supported_mirrors]
-            if not valid or (mirror_filter and mirror_filter not in valid):
-                continue
-
             size_txt = tr.find("span", class_="element-size").get_text(strip=True)
             sz = extract_size(size_txt)
-            mb = shared_state.convert_to_mb(sz)
+            mb = convert_to_mb(sz)
             size_bytes = mb * 1024 * 1024
 
             published = convert_to_rss_date(date_txt) if date_txt else one_hour_ago
 
-            payload = urlsafe_b64encode(
-                f"{title}|{source}|{mirror_filter}|{mb}|{password}|{imdb_id}|{hostname}".encode()
-            ).decode()
-            download_link = (
-                f"{shared_state.values['internal_address']}/download/?payload={payload}"
+            link = generate_download_link(
+                shared_state,
+                title,
+                source,
+                mb,
+                password,
+                imdb_id,
+                hostname,
             )
 
             releases.append(
@@ -145,8 +143,7 @@ def _parse_rows(
                         "title": title,
                         "hostname": hostname,
                         "imdb_id": imdb_id,
-                        "link": download_link,
-                        "mirror": mirror_filter,
+                        "link": link,
                         "size": size_bytes,
                         "date": published,
                         "source": source,
@@ -160,16 +157,19 @@ def _parse_rows(
     return releases
 
 
-def wd_feed(shared_state, start_time, request_from, mirror=None):
+def wd_feed(shared_state, start_time, search_category):
     wd = shared_state.values["config"]("Hostnames").get(hostname.lower())
     password = wd
 
-    if "lazylibrarian" in request_from.lower():
+    if search_category == SEARCH_CAT_BOOKS:
         feed_type = "Ebooks"
-    elif "radarr" in request_from.lower():
+    elif search_category == SEARCH_CAT_MOVIES:
         feed_type = "Movies"
-    else:
+    elif search_category == SEARCH_CAT_SHOWS:
         feed_type = "Serien"
+    else:
+        warn(f"Unknown search category: {search_category}")
+        return []
 
     url = f"https://{wd}/{feed_type}"
     headers = {"User-Agent": shared_state.values["user_agent"]}
@@ -203,7 +203,7 @@ def wd_feed(shared_state, start_time, request_from, mirror=None):
 
         r.raise_for_status()
         soup = BeautifulSoup(r.content, "html.parser")
-        releases = _parse_rows(soup, shared_state, wd, password, mirror)
+        releases = _parse_rows(soup, shared_state, wd, password)
     except Exception as e:
         error(f"Error loading feed: {e}")
         mark_hostname_issue(
@@ -220,9 +220,8 @@ def wd_feed(shared_state, start_time, request_from, mirror=None):
 def wd_search(
     shared_state,
     start_time,
-    request_from,
+    search_category,
     search_string,
-    mirror=None,
     season=None,
     episode=None,
 ):
@@ -230,7 +229,13 @@ def wd_search(
     wd = shared_state.values["config"]("Hostnames").get(hostname.lower())
     password = wd
 
-    imdb_id = shared_state.is_imdb_id(search_string)
+    if search_category == SEARCH_CAT_BOOKS:
+        debug(
+            f"<d>Skipping <y>{search_category}</y> on <g>{hostname.upper()}</g> (category not supported)!</d>"
+        )
+        return releases
+
+    imdb_id = is_imdb_id(search_string)
     if imdb_id:
         search_string = get_localized_title(shared_state, imdb_id, "de")
         if not search_string:
@@ -279,8 +284,7 @@ def wd_search(
             shared_state,
             wd,
             password,
-            mirror,
-            request_from=request_from,
+            search_category=search_category,
             search_string=search_string,
             season=season,
             episode=episode,

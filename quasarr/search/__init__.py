@@ -2,39 +2,33 @@
 # Quasarr
 # Project by https://github.com/rix1337
 
+import importlib
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import timezone
 from email.utils import parsedate_to_datetime
 
+from quasarr.constants import (
+    HOSTNAMES,
+    HOSTNAMES_SUPPORTING_SEARCH_PHRASE,
+    SEARCH_CAT_BOOKS,
+    SEARCH_CAT_MOVIES,
+    SEARCH_CAT_SHOWS,
+)
 from quasarr.providers.imdb_metadata import get_imdb_metadata
-from quasarr.providers.log import debug, info, trace
-from quasarr.search.sources.al import al_feed, al_search
-from quasarr.search.sources.by import by_feed, by_search
-from quasarr.search.sources.dd import dd_feed, dd_search
-from quasarr.search.sources.dj import dj_feed, dj_search
-from quasarr.search.sources.dl import dl_feed, dl_search
-from quasarr.search.sources.dt import dt_feed, dt_search
-from quasarr.search.sources.dw import dw_feed, dw_search
-from quasarr.search.sources.fx import fx_feed, fx_search
-from quasarr.search.sources.he import he_feed, he_search
-from quasarr.search.sources.hs import hs_feed, hs_search
-from quasarr.search.sources.mb import mb_feed, mb_search
-from quasarr.search.sources.nk import nk_feed, nk_search
-from quasarr.search.sources.nx import nx_feed, nx_search
-from quasarr.search.sources.sf import sf_feed, sf_search
-from quasarr.search.sources.sj import sj_feed, sj_search
-from quasarr.search.sources.sl import sl_feed, sl_search
-from quasarr.search.sources.wd import wd_feed, wd_search
-from quasarr.search.sources.wx import wx_feed, wx_search
+from quasarr.providers.log import debug, info, trace, warn
+from quasarr.providers.utils import (
+    determine_search_category,
+)
+from quasarr.storage.categories import get_search_category_sources
 
 
 def get_search_results(
     shared_state,
     request_from,
+    search_category,
     imdb_id="",
     search_phrase="",
-    mirror=None,
     season="",
     episode="",
     offset=0,
@@ -46,124 +40,102 @@ def get_search_results(
     if imdb_id:
         get_imdb_metadata(imdb_id)
 
-    docs_search = "lazylibrarian" in request_from.lower()
+    # Determine search category if not provided
+    if not search_category:
+        search_category = determine_search_category(request_from)
 
     # Config retrieval
     config = shared_state.values["config"]("Hostnames")
-    al = config.get("al")
-    by = config.get("by")
-    dd = config.get("dd")
-    dl = config.get("dl")
-    dt = config.get("dt")
-    dj = config.get("dj")
-    dw = config.get("dw")
-    fx = config.get("fx")
-    he = config.get("he")
-    hs = config.get("hs")
-    mb = config.get("mb")
-    nk = config.get("nk")
-    nx = config.get("nx")
-    sf = config.get("sf")
-    sj = config.get("sj")
-    sl = config.get("sl")
-    wd = config.get("wd")
-    wx = config.get("wx")
+
+    # Filter out sources that are not in the search category's whitelist
+    whitelisted_sources = get_search_category_sources(search_category)
+
+    if whitelisted_sources:
+        debug(
+            f"Using whitelist for category <g>{search_category}</g>: {', '.join([s.upper() for s in whitelisted_sources])}"
+        )
 
     start_time = time.time()
     search_executor = SearchExecutor()
 
-    # Mappings
-    imdb_map = [
-        ("al", al, al_search),
-        ("by", by, by_search),
-        ("dd", dd, dd_search),
-        ("dl", dl, dl_search),
-        ("dt", dt, dt_search),
-        ("dj", dj, dj_search),
-        ("dw", dw, dw_search),
-        ("fx", fx, fx_search),
-        ("he", he, he_search),
-        ("hs", hs, hs_search),
-        ("mb", mb, mb_search),
-        ("nk", nk, nk_search),
-        ("nx", nx, nx_search),
-        ("sf", sf, sf_search),
-        ("sj", sj, sj_search),
-        ("sl", sl, sl_search),
-        ("wd", wd, wd_search),
-        ("wx", wx, wx_search),
-    ]
+    # Build maps dynamically
+    imdb_map = []
+    phrase_map = []
+    feed_map = []
 
-    phrase_map = [
-        ("by", by, by_search),
-        ("dl", dl, dl_search),
-        ("dt", dt, dt_search),
-        ("nx", nx, nx_search),
-        ("sl", sl, sl_search),
-        ("wd", wd, wd_search),
-    ]
+    for source in HOSTNAMES:
+        url = config.get(source)
+        try:
+            module = importlib.import_module(f"quasarr.search.sources.{source}")
 
-    feed_map = [
-        ("al", al, al_feed),
-        ("by", by, by_feed),
-        ("dd", dd, dd_feed),
-        ("dj", dj, dj_feed),
-        ("dl", dl, dl_feed),
-        ("dt", dt, dt_feed),
-        ("dw", dw, dw_feed),
-        ("fx", fx, fx_feed),
-        ("he", he, he_feed),
-        ("hs", hs, hs_feed),
-        ("mb", mb, mb_feed),
-        ("nk", nk, nk_feed),
-        ("nx", nx, nx_feed),
-        ("sf", sf, sf_feed),
-        ("sj", sj, sj_feed),
-        ("sl", sl, sl_feed),
-        ("wd", wd, wd_feed),
-        ("wx", wx, wx_feed),
-    ]
+            search_func = getattr(module, f"{source}_search", None)
+            feed_func = getattr(module, f"{source}_feed", None)
 
-    use_pagination = True
+            if search_func:
+                imdb_map.append((source, url, search_func))
+                if source in HOSTNAMES_SUPPORTING_SEARCH_PHRASE:
+                    phrase_map.append((source, url, search_func))
 
-    # Add searches
-    if imdb_id:
-        args, kwargs = (
-            (shared_state, start_time, request_from, imdb_id),
-            {"mirror": mirror, "season": season, "episode": episode},
-        )
-        for name, url, func in imdb_map:
-            if url:
-                search_executor.add(
-                    func, args, kwargs, use_cache=True, source_name=name.upper()
-                )
+            if feed_func:
+                feed_map.append((source, url, feed_func))
 
-    elif search_phrase and docs_search:
-        args, kwargs = (
-            (shared_state, start_time, request_from, search_phrase),
-            {"mirror": mirror, "season": season, "episode": episode},
-        )
-        for name, url, func in phrase_map:
-            if url:
-                search_executor.add(func, args, kwargs, source_name=name.upper())
+        except ImportError:
+            warn(f"Could not import search source: {source}")
+        except Exception as e:
+            warn(f"Error loading search source {source}: {e}")
 
-    elif search_phrase:
-        debug(f"Search phrase '{search_phrase}' is not supported for {request_from}.")
+    # Set up searches
 
-    else:
-        args, kwargs = ((shared_state, start_time, request_from), {"mirror": mirror})
-        use_pagination = False
-        for name, url, func in feed_map:
-            if url:
-                search_executor.add(func, args, kwargs, source_name=name.upper())
-
-    # Clean description for Console UI
     if imdb_id:
         stype = f"IMDb-ID <b>{imdb_id}</b>"
     elif search_phrase:
         stype = f"Search-Phrase <b>{search_phrase}</b>"
     else:
-        stype = "<b>feed</b> search"
+        stype = "<b>Feed</b> search"
+
+    use_pagination = True
+
+    if imdb_id:
+        if search_category == SEARCH_CAT_MOVIES:
+            args = (shared_state, start_time, search_category, imdb_id)
+            kwargs = {}
+            for name, url, func in imdb_map:
+                if url and (not whitelisted_sources or name in whitelisted_sources):
+                    search_executor.add(
+                        func, args, kwargs, use_cache=True, source_name=name.upper()
+                    )
+        elif search_category == SEARCH_CAT_SHOWS:
+            args = (shared_state, start_time, search_category, imdb_id)
+            kwargs = {"season": season, "episode": episode}
+            for name, url, func in imdb_map:
+                if url and (not whitelisted_sources or name in whitelisted_sources):
+                    search_executor.add(
+                        func, args, kwargs, use_cache=True, source_name=name.upper()
+                    )
+        else:
+            warn(
+                f"{stype} is not supported for {request_from}, category: {search_category}"
+            )
+
+    elif search_phrase:
+        if search_category == SEARCH_CAT_BOOKS:
+            args = (shared_state, start_time, search_category, search_phrase)
+            kwargs = {}
+            for name, url, func in phrase_map:
+                if url and (not whitelisted_sources or name in whitelisted_sources):
+                    search_executor.add(func, args, kwargs, source_name=name.upper())
+        else:
+            warn(
+                f"{stype} is not supported for {request_from}, category: {search_category}"
+            )
+
+    else:
+        args = (shared_state, start_time, search_category)
+        kwargs = {}
+        use_pagination = False
+        for name, url, func in feed_map:
+            if url and (not whitelisted_sources or name in whitelisted_sources):
+                search_executor.add(func, args, kwargs, source_name=name.upper())
 
     debug(f"Starting <g>{len(search_executor.searches)}</g> searches for {stype}...")
 
@@ -282,7 +254,7 @@ class SearchExecutor:
                         if res and len(res) > 0:
                             badge = f"<bg green><black>{source_name}</black></bg green>"
                         else:
-                            debug(f"❌ No results returned by {source_name}")
+                            debug(f"❌ No results returned by <g>{source_name}</g>")
                             badge = f"<bg black><white>{source_name}</white></bg black>"
 
                         results_badges[index] = badge
@@ -293,7 +265,7 @@ class SearchExecutor:
                         results_badges[index] = (
                             f"<bg red><white>{source_name}</white></bg red>"
                         )
-                        info(f"Search error: {e}")
+                        warn(f"Search error: {e}")
 
                 bar_str = f" [{' '.join(results_badges)}]"
 

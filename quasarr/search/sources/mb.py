@@ -4,38 +4,32 @@
 
 import re
 import time
-from base64 import urlsafe_b64encode
 from datetime import datetime, timedelta
 from urllib.parse import quote_plus
 
 import requests
 from bs4 import BeautifulSoup
 
+from quasarr.constants import (
+    CODEC_REGEX,
+    IMDB_REGEX,
+    MONTHS_MAP,
+    RESOLUTION_REGEX,
+    SEARCH_CAT_BOOKS,
+    SEARCH_CAT_MOVIES,
+    SEARCH_CAT_SHOWS,
+    XXX_REGEX,
+)
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.log import debug, error, warn
+from quasarr.providers.utils import (
+    convert_to_mb,
+    generate_download_link,
+    is_imdb_id,
+    is_valid_release,
+)
 
 hostname = "mb"
-supported_mirrors = ["rapidgator", "ddownload"]
-XXX_REGEX = re.compile(r"\.xxx\.", re.I)
-RESOLUTION_REGEX = re.compile(r"\d{3,4}p", re.I)
-CODEC_REGEX = re.compile(r"x264|x265|h264|h265|hevc|avc", re.I)
-IMDB_REGEX = re.compile(r"imdb\.com/title/(tt\d+)")
-
-# map German month names to numbers
-GERMAN_MONTHS = {
-    "Januar": "01",
-    "Februar": "02",
-    "März": "03",
-    "April": "04",
-    "Mai": "05",
-    "Juni": "06",
-    "Juli": "07",
-    "August": "08",
-    "September": "09",
-    "Oktober": "10",
-    "November": "11",
-    "Dezember": "12",
-}
 
 
 def convert_to_rss_date(date_str):
@@ -54,9 +48,8 @@ def _parse_posts(
     soup,
     shared_state,
     password,
-    mirror_filter,
     is_search=False,
-    request_from=None,
+    search_category=None,
     search_string=None,
     season=None,
     episode=None,
@@ -82,15 +75,15 @@ def _parse_posts(
                 )
                 if m_date:
                     day, mon_name, year, hm = m_date.groups()
-                    mon = GERMAN_MONTHS.get(mon_name, "01")
+                    mon = MONTHS_MAP.get(mon_name.lower(), "01")
                     dt_obj = datetime.strptime(
                         f"{day}.{mon}.{year} {hm}", "%d.%m.%Y %H:%M"
                     )
                     published = dt_obj.strftime("%a, %d %b %Y %H:%M:%S +0000")
 
             if is_search:
-                if not shared_state.is_valid_release(
-                    title, request_from, search_string, season, episode
+                if not is_valid_release(
+                    title, search_category, search_string, season, episode
                 ):
                     continue
 
@@ -103,10 +96,6 @@ def _parse_posts(
                 # require no spaces in title
                 if " " in title:
                     continue
-
-            # can't check for mirrors in soup, so we use the hardcoded list
-            if mirror_filter and mirror_filter not in supported_mirrors:
-                continue
 
             # extract IMDb ID
             imdb_id = None
@@ -130,14 +119,17 @@ def _parse_posts(
             )
             if size_match:
                 sz = {"size": size_match.group(1), "sizeunit": size_match.group(2)}
-                mb = shared_state.convert_to_mb(sz)
+                mb = convert_to_mb(sz)
                 size_bytes = mb * 1024 * 1024
 
-            payload = urlsafe_b64encode(
-                f"{title}|{source}|{mirror_filter}|{mb}|{password}|{imdb_id}|{hostname}".encode()
-            ).decode()
-            link = (
-                f"{shared_state.values['internal_address']}/download/?payload={payload}"
+            link = generate_download_link(
+                shared_state,
+                title,
+                source,
+                mb,
+                password,
+                imdb_id,
+                hostname,
             )
 
             releases.append(
@@ -147,7 +139,6 @@ def _parse_posts(
                         "hostname": hostname,
                         "imdb_id": imdb_id,
                         "link": link,
-                        "mirror": mirror_filter,
                         "size": size_bytes,
                         "date": published,
                         "source": source,
@@ -161,24 +152,31 @@ def _parse_posts(
     return releases
 
 
-def mb_feed(shared_state, start_time, request_from, mirror=None):
+def mb_feed(shared_state, start_time, search_category):
     mb = shared_state.values["config"]("Hostnames").get(hostname)
 
-    if not "arr" in request_from.lower():
+    if search_category == SEARCH_CAT_BOOKS:
         debug(
-            f'<d>Skipping {request_from} search on "{hostname.upper()}" (unsupported media type)!</d>'
+            f"<d>Skipping <y>{search_category}</y> on <g>{hostname.upper()}</g> (category not supported)!</d>"
         )
         return []
 
     password = mb
-    section = "neuerscheinungen" if "Radarr" in request_from else "serie"
+    if search_category == SEARCH_CAT_MOVIES:
+        section = "neuerscheinungen"
+    elif search_category == SEARCH_CAT_SHOWS:
+        section = "serie"
+    else:
+        warn(f"Unknown search category: {search_category}")
+        return []
+
     url = f"https://{mb}/category/{section}/"
     headers = {"User-Agent": shared_state.values["user_agent"]}
     try:
         r = requests.get(url, headers=headers, timeout=30)
         r.raise_for_status()
         soup = BeautifulSoup(r.content, "html.parser")
-        releases = _parse_posts(soup, shared_state, password, mirror_filter=mirror)
+        releases = _parse_posts(soup, shared_state, password)
     except Exception as e:
         warn(f"Error loading {hostname.upper()} feed: {e}")
         mark_hostname_issue(
@@ -195,22 +193,21 @@ def mb_feed(shared_state, start_time, request_from, mirror=None):
 def mb_search(
     shared_state,
     start_time,
-    request_from,
+    search_category,
     search_string,
-    mirror=None,
     season=None,
     episode=None,
 ):
     mb = shared_state.values["config"]("Hostnames").get(hostname)
 
-    if not "arr" in request_from.lower():
+    if search_category == SEARCH_CAT_BOOKS:
         debug(
-            f'<d>Skipping {request_from} search on "{hostname.upper()}" (unsupported media type)!</d>'
+            f"<d>Skipping <y>{search_category}</y> on <g>{hostname.upper()}</g> (category not supported)!</d>"
         )
         return []
 
     password = mb
-    imdb_id = shared_state.is_imdb_id(search_string)
+    imdb_id = is_imdb_id(search_string)
     if imdb_id:
         search_string = imdb_id
 
@@ -225,9 +222,8 @@ def mb_search(
             soup,
             shared_state,
             password,
-            mirror_filter=mirror,
             is_search=True,
-            request_from=request_from,
+            search_category=search_category,
             search_string=search_string,
             season=season,
             episode=episode,

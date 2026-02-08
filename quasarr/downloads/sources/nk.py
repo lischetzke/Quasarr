@@ -12,7 +12,7 @@ hostname = "nk"
 supported_mirrors = ["rapidgator", "ddownload"]
 
 
-def get_nk_download_links(shared_state, url, mirror, title, password):
+def get_nk_download_links(shared_state, url, mirrors, title, password):
     """
     KEEP THE SIGNATURE EVEN IF SOME PARAMETERS ARE UNUSED!
 

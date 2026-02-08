@@ -4,19 +4,28 @@
 
 import re
 import time
-from base64 import urlsafe_b64encode
 from datetime import datetime, timedelta
 from html import unescape
 
 import requests
 from bs4 import BeautifulSoup
 
+from quasarr.constants import (
+    SEARCH_CAT_BOOKS,
+    SEARCH_CAT_MOVIES,
+    SEARCH_CAT_SHOWS,
+)
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.imdb_metadata import get_localized_title, get_year
-from quasarr.providers.log import debug, info, trace
+from quasarr.providers.log import debug, info, trace, warn
+from quasarr.providers.utils import (
+    convert_to_mb,
+    generate_download_link,
+    is_imdb_id,
+    is_valid_release,
+)
 
 hostname = "he"
-supported_mirrors = ["rapidgator", "nitroflare"]
 
 
 def parse_posted_ago(txt):
@@ -63,33 +72,30 @@ def he_feed(*args, **kwargs):
 def he_search(
     shared_state,
     start_time,
-    request_from,
+    search_category,
     search_string="",
-    mirror=None,
     season=None,
     episode=None,
 ):
     releases = []
     host = shared_state.values["config"]("Hostnames").get(hostname)
 
-    if not "arr" in request_from.lower():
+    if search_category == SEARCH_CAT_BOOKS:
         debug(
-            f'<d>Skipping {request_from} search on "{hostname.upper()}" (unsupported media type)!</d>'
+            f"<d>Skipping <y>{search_category}</y> on <g>{hostname.upper()}</g> (category not supported)!</d>"
         )
         return releases
-
-    if "radarr" in request_from.lower():
+    elif search_category == SEARCH_CAT_MOVIES:
         tag = "movies"
-    else:
+    elif search_category == SEARCH_CAT_SHOWS:
         tag = "tv-shows"
-
-    if mirror and mirror not in supported_mirrors:
-        debug(f'Mirror "{mirror}" not supported.')
+    else:
+        warn(f"Unknown search category: {search_category}")
         return releases
 
     source_search = ""
     if search_string != "":
-        imdb_id = shared_state.is_imdb_id(search_string)
+        imdb_id = is_imdb_id(search_string)
         if imdb_id:
             local_title = get_localized_title(shared_state, imdb_id, "en")
             if not local_title:
@@ -162,13 +168,13 @@ def he_search(
             head_split = head_title.split(" – ")
             title = head_split[0].strip()
 
-            if not shared_state.is_valid_release(
-                title, request_from, search_string, season, episode
+            if not is_valid_release(
+                title, search_category, search_string, season, episode
             ):
                 continue
 
             size_item = extract_size(head_split[1].strip())
-            mb = shared_state.convert_to_mb(size_item)
+            mb = convert_to_mb(size_item)
 
             size = mb * 1024 * 1024
 
@@ -217,13 +223,15 @@ def he_search(
                 release_imdb_id = imdb_id
 
             password = None
-            payload = urlsafe_b64encode(
-                f"{title}|{source}|{mirror}|{mb}|{password}|{release_imdb_id}|{hostname}".encode(
-                    "utf-8"
-                )
-            ).decode()
-            link = (
-                f"{shared_state.values['internal_address']}/download/?payload={payload}"
+
+            link = generate_download_link(
+                shared_state,
+                title,
+                source,
+                mb,
+                password,
+                release_imdb_id,
+                hostname,
             )
 
             releases.append(
@@ -233,7 +241,6 @@ def he_search(
                         "hostname": hostname,
                         "imdb_id": release_imdb_id,
                         "link": link,
-                        "mirror": mirror,
                         "size": size,
                         "date": published,
                         "source": source,

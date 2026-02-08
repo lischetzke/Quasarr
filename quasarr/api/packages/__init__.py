@@ -2,17 +2,20 @@
 # Quasarr
 # Project by https://github.com/rix1337
 
+from bottle import redirect, request
+
 import quasarr.providers.html_images as images
 from quasarr.api.jdownloader import get_jdownloader_disconnected_page
 from quasarr.downloads.packages import delete_package, get_packages
 from quasarr.providers import shared_state
 from quasarr.providers.html_templates import render_button, render_centered_html
+from quasarr.storage.categories import get_download_category_emoji
 
 
 def _get_category_emoji(cat):
-    return {"movies": "🎬", "tv": "📺", "docs": "📄", "not_quasarr": "❓"}.get(
-        cat, "❓"
-    )
+    if cat == "not_quasarr":
+        return "❓"
+    return get_download_category_emoji(cat)
 
 
 def _format_size(mb=None, bytes_val=None):
@@ -311,11 +314,13 @@ def _render_packages_content():
 def setup_packages_routes(app):
     @app.get("/packages/delete/<package_id>")
     def delete_package_route(package_id):
-        success = delete_package(shared_state, package_id)
+
+        # Get optional title parameter
+        package_title = request.query.get("title")
+
+        success = delete_package(shared_state, package_id, package_title)
 
         # Redirect back to packages page with status message via query param
-        from bottle import redirect
-
         if success:
             redirect("/packages?deleted=1")
         else:
@@ -368,7 +373,7 @@ def setup_packages_routes(app):
         back_btn = render_button("Back", "secondary", {"onclick": "location.href='/'"})
 
         packages_html = f'''
-            <h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+            <h1><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
             <h2>Packages</h2>
 
             {status_message}
@@ -598,12 +603,15 @@ def setup_packages_routes(app):
 
                 // Delete modal
                 let deletePackageId = null;
+                let deletePackageName = null;
+                
                 function confirmDelete(packageId, packageName) {{
                     // Stop any pending refresh
                     if (refreshTimer) clearTimeout(refreshTimer);
                     refreshPaused = true;
                     
                     deletePackageId = packageId;
+                    deletePackageName = packageName;
                     
                     const content = `
                         <p class="modal-package-name" style="font-weight: 500; word-break: break-word; padding: 10px; background: var(--code-bg, #f5f5f5); border-radius: 6px; margin: 10px 0;">${{packageName}}</p>
@@ -622,7 +630,11 @@ def setup_packages_routes(app):
                 
                 function performDelete() {{
                     if (deletePackageId) {{
-                        location.href = '/packages/delete/' + encodeURIComponent(deletePackageId);
+                        let url = '/packages/delete/' + encodeURIComponent(deletePackageId);
+                        if (deletePackageName) {{
+                            url += '?title=' + encodeURIComponent(deletePackageName);
+                        }}
+                        location.href = url;
                     }}
                 }}
                 

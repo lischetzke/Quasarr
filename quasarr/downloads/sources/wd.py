@@ -73,7 +73,7 @@ def resolve_wd_redirect(shared_state, url, session_id=None):
     return None
 
 
-def get_wd_download_links(shared_state, url, mirror, title, password):
+def get_wd_download_links(shared_state, url, mirrors, title, password):
     """
     KEEP THE SIGNATURE EVEN IF SOME PARAMETERS ARE UNUSED!
 
@@ -196,9 +196,11 @@ def get_wd_download_links(shared_state, url, mirror, title, password):
                                 hoster = cls.split("-", 1)[1]
                                 break
 
-                    if mirror and mirror.lower() not in hoster.lower():
+                    if mirrors and not any(
+                        m.lower() in hoster.lower() for m in mirrors
+                    ):
                         debug(
-                            f'Skipping link from "{hoster}" (not the desired mirror "{mirror}")!'
+                            f'Skipping link from "{hoster}" (not in desired mirrors "{mirrors}")!'
                         )
                         continue
 

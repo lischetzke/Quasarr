@@ -16,7 +16,7 @@ from quasarr.providers.log import debug, info
 hostname = "by"
 
 
-def get_by_download_links(shared_state, url, mirror, title, password):
+def get_by_download_links(shared_state, url, mirrors, title, password):
     """
     KEEP THE SIGNATURE EVEN IF SOME PARAMETERS ARE UNUSED!
 
@@ -28,7 +28,7 @@ def get_by_download_links(shared_state, url, mirror, title, password):
         "User-Agent": shared_state.values["user_agent"],
     }
 
-    mirror_lower = mirror.lower() if mirror else None
+    mirrors_lower = [m.lower() for m in mirrors] if mirrors else []
     links = []
 
     try:
@@ -84,9 +84,9 @@ def get_by_download_links(shared_state, url, mirror, title, password):
             link_hostname = link.text.strip().replace(" ", "")
             hostname_lower = link_hostname.lower()
 
-            if mirror_lower and mirror_lower not in hostname_lower:
+            if mirrors_lower and not any(m in hostname_lower for m in mirrors_lower):
                 debug(
-                    f'Skipping link from "{link_hostname}" (not the desired mirror "{mirror}")!'
+                    f'Skipping link from "{link_hostname}" (not in desired mirrors "{mirrors}")!'
                 )
                 continue
 

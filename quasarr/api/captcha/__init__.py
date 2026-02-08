@@ -18,6 +18,12 @@ from quasarr.providers import obfuscated, shared_state
 from quasarr.providers.html_templates import render_button, render_centered_html
 from quasarr.providers.log import debug, error, info, trace
 from quasarr.providers.statistics import StatsHelper
+from quasarr.providers.utils import download_package
+from quasarr.storage.categories import (
+    get_download_category_from_package_id,
+    get_download_category_mirrors,
+)
+from quasarr.storage.config import Config
 
 
 def js_single_quoted_string_safe(text):
@@ -51,7 +57,7 @@ def setup_captcha_routes(app):
 
         protected = shared_state.get_db("protected").retrieve_all_titles()
         if not protected:
-            return render_centered_html(f'''<h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+            return render_centered_html(f'''<h1><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
             <p>No protected packages found! CAPTCHA not needed.</p>
             <p>
                 {render_button("Confirm", "secondary", {"onclick": "location.href='/'"})}
@@ -161,7 +167,7 @@ def setup_captcha_routes(app):
                 debug("Redirecting to cutcaptcha")
                 redirect(f"/captcha/cutcaptcha?data={quote(encoded_payload)}")
 
-            return render_centered_html(f'''<h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+            return render_centered_html(f'''<h1><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
             <p>Unexpected Error!</p>
             <p>
                 {render_button("Back", "secondary", {"onclick": "location.href='/'"})}
@@ -204,12 +210,22 @@ def setup_captcha_routes(app):
         base_url = request.urlparts.scheme + "://" + request.urlparts.netloc
         transfer_url = f"{base_url}/captcha/quick-transfer"
 
+        extra_params = ""
+        if provider_type == "junkies":
+            junkies_user = Config("JUNKIES").get("user")
+            junkies_pass = Config("JUNKIES").get("password")
+            if junkies_user and junkies_pass:
+                extra_params = (
+                    f"&jk_user={quote(junkies_user)}&jk_pass={quote(junkies_pass)}"
+                )
+
         url_with_quick_transfer_params = (
             f"{url}?"
             f"transfer_url={quote(transfer_url)}&"
             f"pkg_id={quote(package_id)}&"
             f"pkg_title={quote(title)}&"
             f"pkg_pass={quote(password)}"
+            f"{extra_params}"
         )
 
         js_url = url_with_quick_transfer_params.replace("'", "\\'")
@@ -333,7 +349,7 @@ def setup_captcha_routes(app):
         payload = decode_payload()
 
         if "error" in payload:
-            return render_centered_html(f'''<h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+            return render_centered_html(f'''<h1><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
             <p>{payload["error"]}</p>
             <p>
                 {render_button("Back", "secondary", {"onclick": "location.href='/'"})}
@@ -349,7 +365,7 @@ def setup_captcha_routes(app):
         check_package_exists(package_id)
 
         package_selector = render_package_selector(package_id, title)
-        failed_warning = render_failed_attempts_warning(package_id)
+        failed_warning = render_failed_attempts_warning(package_id, title=title)
 
         source_button = ""
         if original_url:
@@ -359,13 +375,13 @@ def setup_captcha_routes(app):
         <!DOCTYPE html>
         <html>
           <body>
-            <h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+            <h1><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
             {package_selector}
             {failed_warning}
                 {render_userscript_section(url, package_id, title, password, "hide")}
             {source_button}
             <p>
-                {render_button("Delete Package", "secondary", {"onclick": f"location.href='/captcha/delete/{package_id}'"})}
+                {render_button("Delete Package", "secondary", {"onclick": f"location.href='/captcha/delete/{package_id}?title={quote(title)}'"})}
             </p>
             <p>
                 {render_button("Back", "secondary", {"onclick": "location.href='/'"})}
@@ -379,7 +395,7 @@ def setup_captcha_routes(app):
         payload = decode_payload()
 
         if "error" in payload:
-            return render_centered_html(f'''<h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+            return render_centered_html(f'''<h1><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
             <p>{payload["error"]}</p>
             <p>
                 {render_button("Back", "secondary", {"onclick": "location.href='/'"})}
@@ -395,7 +411,7 @@ def setup_captcha_routes(app):
         check_package_exists(package_id)
 
         package_selector = render_package_selector(package_id, title)
-        failed_warning = render_failed_attempts_warning(package_id)
+        failed_warning = render_failed_attempts_warning(package_id, title=title)
 
         source_button = ""
         if original_url:
@@ -405,13 +421,13 @@ def setup_captcha_routes(app):
         <!DOCTYPE html>
         <html>
           <body>
-            <h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+            <h1><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
             {package_selector}
             {failed_warning}
                 {render_userscript_section(url, package_id, title, password, "junkies")}
             {source_button}
             <p>
-                {render_button("Delete Package", "secondary", {"onclick": f"location.href='/captcha/delete/{package_id}'"})}
+                {render_button("Delete Package", "secondary", {"onclick": f"location.href='/captcha/delete/{package_id}?title={quote(title)}'"})}
             </p>
             <p>
                 {render_button("Back", "secondary", {"onclick": "location.href='/'"})}
@@ -425,7 +441,7 @@ def setup_captcha_routes(app):
         payload = decode_payload()
 
         if "error" in payload:
-            return render_centered_html(f'''<h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+            return render_centered_html(f'''<h1><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
             <p>{payload["error"]}</p>
             <p>
                 {render_button("Back", "secondary", {"onclick": "location.href='/'"})}
@@ -442,7 +458,7 @@ def setup_captcha_routes(app):
         url = urls[0][0] if isinstance(urls[0], (list, tuple)) else urls[0]
 
         package_selector = render_package_selector(package_id, title)
-        failed_warning = render_failed_attempts_warning(package_id)
+        failed_warning = render_failed_attempts_warning(package_id, title=title)
 
         source_button = ""
         if original_url:
@@ -452,13 +468,13 @@ def setup_captcha_routes(app):
         <!DOCTYPE html>
         <html>
           <body>
-            <h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+            <h1><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
             {package_selector}
             {failed_warning}
                 {render_userscript_section(url, package_id, title, password, "keeplinks")}
             {source_button}
             <p>
-                {render_button("Delete Package", "secondary", {"onclick": f"location.href='/captcha/delete/{package_id}'"})}
+                {render_button("Delete Package", "secondary", {"onclick": f"location.href='/captcha/delete/{package_id}?title={quote(title)}'"})}
             </p>
             <p>
                 {render_button("Back", "secondary", {"onclick": "location.href='/'"})}
@@ -472,7 +488,7 @@ def setup_captcha_routes(app):
         payload = decode_payload()
 
         if "error" in payload:
-            return render_centered_html(f'''<h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+            return render_centered_html(f'''<h1><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
             <p>{payload["error"]}</p>
             <p>
                 {render_button("Back", "secondary", {"onclick": "location.href='/'"})}
@@ -489,7 +505,7 @@ def setup_captcha_routes(app):
         url = urls[0][0] if isinstance(urls[0], (list, tuple)) else urls[0]
 
         package_selector = render_package_selector(package_id, title)
-        failed_warning = render_failed_attempts_warning(package_id)
+        failed_warning = render_failed_attempts_warning(package_id, title=title)
 
         source_button = ""
         if original_url:
@@ -499,13 +515,13 @@ def setup_captcha_routes(app):
         <!DOCTYPE html>
         <html>
           <body>
-            <h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+            <h1><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
             {package_selector}
             {failed_warning}
                 {render_userscript_section(url, package_id, title, password, "tolink")}
             {source_button}
             <p>
-                {render_button("Delete Package", "secondary", {"onclick": f"location.href='/captcha/delete/{package_id}'"})}
+                {render_button("Delete Package", "secondary", {"onclick": f"location.href='/captcha/delete/{package_id}?title={quote(title)}'"})}
             </p>
             <p>
                 {render_button("Back", "secondary", {"onclick": "location.href='/'"})}
@@ -791,7 +807,7 @@ def setup_captcha_routes(app):
         """
 
     def render_failed_attempts_warning(
-        package_id, include_delete_button=True, fallback_url=None
+        package_id, title=None, include_delete_button=True, fallback_url=None
     ):
         """Render a warning block that shows after 2+ failed attempts per package_id.
         Uses localStorage to track attempts by package_id to ensure reliable tracking
@@ -809,10 +825,14 @@ def setup_captcha_routes(app):
 
         delete_button = ""
         if include_delete_button:
+            delete_url = f"/captcha/delete/{package_id}"
+            if title:
+                delete_url += f"?title={quote(title)}"
+
             delete_button = render_button(
                 "Delete Package",
                 "primary",
-                {"onclick": f"location.href='/captcha/delete/{package_id}'"},
+                {"onclick": f"location.href='{delete_url}'"},
             )
 
         fallback_link = ""
@@ -883,7 +903,7 @@ def setup_captcha_routes(app):
         payload = decode_payload()
 
         if "error" in payload:
-            return render_centered_html(f'''<h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+            return render_centered_html(f'''<h1><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
             <p>{payload["error"]}</p>
             <p>
                 {render_button("Back", "secondary", {"onclick": "location.href='/'"})}
@@ -912,7 +932,7 @@ def setup_captcha_routes(app):
         )
 
         package_selector = render_package_selector(package_id, title)
-        failed_warning = render_failed_attempts_warning(package_id)
+        failed_warning = render_failed_attempts_warning(package_id, title=title)
 
         source_button = ""
         if original_url:
@@ -927,7 +947,7 @@ def setup_captcha_routes(app):
         <!DOCTYPE html>
         <html>
           <body>
-            <h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+            <h1><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
             {package_selector}
             {failed_warning}
 
@@ -978,7 +998,7 @@ def setup_captcha_routes(app):
 
             {source_button}
             <p>
-                {render_button("Delete Package", "secondary", {"onclick": f"location.href='/captcha/delete/{package_id}'"})}
+                {render_button("Delete Package", "secondary", {"onclick": f"location.href='/captcha/delete/{package_id}?title={quote(title)}'"})}
             </p>
             <p>
                 {render_button("Back", "secondary", {"onclick": "location.href='/'"})}
@@ -1066,7 +1086,7 @@ def setup_captcha_routes(app):
             compressed_links = request.query.get("links", "")
 
             if not package_id or not compressed_links:
-                return render_centered_html(f'''<h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+                return render_centered_html(f'''<h1><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
                 <p><b>Error:</b> Missing parameters</p>
                 <p>
                     {render_button("Back", "secondary", {"onclick": "location.href='/captcha'"})}
@@ -1082,7 +1102,7 @@ def setup_captcha_routes(app):
                 decoded = urlsafe_b64decode(compressed_links)
             except Exception as e:
                 info(f"Base64 decode error: {e}")
-                return render_centered_html(f'''<h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+                return render_centered_html(f'''<h1><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
                 <p><b>Error:</b> Failed to decode data: {str(e)}</p>
                 <p>
                     {render_button("Back", "secondary", {"onclick": "location.href='/captcha'"})}
@@ -1100,7 +1120,7 @@ def setup_captcha_routes(app):
                     decompressed = zlib.decompress(decoded)
                 except Exception as e2:
                     info(f"Decompression failed without and with header: {e2}")
-                    return render_centered_html(f'''<h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+                    return render_centered_html(f'''<h1><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
                     <p><b>Error:</b> Failed to decompress data: {str(e)}</p>
                     <p>
                         {render_button("Back", "secondary", {"onclick": "location.href='/captcha'"})}
@@ -1125,7 +1145,7 @@ def setup_captcha_routes(app):
             # Get package info
             raw_data = shared_state.get_db("protected").retrieve(package_id)
             if not raw_data:
-                return render_centered_html(f'''<h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+                return render_centered_html(f'''<h1><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
                 <p><b>Error:</b> Package not found</p>
                 <p>
                     {render_button("Back", "secondary", {"onclick": "location.href='/captcha'"})}
@@ -1136,8 +1156,8 @@ def setup_captcha_routes(app):
             password = data.get("password", "")
 
             # Download the package
-            downloaded = shared_state.download_package(
-                links, title, password, package_id
+            downloaded = download_package(
+                links, title, password, package_id, shared_state
             )
 
             if downloaded:
@@ -1162,7 +1182,7 @@ def setup_captcha_routes(app):
                 else:
                     solve_button = "<b>No more CAPTCHAs</b>"
 
-                return render_centered_html(f'''<h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+                return render_centered_html(f'''<h1><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
                 <p><b>✅ Quick Transfer Successful!</b></p>
                 <p>Package "{title}" with {len(links)} link(s) submitted to JDownloader.</p>
                 <p>
@@ -1174,7 +1194,7 @@ def setup_captcha_routes(app):
                 <script>localStorage.removeItem('captcha_attempts_{package_id}');</script>''')
             else:
                 StatsHelper(shared_state).increment_failed_decryptions_manual()
-                return render_centered_html(f'''<h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+                return render_centered_html(f'''<h1><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
                 <p><b>Error:</b> Failed to submit package to JDownloader</p>
                 <p>
                     {render_button("Try Again", "secondary", {"onclick": "location.href='/captcha'"})}
@@ -1182,7 +1202,7 @@ def setup_captcha_routes(app):
 
         except Exception as e:
             error(f"Quick transfer error: {e}")
-            return render_centered_html(f'''<h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+            return render_centered_html(f'''<h1><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
             <p><b>Error:</b> {str(e)}</p>
             <p>
                 {render_button("Back", "secondary", {"onclick": "location.href='/captcha'"})}
@@ -1190,7 +1210,8 @@ def setup_captcha_routes(app):
 
     @app.get("/captcha/delete/<package_id>")
     def delete_captcha_package(package_id):
-        success = delete_package(shared_state, package_id)
+        title = request.query.get("title")
+        success = delete_package(shared_state, package_id, title)
 
         # Check if there are more CAPTCHAs to solve after deletion
         remaining_protected = shared_state.get_db("protected").retrieve_all_titles()
@@ -1208,7 +1229,7 @@ def setup_captcha_routes(app):
             solve_button = "<b>No more CAPTCHAs</b>"
 
         if success:
-            return render_centered_html(f'''<h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+            return render_centered_html(f'''<h1><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
             <p>Package successfully deleted!</p>
             <p>
                 {solve_button}
@@ -1218,7 +1239,7 @@ def setup_captcha_routes(app):
             </p>
             <script>localStorage.removeItem('captcha_attempts_{package_id}');</script>''')
         else:
-            return render_centered_html(f'''<h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+            return render_centered_html(f'''<h1><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
             <p>Failed to delete package!</p>
             <p>
                 {solve_button}
@@ -1233,7 +1254,7 @@ def setup_captcha_routes(app):
         payload = decode_payload()
 
         if "error" in payload:
-            return render_centered_html(f'''<h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+            return render_centered_html(f'''<h1><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
             <p>{payload["error"]}</p>
             <p>
                 {render_button("Back", "secondary", {"onclick": "location.href='/'"})}
@@ -1251,11 +1272,11 @@ def setup_captcha_routes(app):
         if not prioritized_links:
             # No links found, show an error message
             return render_centered_html(f'''
-                <h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+                <h1><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
                 <p style="max-width: 370px; word-wrap: break-word; overflow-wrap: break-word;"><b>Package:</b> {title}</p>
                 <p><b>Error:</b> No download links available for this package.</p>
                 <p>
-                    {render_button("Delete Package", "secondary", {"onclick": f"location.href='/captcha/delete/{package_id}'"})}
+                    {render_button("Delete Package", "secondary", {"onclick": f"location.href='/captcha/delete/{package_id}?title={quote(title)}'"})}
                 </p>
                 <p>
                     {render_button("Back", "secondary", {"onclick": "location.href='/'"})}
@@ -1316,7 +1337,10 @@ def setup_captcha_routes(app):
         filecrypt_fallback_url = f"/captcha/filecrypt?data={quote(fallback_encoded)}"
 
         failed_warning = render_failed_attempts_warning(
-            package_id, include_delete_button=False, fallback_url=filecrypt_fallback_url
+            package_id,
+            title=title,
+            include_delete_button=False,
+            fallback_url=filecrypt_fallback_url,
         )  # Delete button is already below
 
         # Escape title for safe use in JavaScript string
@@ -1445,7 +1469,7 @@ def setup_captcha_routes(app):
             + obfuscated.cutcaptcha_custom_js()
             + f'''</script>
                 <div>
-                    <h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+                    <h1><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
                     <div id="package-selector-section">
                         {package_selector}
                     </div>
@@ -1466,7 +1490,7 @@ def setup_captcha_routes(app):
             + source_button_html
             + f"""
             <p>
-                {render_button("Delete Package", "secondary", {"onclick": f"location.href='/captcha/delete/{package_id}'"})}
+                {render_button("Delete Package", "secondary", {"onclick": f"location.href='/captcha/delete/{package_id}?title={quote(title)}'"})}
             </p>
             </div>
             <div id="back-button-section">
@@ -1538,7 +1562,7 @@ def setup_captcha_routes(app):
         try:
             external_response = requests.get(new_url, stream=True, verify=False)
             external_response.raise_for_status()
-            response.content_type = "image/png"
+            response.content_type = "image/webp"
             response.headers["Content-Disposition"] = f'inline; filename="{filename}"'
             return external_response.iter_content(chunk_size=8192)
 
@@ -1576,7 +1600,7 @@ def setup_captcha_routes(app):
             dlc_upload = request.files.get("dlc_file")
 
             if not package_id or not title:
-                return render_centered_html(f'''<h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+                return render_centered_html(f'''<h1><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
                 <p><b>Error:</b> Missing package information.</p>
                 <p>
                     {render_button("Back", "secondary", {"onclick": "location.href='/captcha'"})}
@@ -1614,13 +1638,13 @@ def setup_captcha_routes(app):
                         raise ValueError("DLC decryption returned no links")
                 except Exception as e:
                     info(f"DLC decryption failed: {e}")
-                    return render_centered_html(f'''<h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+                    return render_centered_html(f'''<h1><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
                     <p><b>Error:</b> Failed to decrypt DLC file: {str(e)}</p>
                     <p>
                         {render_button("Back", "secondary", {"onclick": "location.href='/captcha'"})}
                     </p>''')
             else:
-                return render_centered_html(f'''<h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+                return render_centered_html(f'''<h1><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
                 <p><b>Error:</b> Please provide either links or a DLC file.</p>
                 <p>
                     {render_button("Back", "secondary", {"onclick": "location.href='/captcha'"})}
@@ -1628,8 +1652,8 @@ def setup_captcha_routes(app):
 
             # Download the package
             if links:
-                downloaded = shared_state.download_package(
-                    links, title, password, package_id
+                downloaded = download_package(
+                    links, title, password, package_id, shared_state
                 )
                 if downloaded:
                     StatsHelper(shared_state).increment_package_with_links(links)
@@ -1653,7 +1677,7 @@ def setup_captcha_routes(app):
                     else:
                         solve_button = "<b>No more CAPTCHAs</b>"
 
-                    return render_centered_html(f'''<h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+                    return render_centered_html(f'''<h1><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
                     <p><b>Success!</b> Package "{title}" bypassed and submitted to JDownloader.</p>
                     <p>{len(links)} link(s) processed.</p>
                     <p>
@@ -1665,13 +1689,13 @@ def setup_captcha_routes(app):
                     <script>localStorage.removeItem('captcha_attempts_{package_id}');</script>''')
                 else:
                     StatsHelper(shared_state).increment_failed_decryptions_manual()
-                    return render_centered_html(f'''<h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+                    return render_centered_html(f'''<h1><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
                     <p><b>Error:</b> Failed to submit package to JDownloader.</p>
                     <p>
                         {render_button("Try Again", "secondary", {"onclick": "location.href='/captcha'"})}
                     </p>''')
             else:
-                return render_centered_html(f'''<h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+                return render_centered_html(f'''<h1><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
                 <p><b>Error:</b> No valid links found.</p>
                 <p>
                     {render_button("Back", "secondary", {"onclick": "location.href='/captcha'"})}
@@ -1679,7 +1703,7 @@ def setup_captcha_routes(app):
 
         except Exception as e:
             info(f"Bypass submission error: {e}")
-            return render_centered_html(f'''<h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+            return render_centered_html(f'''<h1><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
             <p><b>Error:</b> {str(e)}</p>
             <p>
                 {render_button("Back", "secondary", {"onclick": "location.href='/captcha'"})}
@@ -1703,22 +1727,28 @@ def setup_captcha_routes(app):
             title = data.get("title")
             link = data.get("link")
             password = data.get("password")
-            mirror = None if (mirror := data.get("mirror")) == "None" else mirror
+            category = get_download_category_from_package_id(package_id)
+            mirrors = get_download_category_mirrors(category, lowercase=True)
 
             if token:
                 info(
                     f"Received token: <green>{token}</green> to decrypt links for <y>{title}</y>"
                 )
                 decrypted = get_filecrypt_links(
-                    shared_state, token, title, link, password=password, mirror=mirror
+                    shared_state,
+                    token,
+                    title,
+                    link,
+                    password=password,
+                    mirrors=mirrors,
                 )
                 if decrypted:
                     links = decrypted.get("links", [])
                     info(f"Decrypted <g>{len(links)}</g> download links for {title}")
                     if not links:
                         raise ValueError("No download links found after decryption")
-                    downloaded = shared_state.download_package(
-                        links, title, password, package_id
+                    downloaded = download_package(
+                        links, title, password, package_id, shared_state
                     )
                     if downloaded:
                         StatsHelper(shared_state).increment_package_with_links(links)

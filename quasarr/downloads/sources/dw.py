@@ -13,7 +13,7 @@ from quasarr.providers.log import debug, info
 hostname = "dw"
 
 
-def get_dw_download_links(shared_state, url, mirror, title, password):
+def get_dw_download_links(shared_state, url, mirrors, title, password):
     """
     KEEP THE SIGNATURE EVEN IF SOME PARAMETERS ARE UNUSED!
 
@@ -72,9 +72,9 @@ def get_dw_download_links(shared_state, url, mirror, title, password):
                 hoster = (
                     "1fichier" if hoster.startswith("fichier") else hoster
                 )  # align with expected mirror name
-                if mirror and mirror.lower() not in hoster.lower():
+                if mirrors and not any(m.lower() in hoster.lower() for m in mirrors):
                     debug(
-                        f'Skipping link from "{hoster}" (not the desired mirror "{mirror}")!'
+                        f'Skipping link from "{hoster}" (not in desired mirrors "{mirrors}")!'
                     )
                     continue
 

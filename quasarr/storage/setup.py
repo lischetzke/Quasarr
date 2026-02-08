@@ -16,6 +16,7 @@ import quasarr.providers.sessions.al
 import quasarr.providers.sessions.dd
 import quasarr.providers.sessions.dl
 import quasarr.providers.sessions.nx
+from quasarr.constants import FALLBACK_USER_AGENT, HOSTNAMES_REQUIRING_LOGIN
 from quasarr.providers.auth import add_auth_hook, add_auth_routes
 from quasarr.providers.hostname_issues import get_all_hostname_issues
 from quasarr.providers.html_templates import (
@@ -28,7 +29,6 @@ from quasarr.providers.html_templates import (
 from quasarr.providers.log import info
 from quasarr.providers.shared_state import extract_valid_hostname
 from quasarr.providers.utils import (
-    FALLBACK_USER_AGENT,
     check_flaresolverr,
     extract_allowed_keys,
     extract_kv_pairs,
@@ -88,7 +88,7 @@ def render_reconnect_success(message, countdown_seconds=3):
         </script>
     """
 
-    content = f'''<h1><img src="{images.logo}" type="image/png" alt="Quasarr logo" class="logo"/>Quasarr</h1>
+    content = f'''<h1><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
     <h2>✅ Success</h2>
     <p>{message}</p>
     {button_html}
@@ -168,7 +168,7 @@ def path_config(shared_state):
         return render_reconnect_success(f'Config path set to: "{config_path}"')
 
     info(
-        f'Starting web server for config at: "{shared_state.values["internal_address"]}".'
+        f'Starting web server for config at: "{shared_state.values["external_address"]}".'
     )
     info("Please set desired config path there!")
     quasarr.providers.web_server.temp_server_success = False
@@ -193,12 +193,13 @@ def _escape_js_for_html_attr(s):
 
 def hostname_form_html(shared_state, message, show_skip_management=False):
     hostname_fields = """
-    <label for="{id}" onclick="showStatusDetail(\'{id}\', \'{label}\', \'{status}\', \'{error_details_for_modal}\', \'{timestamp}\', \'{operation}\', \'{url}\', \'{user}\', \'{password}\', {supports_login})" 
-           style="cursor:pointer; display:inline-flex; align-items:center; gap:4px;" title="{status_title}">
-        <span class="status-indicator" id="status-{id}" data-status="{status}">{status_emoji}</span>
-        {label}
-    </label>
-    <input type="text" id="{id}" name="{id}" placeholder="example.com" autocorrect="off" autocomplete="off" value="{value}"><br>
+    <div class="hostname-row">
+        <button type="button" class="{btn_class}" onclick="showStatusDetail(\'{id}\', \'{label}\', \'{status}\', \'{error_details_for_modal}\', \'{timestamp}\', \'{operation}\', \'{url}\', \'{user}\', \'{password}\', {supports_login})" title="{status_title}">
+            <span class="status-indicator" id="status-{id}" data-status="{status}">{status_emoji}</span>
+            {label}
+        </button>
+        <input type="text" id="{id}" name="{id}" placeholder="example.com" autocorrect="off" autocomplete="off" value="{value}">
+    </div>
     """
 
     skip_indicator = """
@@ -211,7 +212,6 @@ def hostname_form_html(shared_state, message, show_skip_management=False):
     hostnames = Config("Hostnames")  # Load once outside the loop
     skip_login_db = DataBase("skip_login")
     hostname_issues = get_all_hostname_issues()
-    login_required_sites = ["al", "dd", "dl", "nx"]
 
     for label in shared_state.values["sites"]:
         field_id = label.lower()
@@ -222,15 +222,12 @@ def hostname_form_html(shared_state, message, show_skip_management=False):
             current_value = ""  # Ensure it's empty if None or ""
 
         # Determine traffic light status
-        is_login_skipped = field_id in login_required_sites and skip_login_db.retrieve(
-            field_id
+        is_login_skipped = (
+            field_id in HOSTNAMES_REQUIRING_LOGIN and skip_login_db.retrieve(field_id)
         )
         issue = hostname_issues.get(field_id)
         timestamp = ""
         operation = ""
-        error_details_for_modal = (
-            ""  # New variable to hold the full error message for the modal
-        )
 
         if not current_value:
             status = "unset"
@@ -261,11 +258,14 @@ def hostname_form_html(shared_state, message, show_skip_management=False):
         user = ""
         password = ""
         supports_login = "false"
-        if field_id in login_required_sites:
+        if field_id in HOSTNAMES_REQUIRING_LOGIN:
             supports_login = "true"
-            site_config = Config(field_id.upper())
+            section = "JUNKIES" if field_id in ["dj", "sj"] else field_id.upper()
+            site_config = Config(section)
             user = site_config.get("user") or ""
             password = site_config.get("password") or ""
+
+        btn_class = "btn-secondary" if status == "unset" else "btn-primary"
 
         field_html.append(
             hostname_fields.format(
@@ -284,11 +284,12 @@ def hostname_form_html(shared_state, message, show_skip_management=False):
                 user=_escape_js_for_html_attr(user),
                 password=_escape_js_for_html_attr(password),
                 supports_login=supports_login,
+                btn_class=btn_class,
             )
         )
 
         # Add skip indicator for login-required sites if skip management is enabled
-        if show_skip_management and field_id in login_required_sites:
+        if show_skip_management and field_id in HOSTNAMES_REQUIRING_LOGIN:
             if current_value and skip_login_db.retrieve(field_id):
                 field_html.append(skip_indicator.format(id=field_id))
 
@@ -358,6 +359,26 @@ def hostname_form_html(shared_state, message, show_skip_management=False):
     }}
     .btn-subtle:hover {{
         background: var(--btn-subtle-bg, #e9ecef);
+    }}
+    .hostname-row {{
+        display: flex;
+        gap: 0.5rem;
+        margin-bottom: 0.75rem;
+        align-items: stretch;
+    }}
+    .hostname-row button {{
+        margin-top: 0;
+        margin-bottom: 0;
+        white-space: nowrap;
+        min-width: 6rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.4rem;
+    }}
+    .hostname-row input {{
+        flex: 1;
+        margin-bottom: 0;
     }}
 </style>
 
@@ -565,7 +586,7 @@ def hostname_form_html(shared_state, message, show_skip_management=False):
             skipped: 'Login skipped',
             info: 'Information'
         }};
-    
+
         var emojiMap = {{
             ok: '🟢',
             error: '🔴',
@@ -573,7 +594,7 @@ def hostname_form_html(shared_state, message, show_skip_management=False):
             skipped: '🟡',
             info: 'ℹ️'
         }};
-    
+
         var content_html = '';
         if (status === 'error') {{
             content_html += '<p>' + (error_details || 'No details available.') + '</p>';
@@ -598,7 +619,7 @@ def hostname_form_html(shared_state, message, show_skip_management=False):
                 timestamp_html = '<p><small>Occurred at: ' + formattedTimestamp + '</small></p>';
             }}
         }}
-        
+
         var credentials_html = '';
         if (url && supports_login) {{
              var flaresolverrWarning = '';
@@ -632,10 +653,10 @@ def hostname_form_html(shared_state, message, show_skip_management=False):
                 </div>
             `;
         }}
-        
+
         var content = content_html + timestamp_html + credentials_html;
         var title = '<span>' + (emojiMap[status] || 'ℹ️') + '</span> ' + label + ' - ' + (statusTextMap[status] || status);
-        
+
         var buttons = '';
         if (url) {{
             var href = url;
@@ -649,18 +670,18 @@ def hostname_form_html(shared_state, message, show_skip_management=False):
         }} else {{
             buttons = '<button class="btn-secondary" onclick="closeModal()">Close</button>';
         }}
-        
+
         showModal(title, content, buttons);
     }}
-    
+
     function saveAndCheckCredentials(id) {{
         var user = document.getElementById('cred-user-' + id).value;
         var pass = document.getElementById('cred-pass-' + id).value;
         var statusDiv = document.getElementById('cred-status-' + id);
-        
+
         statusDiv.innerHTML = 'Checking...';
         statusDiv.style.color = 'var(--secondary, #6c757d)';
-        
+
         fetch('/api/hostnames/check-credentials/' + id, {{
             method: 'POST',
             headers: {{ 'Content-Type': 'application/json' }},
@@ -780,7 +801,10 @@ def check_credentials(shared_state, shorthand):
         user = data.get("user")
         password = data.get("password")
 
-        config = Config(shorthand.upper())
+        sh_lower = shorthand.lower()
+        section = "JUNKIES" if sh_lower in ["dj", "sj"] else shorthand.upper()
+        config = Config(section)
+
         # Store old credentials to revert if check fails
         old_user = config.get("user")
         old_password = config.get("password")
@@ -790,9 +814,6 @@ def check_credentials(shared_state, shorthand):
         config.save("password", password)
 
         success = False
-        message = "Session check failed"
-
-        sh_lower = shorthand.lower()
 
         # Clear skip login if set (temporarily, will be restored if check fails?)
         # Actually, if user is trying to set credentials, they probably intend to stop skipping.
@@ -823,13 +844,22 @@ def check_credentials(shared_state, shorthand):
                 message = "Session valid!"
             else:
                 message = "Session check failed (check logs)"
+        elif sh_lower in ["dj", "sj"]:
+            # dj and sj don't have session providers just save credentials
+            success = True
+            message = "Credentials saved"
         else:
             success = True
             message = "Credentials saved"
 
         if success:
             # If successful, ensure skip login is removed
-            DataBase("skip_login").delete(shorthand.lower())
+            DataBase("skip_login").delete(sh_lower)
+            # If dj/sj, also clear skip for the sibling
+            if sh_lower == "dj":
+                DataBase("skip_login").delete("sj")
+            elif sh_lower == "sj":
+                DataBase("skip_login").delete("dj")
         else:
             # If failed, revert credentials
             config.save("user", old_user)
@@ -909,9 +939,8 @@ def get_skip_login():
     """Return list of hostnames with skipped login."""
     response.content_type = "application/json"
     skip_db = DataBase("skip_login")
-    login_required_sites = ["al", "dd", "dl", "nx"]
     skipped = []
-    for site in login_required_sites:
+    for site in HOSTNAMES_REQUIRING_LOGIN:
         if skip_db.retrieve(site):
             skipped.append(site)
     return {"skipped": skipped}
@@ -921,8 +950,7 @@ def clear_skip_login(shorthand):
     """Clear skip login preference for a hostname."""
     response.content_type = "application/json"
     shorthand = shorthand.lower()
-    login_required_sites = ["al", "dd", "dl", "nx"]
-    if shorthand not in login_required_sites:
+    if shorthand not in HOSTNAMES_REQUIRING_LOGIN:
         return {"success": False, "error": f"Invalid shorthand: {shorthand}"}
 
     skip_db = DataBase("skip_login")
@@ -1149,7 +1177,7 @@ def hostnames_config(shared_state):
         return check_credentials(shared_state, shorthand)
 
     info(
-        f'Hostnames not set. Starting web server for config at: "{shared_state.values["internal_address"]}".'
+        f'Hostnames not set. Starting web server for config at: "{shared_state.values["external_address"]}".'
     )
     info("Please set at least one valid hostname there!")
     quasarr.providers.web_server.temp_server_success = False
@@ -1305,6 +1333,11 @@ def hostname_credentials_config(shared_state, shorthand, domain):
         """Skip login for this hostname and continue startup."""
         sh_lower = sh.lower()
         DataBase("skip_login").update_store(sh_lower, "true")
+        # If dj/sj, also skip for the sibling
+        if sh_lower == "dj":
+            DataBase("skip_login").update_store("sj", "true")
+        elif sh_lower == "sj":
+            DataBase("skip_login").update_store("dj", "true")
         info(f'Login for "{sh}" skipped by user choice')
         quasarr.providers.web_server.temp_server_success = True
         return {"success": True}
@@ -1317,7 +1350,9 @@ def hostname_credentials_config(shared_state, shorthand, domain):
 
         user = request.forms.get("user")
         password = request.forms.get("password")
-        config = Config(shorthand)
+        sh_lower = sh.lower()
+        section = "JUNKIES" if sh_lower in ["dj", "sj"] else sh.upper()
+        config = Config(section)
 
         error_message = "User and Password wrong or empty!"
 
@@ -1326,9 +1361,14 @@ def hostname_credentials_config(shared_state, shorthand, domain):
             config.save("password", password)
 
             # Clear any skip preference since we now have credentials
-            DataBase("skip_login").delete(sh.lower())
+            DataBase("skip_login").delete(sh_lower)
+            # If dj/sj, also clear skip for the sibling
+            if sh_lower == "dj":
+                DataBase("skip_login").delete("sj")
+            elif sh_lower == "sj":
+                DataBase("skip_login").delete("dj")
 
-            if sh.lower() == "al":
+            if sh_lower == "al":
                 error_message = (
                     "User and Password wrong or empty.<br><br>"
                     "Or if you skipped Flaresolverr setup earlier, "
@@ -1342,7 +1382,7 @@ def hostname_credentials_config(shared_state, shorthand, domain):
                     return render_reconnect_success(
                         f"{sh} credentials set successfully"
                     )
-            elif sh.lower() == "dd":
+            elif sh_lower == "dd":
                 if quasarr.providers.sessions.dd.create_and_persist_session(
                     shared_state
                 ):
@@ -1350,7 +1390,7 @@ def hostname_credentials_config(shared_state, shorthand, domain):
                     return render_reconnect_success(
                         f"{sh} credentials set successfully"
                     )
-            elif sh.lower() == "dl":
+            elif sh_lower == "dl":
                 if quasarr.providers.sessions.dl.create_and_persist_session(
                     shared_state
                 ):
@@ -1358,7 +1398,7 @@ def hostname_credentials_config(shared_state, shorthand, domain):
                     return render_reconnect_success(
                         f"{sh} credentials set successfully"
                     )
-            elif sh.lower() == "nx":
+            elif sh_lower == "nx":
                 if quasarr.providers.sessions.nx.create_and_persist_session(
                     shared_state
                 ):
@@ -1366,6 +1406,10 @@ def hostname_credentials_config(shared_state, shorthand, domain):
                     return render_reconnect_success(
                         f"{sh} credentials set successfully"
                     )
+            elif sh_lower in ["dj", "sj"]:
+                # dj and sj don't have session providers yet, just save credentials
+                quasarr.providers.web_server.temp_server_success = True
+                return render_reconnect_success(f"{sh} credentials set successfully")
             else:
                 quasarr.providers.web_server.temp_server_success = False
                 return render_fail(f"Unknown site shorthand! ({sh})")
@@ -1376,7 +1420,7 @@ def hostname_credentials_config(shared_state, shorthand, domain):
 
     info(
         f'"{shorthand.lower()}" credentials required to access download links. '
-        f'Starting web server for config at: "{shared_state.values["internal_address"]}".'
+        f'Starting web server for config at: "{shared_state.values["external_address"]}".'
     )
     info(f"If needed register here: 'https://{domain}'")
     info("Please set your credentials now, or skip to allow Quasarr to launch!")
@@ -1419,7 +1463,7 @@ def flaresolverr_config(shared_state):
 
     info(
         '"flaresolverr" URL is required for some sites (like AL). '
-        f'Starting web server for config at: "{shared_state.values["internal_address"]}".'
+        f'Starting web server for config at: "{shared_state.values["external_address"]}".'
     )
     info("Please enter your FlareSolverr URL now, or skip to allow Quasarr to launch!")
     quasarr.providers.web_server.temp_server_success = False
@@ -1611,7 +1655,7 @@ def jdownloader_config(shared_state):
 
     info(
         f"My-JDownloader-Credentials not set. "
-        f'Starting web server for config at: "{shared_state.values["internal_address"]}".'
+        f'Starting web server for config at: "{shared_state.values["external_address"]}".'
     )
     info("If needed register here: 'https://my.jdownloader.org/login.html#register'")
     info("Please set your credentials now, to allow Quasarr to launch!")

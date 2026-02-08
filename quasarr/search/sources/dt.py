@@ -6,7 +6,6 @@ import datetime
 import html
 import re
 import time
-from base64 import urlsafe_b64encode
 from datetime import timedelta, timezone
 from urllib.parse import quote_plus
 
@@ -16,9 +15,18 @@ from bs4 import BeautifulSoup
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.imdb_metadata import get_localized_title
 from quasarr.providers.log import debug, error, info, warn
+from quasarr.providers.utils import (
+    SEARCH_CAT_BOOKS,
+    SEARCH_CAT_MOVIES,
+    SEARCH_CAT_SHOWS,
+    convert_to_mb,
+    generate_download_link,
+    is_imdb_id,
+    is_valid_release,
+    normalize_magazine_title,
+)
 
 hostname = "dt"
-supported_mirrors = ["rapidgator", "nitroflare", "ddownload"]
 
 
 def extract_size(text):
@@ -56,22 +64,19 @@ def parse_published_datetime(article):
     return dt.isoformat()
 
 
-def dt_feed(shared_state, start_time, request_from, mirror=None):
+def dt_feed(shared_state, start_time, search_category):
     releases = []
     dt = shared_state.values["config"]("Hostnames").get(hostname.lower())
     password = dt
 
-    if "lazylibrarian" in request_from.lower():
+    if search_category == SEARCH_CAT_BOOKS:
         feed_type = "learning/"
-    elif "radarr" in request_from.lower():
+    elif search_category == SEARCH_CAT_MOVIES:
         feed_type = "media/videos/"
-    else:
+    elif search_category == SEARCH_CAT_SHOWS:
         feed_type = "media/tv-show/"
-
-    if mirror and mirror not in supported_mirrors:
-        error(
-            f'Mirror "{mirror}" not supported. Supported: {supported_mirrors}. Skipping!'
-        )
+    else:
+        warn(f"Unknown search category: {search_category}")
         return releases
 
     url = f"https://{dt}/{feed_type}"
@@ -98,9 +103,9 @@ def dt_feed(shared_state, start_time, request_from, mirror=None):
                     .replace(")", "")
                 )
 
-                if "lazylibrarian" in request_from.lower():
+                if search_category == SEARCH_CAT_BOOKS:
                     # lazylibrarian can only detect specific date formats / issue numbering for magazines
-                    title = shared_state.normalize_magazine_title(title)
+                    title = normalize_magazine_title(title)
 
                 try:
                     imdb_id = re.search(r"tt\d+", str(article)).group()
@@ -112,21 +117,24 @@ def dt_feed(shared_state, start_time, request_from, mirror=None):
                     r"(\d+(?:\.\d+)?\s*(?:GB|MB|KB|TB))", body_text, re.IGNORECASE
                 )
                 if not size_match:
-                    warn(f"Size not found in article: {article}")
+                    warn(f"Size not found in article for {title_raw}")
                     continue
                 size_info = size_match.group(1).strip()
                 size_item = extract_size(size_info)
-                mb = shared_state.convert_to_mb(size_item)
+                mb = convert_to_mb(size_item)
                 size = mb * 1024 * 1024
 
                 published = parse_published_datetime(article)
 
-                payload = urlsafe_b64encode(
-                    f"{title}|{source}|{mirror}|{mb}|{password}|{imdb_id}|{hostname}".encode(
-                        "utf-8"
-                    )
-                ).decode("utf-8")
-                link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
+                link = generate_download_link(
+                    shared_state,
+                    title,
+                    source,
+                    mb,
+                    password,
+                    imdb_id,
+                    hostname,
+                )
 
             except Exception as e:
                 warn(f"Error parsing feed: {e}")
@@ -142,7 +150,6 @@ def dt_feed(shared_state, start_time, request_from, mirror=None):
                         "hostname": hostname.lower(),
                         "imdb_id": imdb_id,
                         "link": link,
-                        "mirror": mirror,
                         "size": size,
                         "date": published,
                         "source": source,
@@ -168,9 +175,8 @@ def dt_feed(shared_state, start_time, request_from, mirror=None):
 def dt_search(
     shared_state,
     start_time,
-    request_from,
+    search_category,
     search_string,
-    mirror=None,
     season=None,
     episode=None,
 ):
@@ -178,21 +184,18 @@ def dt_search(
     dt = shared_state.values["config"]("Hostnames").get(hostname.lower())
     password = dt
 
-    if "lazylibrarian" in request_from.lower():
+    if search_category == SEARCH_CAT_BOOKS:
         cat_id = "100"
-    elif "radarr" in request_from.lower():
+    elif search_category == SEARCH_CAT_MOVIES:
         cat_id = "9"
-    else:
+    elif search_category == SEARCH_CAT_SHOWS:
         cat_id = "64"
-
-    if mirror and mirror not in supported_mirrors:
-        error(
-            f'Mirror "{mirror}" not supported. Supported: {supported_mirrors}. Skipping search!'
-        )
+    else:
+        warn(f"Unknown search category: {search_category}")
         return releases
 
     try:
-        imdb_id = shared_state.is_imdb_id(search_string)
+        imdb_id = is_imdb_id(search_string)
         if imdb_id:
             search_string = get_localized_title(shared_state, imdb_id, "en")
             if not search_string:
@@ -241,14 +244,14 @@ def dt_search(
                     .replace(")", "")
                 )
 
-                if not shared_state.is_valid_release(
-                    title, request_from, search_string, season, episode
+                if not is_valid_release(
+                    title, search_category, search_string, season, episode
                 ):
                     continue
 
-                if "lazylibrarian" in request_from.lower():
+                if search_category == SEARCH_CAT_BOOKS:
                     # lazylibrarian can only detect specific date formats / issue numbering for magazines
-                    title = shared_state.normalize_magazine_title(title)
+                    title = normalize_magazine_title(title)
 
                 try:
                     imdb_id = re.search(r"tt\d+", str(article)).group()
@@ -260,20 +263,23 @@ def dt_search(
                     r"(\d+(?:\.\d+)?\s*(?:GB|MB|KB|TB))", body_text, re.IGNORECASE
                 )
                 if not m:
-                    debug(f"Size not found in search-article: {title_raw}")
+                    debug(f"Size not found in search-article for {title_raw}")
                     continue
                 size_item = extract_size(m.group(1).strip())
-                mb = shared_state.convert_to_mb(size_item)
+                mb = convert_to_mb(size_item)
                 size = mb * 1024 * 1024
 
                 published = parse_published_datetime(article)
 
-                payload = urlsafe_b64encode(
-                    f"{title}|{source}|{mirror}|{mb}|{password}|{imdb_id}".encode(
-                        "utf-8"
-                    )
-                ).decode("utf-8")
-                link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
+                link = generate_download_link(
+                    shared_state,
+                    title,
+                    source,
+                    mb,
+                    password,
+                    imdb_id,
+                    hostname,
+                )
 
             except Exception as e:
                 warn(f"Error parsing search item: {e}")
@@ -289,7 +295,6 @@ def dt_search(
                         "hostname": hostname.lower(),
                         "imdb_id": imdb_id,
                         "link": link,
-                        "mirror": mirror,
                         "size": size,
                         "date": published,
                         "source": source,

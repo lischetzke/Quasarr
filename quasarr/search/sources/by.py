@@ -5,24 +5,31 @@
 import html
 import re
 import time
-from base64 import urlsafe_b64encode
 from datetime import datetime
 from urllib.parse import quote_plus
 
 import requests
 from bs4 import BeautifulSoup
 
+from quasarr.constants import (
+    CODEC_REGEX,
+    RESOLUTION_REGEX,
+    SEARCH_CAT_BOOKS,
+    SEARCH_CAT_MOVIES,
+    SEARCH_CAT_SHOWS,
+    XXX_REGEX,
+)
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.imdb_metadata import get_localized_title, get_year
-from quasarr.providers.log import debug, error, info
+from quasarr.providers.log import debug, error, info, warn
+from quasarr.providers.utils import (
+    generate_download_link,
+    is_imdb_id,
+    is_valid_release,
+    normalize_magazine_title,
+)
 
 hostname = "by"
-supported_mirrors = ["rapidgator", "ddownload", "nitroflare"]
-
-RESOLUTION_REGEX = re.compile(r"\d{3,4}p", re.I)
-CODEC_REGEX = re.compile(r"x264|x265|h264|h265|hevc|avc", re.I)
-XXX_REGEX = re.compile(r"\.xxx\.", re.I)
-IMDB_REGEX = re.compile(r"imdb\.com/title/(tt\d+)")
 
 
 def convert_to_rss_date(date_str):
@@ -48,9 +55,8 @@ def _parse_posts(
     shared_state,
     base_url,
     password,
-    mirror_filter,
     is_search=False,
-    request_from=None,
+    search_category=None,
     search_string=None,
     season=None,
     episode=None,
@@ -89,9 +95,16 @@ def _parse_posts(
                 except AttributeError:
                     link_tag = table.find("a")
                 title = link_tag.get_text(strip=True)
-                if "lazylibrarian" in request_from.lower():
+                if not title:
+                    try:
+                        title = link_tag.get("title", "")
+                    except:
+                        pass
+                if not title:
+                    continue
+                if search_category == SEARCH_CAT_BOOKS:
                     # lazylibrarian can only detect specific date formats / issue numbering for magazines
-                    title = shared_state.normalize_magazine_title(title)
+                    title = normalize_magazine_title(title)
                 else:
                     title = title.replace(" ", ".")
 
@@ -120,9 +133,9 @@ def _parse_posts(
                 row = entry
                 title_tag = row.find("p", class_="TITLE").find("a")
                 title = title_tag.get_text(strip=True)
-                if "lazylibrarian" in request_from.lower():
+                if search_category == SEARCH_CAT_BOOKS:
                     # lazylibrarian can only detect specific date formats / issue numbering for magazines
-                    title = shared_state.normalize_magazine_title(title)
+                    title = normalize_magazine_title(title)
                 else:
                     title = title.replace(" ", ".")
                     if not (
@@ -130,8 +143,8 @@ def _parse_posts(
                     ):
                         continue
 
-                if not shared_state.is_valid_release(
-                    title, request_from, search_string, season, episode
+                if not is_valid_release(
+                    title, search_category, search_string, season, episode
                 ):
                     continue
                 if XXX_REGEX.search(title) and "xxx" not in search_string.lower():
@@ -145,11 +158,14 @@ def _parse_posts(
                 mb = 0
                 imdb_id = None
 
-            payload = urlsafe_b64encode(
-                f"{title}|{source}|{mirror_filter}|{mb}|{password}|{imdb_id}|{hostname}".encode()
-            ).decode()
-            link = (
-                f"{shared_state.values['internal_address']}/download/?payload={payload}"
+            link = generate_download_link(
+                shared_state,
+                title,
+                source,
+                mb,
+                password,
+                imdb_id,
+                hostname,
             )
 
             releases.append(
@@ -159,7 +175,6 @@ def _parse_posts(
                         "hostname": hostname,
                         "imdb_id": imdb_id,
                         "link": link,
-                        "mirror": mirror_filter,
                         "size": size_bytes,
                         "date": published,
                         "source": source,
@@ -174,16 +189,19 @@ def _parse_posts(
     return releases
 
 
-def by_feed(shared_state, start_time, request_from, mirror=None):
+def by_feed(shared_state, start_time, search_category):
     by = shared_state.values["config"]("Hostnames").get(hostname)
     password = by
 
-    if "lazylibrarian" in request_from.lower():
+    if search_category == SEARCH_CAT_BOOKS:
         feed_type = "?cat=71"
-    elif "radarr" in request_from.lower():
+    elif search_category == SEARCH_CAT_MOVIES:
         feed_type = "?cat=1"
-    else:
+    elif search_category == SEARCH_CAT_SHOWS:
         feed_type = "?cat=2"
+    else:
+        warn(f"Invalid search category: {search_category}")
+        return []
 
     base_url = f"https://{by}"
     url = f"{base_url}/{feed_type}"
@@ -197,8 +215,7 @@ def by_feed(shared_state, start_time, request_from, mirror=None):
             shared_state,
             base_url,
             password,
-            request_from=request_from,
-            mirror_filter=mirror,
+            search_category=search_category,
         )
     except Exception as e:
         error(f"Error loading feed: {e}")
@@ -216,16 +233,15 @@ def by_feed(shared_state, start_time, request_from, mirror=None):
 def by_search(
     shared_state,
     start_time,
-    request_from,
+    search_category,
     search_string,
-    mirror=None,
     season=None,
     episode=None,
 ):
     by = shared_state.values["config"]("Hostnames").get(hostname)
     password = by
 
-    imdb_id = shared_state.is_imdb_id(search_string)
+    imdb_id = is_imdb_id(search_string)
     if imdb_id:
         title = get_localized_title(shared_state, imdb_id, "de")
         if not title:
@@ -249,9 +265,8 @@ def by_search(
             shared_state,
             base_url,
             password,
-            mirror_filter=mirror,
             is_search=True,
-            request_from=request_from,
+            search_category=search_category,
             search_string=search_string,
             season=season,
             episode=episode,

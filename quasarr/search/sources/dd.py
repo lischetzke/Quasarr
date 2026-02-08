@@ -4,9 +4,9 @@
 
 import html
 import time
-from base64 import urlsafe_b64encode
 from datetime import datetime, timezone
 
+from quasarr.constants import SEARCH_CAT_BOOKS
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.imdb_metadata import get_localized_title, get_year
 from quasarr.providers.log import debug, error, info, warn
@@ -14,9 +14,14 @@ from quasarr.providers.sessions.dd import (
     create_and_persist_session,
     retrieve_and_validate_session,
 )
+from quasarr.providers.utils import (
+    convert_to_mb,
+    generate_download_link,
+    is_imdb_id,
+    is_valid_release,
+)
 
 hostname = "dd"
-supported_mirrors = ["ironfiles", "rapidgator", "filefactory"]
 
 
 def convert_to_rss_date(unix_timestamp):
@@ -37,9 +42,8 @@ def dd_feed(*args, **kwargs):
 def dd_search(
     shared_state,
     start_time,
-    request_from,
+    search_category,
     search_string="",
-    mirror=None,
     season=None,
     episode=None,
 ):
@@ -47,8 +51,8 @@ def dd_search(
     dd = shared_state.values["config"]("Hostnames").get(hostname.lower())
     password = dd
 
-    if not "arr" in request_from.lower():
-        debug(f"<d>Skipping {request_from} search (unsupported media type)!</d>")
+    if search_category == SEARCH_CAT_BOOKS:
+        debug(f"<d>Skipping {search_category} (unsupported media type)!</d>")
         return releases
 
     try:
@@ -61,14 +65,7 @@ def dd_search(
         info(f"Could not retrieve valid session for {dd}")
         return releases
 
-    if mirror and mirror not in supported_mirrors:
-        debug(
-            f'Mirror "{mirror}" not supported. Supported mirrors: {supported_mirrors}.'
-            " Skipping search!"
-        )
-        return releases
-
-    imdb_id = shared_state.is_imdb_id(search_string)
+    imdb_id = is_imdb_id(search_string)
     if imdb_id:
         search_string = get_localized_title(shared_state, imdb_id, "en")
         if not search_string:
@@ -128,8 +125,8 @@ def dd_search(
                 else:
                     title = release.get("release")
 
-                    if not shared_state.is_valid_release(
-                        title, request_from, search_string, season, episode
+                    if not is_valid_release(
+                        title, search_category, search_string, season, episode
                     ):
                         continue
 
@@ -142,14 +139,18 @@ def dd_search(
 
                     source = f"https://{dd}/"
                     size_item = extract_size(release.get("size"))
-                    mb = shared_state.convert_to_mb(size_item) * 1024 * 1024
+                    mb = convert_to_mb(size_item) * 1024 * 1024
                     published = convert_to_rss_date(release.get("when"))
-                    payload = urlsafe_b64encode(
-                        f"{title}|{source}|{mirror}|{mb}|{password}|{release_imdb}|{hostname}".encode(
-                            "utf-8"
-                        )
-                    ).decode("utf-8")
-                    link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
+
+                    link = generate_download_link(
+                        shared_state,
+                        title,
+                        source,
+                        mb,
+                        password,
+                        release_imdb,
+                        hostname,
+                    )
 
                     releases.append(
                         {
@@ -158,7 +159,6 @@ def dd_search(
                                 "hostname": hostname.lower(),
                                 "imdb_id": imdb_id,
                                 "link": link,
-                                "mirror": mirror,
                                 "size": mb,
                                 "date": published,
                                 "source": source,

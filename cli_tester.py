@@ -11,7 +11,10 @@ import threading
 import time
 import webbrowser
 import xml.etree.ElementTree as ET
+from base64 import urlsafe_b64decode
 from datetime import datetime
+from html import escape
+from urllib.parse import urlparse
 
 import requests
 
@@ -27,10 +30,22 @@ try:
     from prompt_toolkit.layout.layout import Layout
     from rich.console import Console
     from rich.panel import Panel
+    from rich.progress import (
+        BarColumn,
+        Progress,
+        SpinnerColumn,
+        TaskProgressColumn,
+        TextColumn,
+    )
+    from rich.table import Table
 except ImportError:
     print("Please install 'rich' and 'questionary' to use this tool.")
     print("uv sync --group dev")
     sys.exit(1)
+
+from dotenv import load_dotenv
+
+load_dotenv(override=True)
 
 # --- Configuration & Constants ---
 DEFAULT_URL = "http://localhost:8080"
@@ -42,9 +57,14 @@ console = Console()
 IS_TTY = sys.stdin.isatty()
 
 
+class Status:
+    def __init__(self):
+        self.text = ""
+
+
 # --- Custom Loading Screen ---
 class LoadingScreen:
-    def __init__(self, title, func, *args, **kwargs):
+    def __init__(self, title, func, *args, status_obj=None, **kwargs):
         """
         Runs 'func' in a separate thread while showing a spinner.
         Allows cancellation via Left/Backspace.
@@ -54,6 +74,7 @@ class LoadingScreen:
         self.func = func
         self.args = args
         self.kwargs = kwargs
+        self.status_obj = status_obj
 
         # Spinner animation frames
         self.frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
@@ -82,6 +103,11 @@ class LoadingScreen:
             lines.append(
                 HTML(f"<ansigreen>{spinner} Processing request...</ansigreen>")
             )
+
+        if self.status_obj and self.status_obj.text:
+            # Escape text to prevent XML parsing errors
+            safe_text = escape(self.status_obj.text)
+            lines.append(HTML(f"<grey>{safe_text}</grey>"))
 
         result = []
         for line in lines:
@@ -485,6 +511,36 @@ class TextInput:
                 return None
 
 
+def press_any_key(message="Press any key to continue..."):
+    kb = KeyBindings()
+
+    def exit_app(event):
+        event.app.exit()
+
+    @kb.add("<any>")
+    def _(event):
+        exit_app(event)
+
+    for key in [
+        Keys.Up,
+        Keys.Down,
+        Keys.Left,
+        Keys.Right,
+        Keys.Enter,
+        Keys.Backspace,
+        Keys.Escape,
+        Keys.Tab,
+    ]:
+        kb.add(key)(exit_app)
+
+    text_control = FormattedTextControl(
+        text=HTML(f"<grey>{message}</grey>"), show_cursor=False
+    )
+    layout = Layout(HSplit([Window(content=text_control, height=1)]))
+    app = Application(layout=layout, key_bindings=kb, full_screen=False)
+    app.run()
+
+
 def validate_imdb(text):
     if text is None:
         return False
@@ -504,7 +560,7 @@ class QuasarrClient:
         headers = {"User-Agent": user_agent}
         try:
             response = self.session.get(
-                f"{self.url}/api", params=request_params, headers=headers, timeout=60
+                f"{self.url}/api", params=request_params, headers=headers, timeout=120
             )
             response.raise_for_status()
             return response
@@ -530,25 +586,25 @@ class QuasarrClient:
     def get_feed(self, feed_type):
         if feed_type == "movie":
             return self._parse_xml(
-                self._get({"t": "movie", "imdbid": ""}, USER_AGENT_RADARR)
+                self._get({"t": "movie", "cat": "2000"}, USER_AGENT_RADARR)
             )
         elif feed_type == "tv":
             return self._parse_xml(
-                self._get({"t": "tvsearch", "imdbid": ""}, USER_AGENT_SONARR)
+                self._get({"t": "tvsearch", "cat": "5000"}, USER_AGENT_SONARR)
             )
         elif feed_type == "doc":
             return self._parse_xml(
-                self._get({"t": "book", "author": "", "title": ""}, USER_AGENT_LL)
+                self._get({"t": "book", "cat": "7000"}, USER_AGENT_LL)
             )
         return []
 
     def search_movie(self, imdb_id):
         return self._fetch_all_results(
-            {"t": "movie", "imdbid": imdb_id}, USER_AGENT_RADARR
+            {"t": "movie", "imdbid": imdb_id, "cat": "2000"}, USER_AGENT_RADARR
         )
 
     def search_tv(self, imdb_id, season=None, ep=None):
-        params = {"t": "tvsearch", "imdbid": imdb_id}
+        params = {"t": "tvsearch", "imdbid": imdb_id, "cat": "5000"}
         if season:
             params["season"] = season
         if ep:
@@ -556,7 +612,9 @@ class QuasarrClient:
         return self._fetch_all_results(params, USER_AGENT_SONARR)
 
     def search_doc(self, query):
-        return self._fetch_all_results({"t": "book", "title": query}, USER_AGENT_LL)
+        return self._fetch_all_results(
+            {"t": "book", "title": query, "cat": "7000"}, USER_AGENT_LL
+        )
 
     def _fetch_all_results(self, base_params, user_agent):
         all_items = []
@@ -580,40 +638,115 @@ class QuasarrClient:
             root = ET.fromstring(response.content)
             items = []
             for item in root.findall(".//item"):
+                title_elem = item.find("title")
+                link_elem = item.find("link")
+                pubdate_elem = item.find("pubDate")
+
                 items.append(
                     {
-                        "title": item.find("title").text,
-                        "link": item.find("link").text,
+                        "title": title_elem.text
+                        if title_elem is not None and title_elem.text
+                        else "",
+                        "link": link_elem.text
+                        if link_elem is not None and link_elem.text
+                        else "",
                         "size": item.find("enclosure").attrib.get("length", "0")
                         if item.find("enclosure") is not None
                         else "0",
-                        "pubdate": item.find("pubDate").text,
+                        "pubdate": pubdate_elem.text
+                        if pubdate_elem is not None and pubdate_elem.text
+                        else "",
                     }
                 )
             return items
         except:
             return []
 
-    def add_download(self, title, link):
-        resp = self._get({"mode": "addurl", "name": link}, USER_AGENT_RADARR)
-        return resp.json().get("status", False) if resp else False
+    def add_download(self, title, link, category=None):
+        params = {"mode": "addurl", "name": link}
+        if category:
+            params["cat"] = category
+
+        # Use appropriate User-Agent if category is known
+        user_agent = USER_AGENT_RADARR
+        if category == "tv":
+            user_agent = USER_AGENT_SONARR
+        elif category == "docs":
+            user_agent = USER_AGENT_LL
+
+        resp = self._get(params, user_agent)
+        if not resp:
+            return None, "Request failed"
+
+        try:
+            data = resp.json()
+        except Exception:
+            return None, "Invalid JSON response"
+
+        # Check for quasarr_error flag
+        if data.get("quasarr_error"):
+            return None, data.get("quasarr_error")
+
+        # Also check status and nzo_ids as a fallback
+        if data.get("status", False) and data.get("nzo_ids"):
+            return data.get("nzo_ids"), None
+        return None, "Unknown error"
 
     def delete_download(self, nzo_id):
         resp = self._get(
             {"mode": "queue", "name": "delete", "value": nzo_id}, USER_AGENT_RADARR
         )
-        return resp.json().get("status", False) if resp else False
+        if not resp:
+            return False, "Request failed"
+
+        try:
+            data = resp.json()
+        except Exception:
+            return False, "Invalid JSON response"
+
+        if data.get("quasarr_error"):
+            return False, data.get("quasarr_error")
+
+        if data.get("status", False):
+            return True, None
+        return False, "Unknown error"
 
     def fail_download(self, package_id):
         try:
-            self.session.delete(
+            resp = self.session.delete(
                 f"{self.url}/sponsors_helper/api/fail/",
                 params={"apikey": self.api_key},
                 json={"package_id": package_id},
                 timeout=30,
-            ).raise_for_status()
+            )
+            resp.raise_for_status()
             return True
-        except:
+        except Exception as e:
+            if hasattr(e, "response") and e.response is not None:
+                console.print(
+                    f"[red]Fail download error: {e.response.status_code} - {e.response.text}[/red]"
+                )
+            else:
+                console.print(f"[red]Fail download error: {e}[/red]")
+            return False
+
+    def enable_sponsor_status(self):
+        try:
+            resp = self.session.put(
+                f"{self.url}/sponsors_helper/api/set_sponsor_status/",
+                params={"apikey": self.api_key},
+                json={"activate": True},
+                timeout=30,
+            )
+            resp.raise_for_status()
+            return True
+        except Exception as e:
+            if hasattr(e, "response") and e.response is not None:
+                console.print(
+                    f"[red]Enable sponsor status error: {e.response.status_code} - {e.response.text}[/red]"
+                )
+            else:
+                console.print(f"[red]Enable sponsor status error: {e}[/red]")
             return False
 
 
@@ -661,7 +794,7 @@ def show_downloads(client):
             console.print(
                 Panel("No active downloads.", title="Downloads", border_style="blue")
             )
-            questionary.press_any_key_to_continue().ask()
+            press_any_key()
             clear_screen()
             return
 
@@ -735,12 +868,14 @@ def show_downloads(client):
             time.sleep(2)
         elif action == "delete":
             if questionary.confirm(f"Delete '{name}'?").ask():
-                if LoadingScreen(
+                res = LoadingScreen(
                     f"Deleting {name}", client.delete_download, nzo_id
-                ).run():
+                ).run()
+                if res and res[0]:
                     console.print("[green]Deleted[/green]")
                 else:
-                    console.print("[red]Failed[/red]")
+                    err = res[1] if res else "Cancelled"
+                    console.print(f"[red]Failed: {err}[/red]")
                 time.sleep(1)
         elif action == "fail":
             if questionary.confirm(f"Mark '{name}' failed?").ask():
@@ -751,13 +886,13 @@ def show_downloads(client):
                 time.sleep(1)
 
 
-def handle_results_pager(client, results, duration=None):
+def handle_results_pager(client, results, category=None, duration=None):
     clear_screen()
     if not results:
         console.print(
             Panel("[yellow]No results found.[/yellow]", border_style="yellow")
         )
-        questionary.press_any_key_to_continue().ask()
+        press_any_key()
         clear_screen()
         return
 
@@ -784,16 +919,20 @@ def handle_results_pager(client, results, duration=None):
             break
         item, last_idx = result
 
-        success = LoadingScreen(
-            f"Adding: {item['title']}", client.add_download, item["title"], item["link"]
+        res = LoadingScreen(
+            f"Adding: {item['title']}",
+            client.add_download,
+            item["title"],
+            item["link"],
+            category,
         ).run()
 
         clear_screen()
 
-        if success is True:
+        if res and res[0]:
             console.print(f"[green]✅ Added '{item['title']}'[/green]")
-        elif success is False:
-            console.print(f"[red]❌ Failed to add '{item['title']}'[/red]")
+        elif res:
+            console.print(f"[red]❌ Failed to add '{item['title']}': {res[1]}[/red]")
         else:
             console.print("[yellow]⚠️ Cancelled[/yellow]")
         time.sleep(1)
@@ -822,7 +961,10 @@ def handle_feeds_menu(client):
         clear_screen()
 
         if results is not None:
-            handle_results_pager(client, results, time.time() - start)
+            cat_map = {"movie": "movies", "tv": "tv", "doc": "docs"}
+            handle_results_pager(
+                client, results, cat_map.get(choice), time.time() - start
+            )
 
 
 def handle_searches_menu(client):
@@ -854,7 +996,7 @@ def handle_searches_menu(client):
                 ).run()
                 clear_screen()
                 if res is not None:
-                    handle_results_pager(client, res, time.time() - start)
+                    handle_results_pager(client, res, "movies", time.time() - start)
         elif choice == "tv":
             q = TextInput(
                 "TV: IMDb ID", default=defaults["tv"], validator=validate_imdb
@@ -873,7 +1015,7 @@ def handle_searches_menu(client):
                         ).run()
                         clear_screen()
                         if res is not None:
-                            handle_results_pager(client, res, time.time() - start)
+                            handle_results_pager(client, res, "tv", time.time() - start)
         elif choice == "doc":
             q = TextInput("Doc: Query", default=defaults["doc"]).run()
             if q:
@@ -882,7 +1024,473 @@ def handle_searches_menu(client):
                 res = LoadingScreen(f"Searching Doc: {q}", client.search_doc, q).run()
                 clear_screen()
                 if res is not None:
-                    handle_results_pager(client, res, time.time() - start)
+                    handle_results_pager(client, res, "docs", time.time() - start)
+
+
+def handle_hostname_test(client, interactive=True):
+    if interactive:
+        clear_screen()
+
+    console.print("[bold cyan]--- TEST ALL HOSTNAMES ---[/bold cyan]")
+    console.print("[dim]Keys: [Ctrl+C] Cancel Operation[/dim]")
+    console.print("")
+
+    feeds = [("movie", "movies"), ("tv", "tv"), ("doc", "docs")]
+
+    # 1. Fetch Feeds
+    console.print("[cyan]Fetching feeds...[/cyan]")
+    all_feed_items = []
+
+    try:
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            transient=True,
+        ) as progress:
+            # Create a task for each feed
+            tasks = {}
+            for feed_type, _ in feeds:
+                tasks[feed_type] = progress.add_task(
+                    f"Fetching {feed_type} feed...", total=None
+                )
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+                future_to_feed = {
+                    executor.submit(client.get_feed, feed_type): (feed_type, category)
+                    for feed_type, category in feeds
+                }
+
+                for future in concurrent.futures.as_completed(future_to_feed):
+                    feed_type, category = future_to_feed[future]
+                    try:
+                        feed_items = future.result()
+                        progress.update(
+                            tasks[feed_type],
+                            completed=1,
+                            total=1,
+                            description=f"[green]Fetched {feed_type} feed[/green]",
+                        )
+                        if feed_items:
+                            for item in feed_items:
+                                all_feed_items.append((feed_type, category, item))
+                    except Exception:
+                        progress.update(
+                            tasks[feed_type],
+                            completed=1,
+                            total=1,
+                            description=f"[red]Failed {feed_type} feed[/red]",
+                        )
+    except KeyboardInterrupt:
+        console.print("[red]Cancelled fetching feeds.[/red]")
+        return False
+
+    if not all_feed_items:
+        console.print("[bold red]Error: No feed items received.[/bold red]")
+        if interactive:
+            press_any_key()
+        return False
+
+    # Process items to find candidates (group by host, pick oldest)
+    items_by_feed_host = {}
+
+    for feed_type, category, item in all_feed_items:
+        title = item.get("title") or ""
+        link = item.get("link") or ""
+        host = None
+
+        # Parse payload to get real info if available
+        payload_info = {}
+        if link:
+            try:
+                parsed = urlparse(link)
+                if "payload=" in parsed.query:
+                    payload = parsed.query.split("payload=")[1].split("&")[0]
+                    payload += "=" * (-len(payload) % 4)
+                    decoded = urlsafe_b64decode(payload).decode("utf-8")
+                    parts = decoded.split("|")
+                    if len(parts) >= 6:
+                        payload_info = {
+                            "title": parts[0],
+                            "url": parts[1],
+                            "size": parts[2],
+                            "pwd": parts[3],
+                            "imdb": parts[4],
+                            "source": parts[5],
+                        }
+            except Exception:
+                pass
+
+        # 1. Try title prefix [XX]
+        match = re.match(r"^\[([A-Za-z0-9\.\-\_]+)\]", title)
+        if match:
+            host = match.group(1).lower()
+            # If title is just prefix, try to use payload title
+            if len(title.strip()) <= len(match.group(0)) + 1:
+                if payload_info.get("title"):
+                    title = payload_info["title"]
+                    item["title"] = title
+
+        # 2. Try payload source
+        if not host and payload_info.get("source"):
+            host = payload_info["source"].lower()
+            if not title and payload_info.get("title"):
+                title = payload_info["title"]
+                item["title"] = title
+
+        # 3. Fallback to domain
+        if not host and link:
+            try:
+                host = urlparse(link).hostname
+            except:
+                pass
+
+        if not host:
+            continue
+
+        _key = (feed_type, host)
+        if _key not in items_by_feed_host:
+            items_by_feed_host[_key] = []
+
+        items_by_feed_host[_key].append(
+            {"feed": feed_type, "category": category, "host": host, "item": item}
+        )
+
+    # Prepare tasks: Group by host/feed, candidates reversed (Oldest -> Newest)
+    tasks_to_process = []
+    for _key, items in items_by_feed_host.items():
+        candidates = list(reversed(items))
+        tasks_to_process.append(
+            {"feed": _key[0], "host": _key[1], "candidates": candidates}
+        )
+
+    if interactive:
+        clear_screen()
+        console.print("[bold cyan]--- TEST ALL HOSTNAMES ---[/bold cyan]")
+        console.print("[dim]Keys: [Ctrl+C] Cancel Operation[/dim]")
+        console.print("")
+
+    if not tasks_to_process:
+        console.print("[bold red]Error: No items to download found.[/bold red]")
+        if interactive:
+            press_any_key()
+        return False
+
+    # 2. Download items
+    results = []
+    attempted_titles = set()
+    console.print(
+        f"[cyan]Attempting to add {len(tasks_to_process)} downloads (with retries)...[/cyan]"
+    )
+
+    def process_download_task(task):
+        feed = task["feed"]
+        host = task["host"]
+        candidates = task["candidates"]
+
+        # Try up to 3 candidates
+        limit = min(3, len(candidates))
+        last_error = "No candidates"
+        last_title = "Unknown"
+
+        for i in range(limit):
+            candidate = candidates[i]
+            title = candidate["item"]["title"]
+            link = candidate["item"]["link"]
+            category = candidate["category"]
+            last_title = title
+
+            nzo_ids, error = client.add_download(title, link, category=category)
+            if nzo_ids:
+                return {
+                    "feed": feed,
+                    "host": host,
+                    "title": title,
+                    "success": True,
+                    "nzo_ids": nzo_ids,
+                    "error": None,
+                }
+            last_error = error
+
+        return {
+            "feed": feed,
+            "host": host,
+            "title": last_title,
+            "success": False,
+            "nzo_ids": None,
+            "error": last_error,
+        }
+
+    try:
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TaskProgressColumn(),
+            transient=True,
+        ) as progress:
+            task_id = progress.add_task(
+                "Adding downloads...", total=len(tasks_to_process)
+            )
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+                future_to_task = {
+                    executor.submit(process_download_task, task): task
+                    for task in tasks_to_process
+                }
+
+                for future in concurrent.futures.as_completed(future_to_task):
+                    try:
+                        res = future.result()
+                        attempted_titles.add(res["title"])
+                        results.append(res)
+                    except Exception:
+                        pass
+                    progress.advance(task_id)
+    except KeyboardInterrupt:
+        console.print("[red]Cancelled adding downloads.[/red]")
+        # Proceed to summary/cleanup with whatever results we have
+
+    # 3. Summary
+    if interactive:
+        clear_screen()
+    console.print(
+        Panel("Summary of Hostname Test", title="Results", border_style="blue")
+    )
+
+    # Stats for summary
+    stats = {
+        "movie": {
+            "results": 0,
+            "dl_success": 0,
+            "dl_fail": 0,
+            "del_success": 0,
+            "del_fail": 0,
+        },
+        "tv": {
+            "results": 0,
+            "dl_success": 0,
+            "dl_fail": 0,
+            "del_success": 0,
+            "del_fail": 0,
+        },
+        "doc": {
+            "results": 0,
+            "dl_success": 0,
+            "dl_fail": 0,
+            "del_success": 0,
+            "del_fail": 0,
+        },
+    }
+
+    # Group results by feed type
+    grouped_results = {}
+    for res in results:
+        feed = res["feed"]
+        if feed not in grouped_results:
+            grouped_results[feed] = []
+        grouped_results[feed].append(res)
+
+        if feed in stats:
+            stats[feed]["results"] += 1
+            if res["success"]:
+                stats[feed]["dl_success"] += 1
+            else:
+                stats[feed]["dl_fail"] += 1
+
+    for feed, res_list in grouped_results.items():
+        console.print(
+            f"[bold underline]{feed.upper()}[/bold underline] ({len(res_list)} items)"
+        )
+        for res in res_list:
+            color = "green" if res["success"] else "red"
+            status = "OK" if res["success"] else "FAIL"
+            console.print(
+                f"  [{color}]{status}[/{color}] - {res['host'].upper()} - {res['title']}"
+            )
+        console.print("")
+
+    if interactive:
+        console.print(
+            "[yellow]Press any key to delete these downloads and exit...[/yellow]"
+        )
+        press_any_key()
+
+    # 4. Cleanup
+    if interactive:
+        clear_screen()
+        console.print("[bold cyan]--- TEST ALL HOSTNAMES ---[/bold cyan]")
+        console.print("[dim]Keys: [Ctrl+C] Cancel Operation[/dim]")
+        console.print("")
+
+    console.print("[cyan]Cleaning up...[/cyan]")
+
+    # Collect nzo_ids from results
+    nzo_ids_to_delete = set()
+    nzo_id_to_feed = {}
+    for res in results:
+        if res.get("nzo_ids"):
+            for nid in res["nzo_ids"]:
+                nzo_ids_to_delete.add(nid)
+                nzo_id_to_feed[nid] = res["feed"]
+
+    # Also fetch current queue/history to find items by name (for failed adds that might be stuck)
+    try:
+        queue, history = client.get_downloads()
+        all_downloads = queue + history
+
+        for item in all_downloads:
+            # Check if this item matches any attempted title
+            name = item.get("filename") or item.get("name") or ""
+            nzo_id = item.get("nzo_id")
+
+            if not nzo_id:
+                continue
+
+            # If we already have this ID, skip
+            if nzo_id in nzo_ids_to_delete:
+                continue
+
+            # Check for title match
+            # Simple containment check or exact match
+            for title in attempted_titles:
+                if title and (title == name or title in name or name in title):
+                    nzo_ids_to_delete.add(nzo_id)
+                    break
+    except Exception:
+        pass
+
+    deleted_count = 0
+    deletion_errors = []
+
+    if not nzo_ids_to_delete:
+        pass
+    else:
+        try:
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                TaskProgressColumn(),
+                transient=True,
+            ) as progress:
+                task_id = progress.add_task(
+                    "Deleting downloads...", total=len(nzo_ids_to_delete)
+                )
+
+                with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+                    future_to_id = {
+                        executor.submit(client.delete_download, nzo_id): nzo_id
+                        for nzo_id in nzo_ids_to_delete
+                    }
+
+                    for future in concurrent.futures.as_completed(future_to_id):
+                        try:
+                            nzo_id = future_to_id[future]
+                            feed = nzo_id_to_feed.get(nzo_id)
+                            success, error = future.result()
+                            if success:
+                                deleted_count += 1
+                                if feed in stats:
+                                    stats[feed]["del_success"] += 1
+                            else:
+                                if feed in stats:
+                                    stats[feed]["del_fail"] += 1
+                                deletion_errors.append(f"ID {nzo_id}: {error}")
+                        except Exception:
+                            if feed in stats:
+                                stats[feed]["del_fail"] += 1
+                            deletion_errors.append(f"ID {nzo_id}: Exception")
+                        progress.advance(task_id)
+
+            console.print(f"[green]Deleted {deleted_count} downloads.[/green]")
+        except KeyboardInterrupt:
+            console.print("[red]Cancelled cleanup.[/red]")
+
+    if interactive:
+        time.sleep(2)
+
+    # Print Summary Table
+    table = Table(title="Bulk Test Summary")
+    table.add_column("Feed", style="cyan")
+    table.add_column("Downloads (Success/Total)", justify="right")
+    table.add_column("Deletions (Success/Total)", justify="right")
+
+    for feed in ["movie", "tv", "doc"]:
+        data = stats[feed]
+        total_dl = data["results"]
+        dl_success = data["dl_success"]
+
+        total_del = data["del_success"] + data["del_fail"]
+        del_success = data["del_success"]
+
+        dl_style = (
+            "green"
+            if dl_success == total_dl and total_dl > 0
+            else "red"
+            if dl_success == 0 and total_dl > 0
+            else "yellow"
+        )
+        del_style = (
+            "green"
+            if del_success == total_del and total_del > 0
+            else "red"
+            if del_success == 0 and total_del > 0
+            else "yellow"
+        )
+
+        table.add_row(
+            feed.upper(),
+            f"[{dl_style}]{dl_success}/{total_dl}[/{dl_style}]",
+            f"[{del_style}]{del_success}/{total_del}[/{del_style}]",
+        )
+    console.print(table)
+    console.print("")
+
+    # Show failures
+    failures = [r for r in results if not r["success"]]
+    if failures or deletion_errors:
+        console.print("[bold red]Failures:[/bold red]")
+        if failures:
+            console.print("[red]Downloads:[/red]")
+            for f in failures:
+                console.print(
+                    f"  - {f['feed'].upper()} / {f['host'].upper()}: {f['error']} ({f['title']})"
+                )
+
+        if deletion_errors:
+            console.print("[red]Deletions:[/red]")
+            for err in deletion_errors:
+                console.print(f"  - {err}")
+        console.print("")
+
+    # Error Checks
+    successful_downloads = len([r for r in results if r["success"]])
+
+    # If we attempted downloads but none succeeded
+    if results and successful_downloads == 0:
+        console.print(
+            "[bold red]Error: No downloads were successfully added.[/bold red]"
+        )
+        if interactive:
+            press_any_key()
+        return False
+
+    # If we deleted fewer than we successfully added (by ID), that's definitely an error.
+    # If we deleted more (because we cleaned up failed ones too), that's fine.
+    # But strictly speaking, we want to ensure everything we added is gone.
+    # Let's just check if we deleted at least the number of successful ones.
+    if deleted_count < successful_downloads:
+        console.print(
+            f"[bold red]Error: Mismatch! Added {successful_downloads} but deleted {deleted_count}.[/bold red]"
+        )
+        if interactive:
+            press_any_key()
+        return False
+
+    if interactive:
+        press_any_key()
+
+    return True
 
 
 def run_cli():
@@ -892,11 +1500,12 @@ def run_cli():
     parser.add_argument("--test-movie", action="store_true")
     parser.add_argument("--test-tv", action="store_true")
     parser.add_argument("--test-doc", action="store_true")
+    parser.add_argument("--test-hostnames", action="store_true")
     args = parser.parse_args()
 
     api_key = args.key or os.environ.get("QUASARR_API_KEY")
 
-    if any([args.test_movie, args.test_tv, args.test_doc]):
+    if any([args.test_movie, args.test_tv, args.test_doc, args.test_hostnames]):
         if not api_key:
             sys.exit("API Key required for tests")
         client = QuasarrClient(args.url, api_key)
@@ -906,6 +1515,8 @@ def run_cli():
             sys.exit(0 if client.search_tv("tt0944947") else 1)
         if args.test_doc:
             sys.exit(0 if client.search_doc("PC Gamer UK") else 1)
+        if args.test_hostnames:
+            sys.exit(0 if handle_hostname_test(client, interactive=False) else 1)
         return
 
     if not IS_TTY:
@@ -929,10 +1540,13 @@ def run_cli():
             choice = MenuSelector(
                 "Main Menu",
                 [
+                    ("🧪 Test All Hostnames", "test_hostnames"),
                     ("🔍 Searches", "search"),
                     ("🗞️ Feeds", "feeds"),
                     ("⬇️ Downloads", "downloads"),
+                    ("🔓 Enable Sponsor Status", "enable_sponsor"),
                     ("🌐 Open Web UI", "web"),
+                    ("🚪 Exit", "exit"),
                 ],
                 allow_back=False,
             ).run()
@@ -942,8 +1556,21 @@ def run_cli():
                 handle_searches_menu(client)
             elif choice == "downloads":
                 show_downloads(client)
+            elif choice == "test_hostnames":
+                handle_hostname_test(client)
+            elif choice == "enable_sponsor":
+                if LoadingScreen(
+                    "Enabling Sponsor Status", client.enable_sponsor_status
+                ).run():
+                    console.print("[green]Sponsor status enabled![/green]")
+                else:
+                    console.print("[red]Failed to enable sponsor status.[/red]")
+                time.sleep(2)
             elif choice == "web":
                 webbrowser.open(client.url)
+            elif choice == "exit":
+                if questionary.confirm("Are you sure you want to exit?").ask():
+                    sys.exit(0)
             elif choice is None:
                 sys.exit(0)
         except KeyboardInterrupt:
@@ -953,5 +1580,9 @@ def run_cli():
 if __name__ == "__main__":
     try:
         run_cli()
-    except:
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+        import traceback
+
+        traceback.print_exc()
         sys.exit(1)

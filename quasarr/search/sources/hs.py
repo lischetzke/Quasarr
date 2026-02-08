@@ -2,44 +2,34 @@
 # Quasarr
 # Project by https://github.com/rix1337
 
-import re
 import time
 import warnings
-from base64 import urlsafe_b64encode
 from datetime import datetime
 
 import requests
 from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning
 
+from quasarr.constants import (
+    BITRATE_REGEX,
+    DATE_REGEX,
+    EPISODE_DURATION_REGEX,
+    EPISODE_EXTRACT_REGEX,
+    IMDB_REGEX,
+    SEARCH_CAT_BOOKS,
+    SIZE_REGEX,
+    TRAILING_GARBAGE_PATTERN,
+)
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
+from quasarr.providers.utils import (
+    generate_download_link,
+    is_imdb_id,
+    is_valid_release,
+)
 
 warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
 from quasarr.providers.log import debug, warn
 
 hostname = "hs"
-supported_mirrors = ["rapidgator", "ddownload", "katfile"]
-
-FILECRYPT_REGEX = re.compile(r"filecrypt\.(?:cc|co|to)/container/", re.I)
-SIZE_REGEX = re.compile(r"Größe[:\s]*(\d+(?:[.,]\d+)?)\s*(MB|GB|TB)", re.I)
-IMDB_REGEX = re.compile(r"imdb\.com/title/(tt\d+)", re.I)
-DATE_REGEX = re.compile(r"(\d{2}\.\d{2}\.\d{2}),?\s*(\d{1,2}:\d{2})")
-# Pattern to extract individual episode release names from text
-# Matches: Title.S02E03.Info-GROUP (group name starts after hyphen)
-EPISODE_EXTRACT_REGEX = re.compile(
-    r"([A-Za-z][A-Za-z0-9.]+\.S\d{2}E\d{2}[A-Za-z0-9.]*-[A-Za-z][A-Za-z0-9]*)", re.I
-)
-# Pattern to clean trailing common words that may be attached to group names
-# e.g., -WAYNEAvg -> -WAYNE, -GROUPBitrate -> -GROUP
-TRAILING_GARBAGE_PATTERN = re.compile(
-    r"(Avg|Bitrate|Size|Größe|Video|Audio|Duration|Release|Info).*$", re.I
-)
-# Pattern to extract average bitrate (e.g., "Avg. Bitrate: 10,6 Mb/s" or "6 040 kb/s")
-# Note: Numbers may contain spaces as thousand separators (e.g., "6 040")
-BITRATE_REGEX = re.compile(
-    r"(?:Avg\.?\s*)?Bitrate[:\s]*([\d\s]+(?:[.,]\d+)?)\s*(kb/s|Mb/s|mb/s)", re.I
-)
-# Pattern to extract episode duration (e.g., "Dauer: 60 Min. pro Folge")
-EPISODE_DURATION_REGEX = re.compile(r"Dauer[:\s]*(\d+)\s*Min\.?\s*pro\s*Folge", re.I)
 
 
 def convert_to_rss_date(date_str):
@@ -135,18 +125,6 @@ def extract_episode_size_mb(text):
     return episode_size_mb
 
 
-def normalize_mirror_name(name):
-    """Normalize mirror names - ddlto/ddl.to -> ddownload"""
-    name_lower = name.lower().strip()
-    if "ddlto" in name_lower or "ddl.to" in name_lower or "ddownload" in name_lower:
-        return "ddownload"
-    if "rapidgator" in name_lower:
-        return "rapidgator"
-    if "katfile" in name_lower:
-        return "katfile"
-    return name_lower
-
-
 def build_search_url(base_url, search_term):
     """Build the ASP search URL with all required parameters"""
     params = {
@@ -197,8 +175,7 @@ def _parse_search_results(
     shared_state,
     hd_host,
     password,
-    mirror_filter,
-    request_from,
+    search_category,
     search_string,
     season,
     episode,
@@ -278,8 +255,8 @@ def _parse_search_results(
             # Create releases for individual episodes (use calculated episode size)
             for title in unique_episodes:
                 # Validate release against search criteria
-                if not shared_state.is_valid_release(
-                    title, request_from, search_string, season, episode
+                if not is_valid_release(
+                    title, search_category, search_string, season, episode
                 ):
                     continue
 
@@ -287,10 +264,15 @@ def _parse_search_results(
                 ep_mb = episode_mb if episode_mb else total_mb
                 ep_size = episode_size_bytes if episode_size_bytes else total_size_bytes
 
-                payload = urlsafe_b64encode(
-                    f"{title}|{source}|{mirror_filter}|{ep_mb}|{password}|{imdb_id}|{hostname}".encode()
-                ).decode()
-                link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
+                link = generate_download_link(
+                    shared_state,
+                    title,
+                    source,
+                    ep_mb,
+                    password,
+                    imdb_id,
+                    hostname,
+                )
 
                 releases.append(
                     {
@@ -299,7 +281,6 @@ def _parse_search_results(
                             "hostname": hostname,
                             "imdb_id": imdb_id,
                             "link": link,
-                            "mirror": mirror_filter,
                             "size": ep_size,
                             "date": published,
                             "source": source,
@@ -310,13 +291,18 @@ def _parse_search_results(
 
             # Also add the main title (season pack) with full size - if not duplicate
             if main_title.lower() not in seen:
-                if shared_state.is_valid_release(
-                    main_title, request_from, search_string, season, episode
+                if is_valid_release(
+                    main_title, search_category, search_string, season, episode
                 ):
-                    payload = urlsafe_b64encode(
-                        f"{main_title}|{source}|{mirror_filter}|{total_mb}|{password}|{imdb_id}|{hostname}".encode()
-                    ).decode()
-                    link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
+                    link = generate_download_link(
+                        shared_state,
+                        main_title,
+                        source,
+                        total_mb,
+                        password,
+                        imdb_id,
+                        hostname,
+                    )
 
                     releases.append(
                         {
@@ -325,7 +311,6 @@ def _parse_search_results(
                                 "hostname": hostname,
                                 "imdb_id": imdb_id,
                                 "link": link,
-                                "mirror": mirror_filter,
                                 "size": total_size_bytes,
                                 "date": published,
                                 "source": source,
@@ -341,7 +326,7 @@ def _parse_search_results(
     return releases
 
 
-def hs_feed(shared_state, start_time, request_from, mirror=None):
+def hs_feed(shared_state, start_time, search_category):
     """Return recent releases from HS feed"""
     releases = []
     hs = shared_state.values["config"]("Hostnames").get(hostname)
@@ -350,16 +335,9 @@ def hs_feed(shared_state, start_time, request_from, mirror=None):
     if not hs:
         return releases
 
-    # HS only supports movies and series
-    if "lazylibrarian" in request_from.lower():
+    if search_category == SEARCH_CAT_BOOKS:
         debug(
-            f'<d>Skipping {request_from} feed on "{hostname.upper()}" (unsupported media type)!</d>'
-        )
-        return releases
-
-    if mirror and mirror.lower() not in supported_mirrors:
-        debug(
-            f'Mirror "{mirror}" not supported by "{hostname.upper()}". Skipping feed!'
+            f'<d>Skipping {search_category} feed on "{hostname.upper()}" (unsupported media type)!</d>'
         )
         return releases
 
@@ -405,10 +383,15 @@ def hs_feed(shared_state, start_time, request_from, mirror=None):
                 size_bytes = 0
                 imdb_id = None
 
-                payload = urlsafe_b64encode(
-                    f"{title}|{source}|{mirror}|{mb}|{password}|{imdb_id}|{hostname}".encode()
-                ).decode()
-                link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
+                link = generate_download_link(
+                    shared_state,
+                    title,
+                    source,
+                    mb,
+                    password,
+                    imdb_id,
+                    hostname,
+                )
 
                 releases.append(
                     {
@@ -417,7 +400,6 @@ def hs_feed(shared_state, start_time, request_from, mirror=None):
                             "hostname": hostname,
                             "imdb_id": imdb_id,
                             "link": link,
-                            "mirror": mirror,
                             "size": size_bytes,
                             "date": published,
                             "source": source,
@@ -435,8 +417,8 @@ def hs_feed(shared_state, start_time, request_from, mirror=None):
         mark_hostname_issue(hostname, "feed", str(e))
         return releases
 
-    elapsed_time = time.time() - start_time
-    debug(f"Time taken: {elapsed_time:.2f}s")
+    elapsed = time.time() - start_time
+    debug(f"Time taken: {elapsed:.2f}s")
 
     if releases:
         clear_hostname_issue(hostname)
@@ -446,9 +428,8 @@ def hs_feed(shared_state, start_time, request_from, mirror=None):
 def hs_search(
     shared_state,
     start_time,
-    request_from,
+    search_category,
     search_string,
-    mirror=None,
     season=None,
     episode=None,
 ):
@@ -460,21 +441,14 @@ def hs_search(
     if not hs:
         return releases
 
-    # HS only supports movies and series
-    if "lazylibrarian" in request_from.lower():
+    if search_category == SEARCH_CAT_BOOKS:
         debug(
-            f'<d>Skipping {request_from} search on "{hostname.upper()}" (unsupported media type)!</d>'
-        )
-        return releases
-
-    if mirror and mirror.lower() not in supported_mirrors:
-        debug(
-            f'Mirror "{mirror}" not supported by "{hostname.upper()}". Skipping search!'
+            f"<d>Skipping <y>{search_category}</y> on <g>{hostname.upper()}</g> (category not supported)!</d>"
         )
         return releases
 
     # HS supports direct IMDb ID search
-    imdb_id = shared_state.is_imdb_id(search_string)
+    imdb_id = is_imdb_id(search_string)
     if not imdb_id:
         debug(
             f'"{hostname.upper()}" only supports IMDb ID search, got: {search_string}'
@@ -495,8 +469,7 @@ def hs_search(
             shared_state,
             hs,
             password,
-            mirror,
-            request_from,
+            search_category,
             search_string,
             season,
             episode,

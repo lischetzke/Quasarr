@@ -8,14 +8,15 @@ import os
 import sys
 from typing import TYPE_CHECKING, Any
 
-from dotenv import load_dotenv
 from loguru import logger
 from wcwidth import wcswidth, wrap
 
 if TYPE_CHECKING:
     from loguru import Message
 
-load_dotenv()
+from dotenv import load_dotenv
+
+load_dotenv(override=True)
 
 
 def get_log_max_width() -> int:
@@ -102,6 +103,7 @@ _context_replace = {
     "sessions": "🍪",  # /quasarr/providers/sessions/*
     "search": "🔍",  # /quasarr/search/*
     "storage": "💽",  # /quasarr/storage/*
+    "categories": "🔠",  # /quasarr/storage/categories.py
     "setup": "🛠️",  # /quasarr/storage/setup.py
     "sqlite_database": "🗃️",  # /quasarr/storage/sqlite_database.py
     "sources": "🧲",  # /quasarr/*/sources/*

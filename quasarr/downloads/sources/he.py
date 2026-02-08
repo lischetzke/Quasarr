@@ -14,7 +14,7 @@ from quasarr.providers.log import debug, info
 hostname = "he"
 
 
-def get_he_download_links(shared_state, url, mirror, title, password):
+def get_he_download_links(shared_state, url, mirrors, title, password):
     """
     KEEP THE SIGNATURE EVEN IF SOME PARAMETERS ARE UNUSED!
 

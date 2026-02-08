@@ -5,15 +5,21 @@
 import json
 import re
 import time
-from base64 import urlsafe_b64encode
 from datetime import datetime, timedelta
 
 import requests
 from bs4 import BeautifulSoup
 
+from quasarr.constants import SEARCH_CAT_SHOWS
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.imdb_metadata import get_localized_title
 from quasarr.providers.log import debug, info, trace
+from quasarr.providers.utils import (
+    generate_download_link,
+    is_imdb_id,
+    is_valid_release,
+    sanitize_string,
+)
 
 hostname = "sj"
 
@@ -27,12 +33,12 @@ def convert_to_rss_date(date_str):
         return ""
 
 
-def sj_feed(shared_state, start_time, request_from, mirror=None):
+def sj_feed(shared_state, start_time, search_category):
     releases = []
 
-    if "sonarr" not in request_from.lower():
+    if search_category != SEARCH_CAT_SHOWS:  # Only TV supported
         debug(
-            f'<d>Skipping {request_from} search on "{hostname.upper()}" (unsupported media type)!</d>'
+            f"<d>Skipping <y>{search_category}</y> on <g>{hostname.upper()}</g> (category not supported)!</d>"
         )
         return releases
 
@@ -76,13 +82,15 @@ def sj_feed(shared_state, start_time, request_from, mirror=None):
                 size = 0
                 imdb_id = None
 
-                payload = urlsafe_b64encode(
-                    f"{title}|{series_url}|{mirror}|{mb}|{password}|{imdb_id}|{hostname}".encode(
-                        "utf-8"
-                    )
-                ).decode("utf-8")
-
-                link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
+                link = generate_download_link(
+                    shared_state,
+                    title,
+                    series_url,
+                    mb,
+                    password,
+                    imdb_id,
+                    hostname,
+                )
 
                 releases.append(
                     {
@@ -91,7 +99,6 @@ def sj_feed(shared_state, start_time, request_from, mirror=None):
                             "hostname": hostname,
                             "imdb_id": imdb_id,
                             "link": link,
-                            "mirror": mirror,
                             "size": size,
                             "date": published,
                             "source": series_url,
@@ -117,24 +124,23 @@ def sj_feed(shared_state, start_time, request_from, mirror=None):
 def sj_search(
     shared_state,
     start_time,
-    request_from,
+    search_category,
     search_string,
-    mirror=None,
     season=None,
     episode=None,
 ):
     releases = []
 
-    if "sonarr" not in request_from.lower():
+    if search_category != SEARCH_CAT_SHOWS:  # Only TV supported
         debug(
-            f'<d>Skipping {request_from} search on "{hostname.upper()}" (unsupported media type)!</d>'
+            f"<d>Skipping <y>{search_category}</y> on <g>{hostname.upper()}</g> (category not supported)!</d>"
         )
         return releases
 
     sj_host = shared_state.values["config"]("Hostnames").get(hostname)
     password = sj_host
 
-    imdb_id = shared_state.is_imdb_id(search_string)
+    imdb_id = is_imdb_id(search_string)
     if not imdb_id:
         return releases
 
@@ -160,13 +166,13 @@ def sj_search(
         return releases
 
     one_hour_ago = (datetime.now() - timedelta(hours=1)).strftime("%Y-%m-%d %H:%M:%S")
-    sanitized_search_string = shared_state.sanitize_string(localized_title)
+    sanitized_search_string = sanitize_string(localized_title)
 
     for result in results:
         try:
             result_title = result.get_text(strip=True)
 
-            sanitized_title = shared_state.sanitize_string(result_title)
+            sanitized_title = sanitize_string(result_title)
 
             if not re.search(
                 rf"\b{re.escape(sanitized_search_string)}\b", sanitized_title
@@ -202,8 +208,8 @@ def sj_search(
                     if not title:
                         continue
 
-                    if not shared_state.is_valid_release(
-                        title, request_from, search_string, season, episode
+                    if not is_valid_release(
+                        title, search_category, search_string, season, episode
                     ):
                         continue
 
@@ -215,13 +221,15 @@ def sj_search(
                     mb = 0
                     size = 0
 
-                    payload = urlsafe_b64encode(
-                        f"{title}|{series_url}|{mirror}|{mb}|{password}|{imdb_id}|{hostname}".encode(
-                            "utf-8"
-                        )
-                    ).decode("utf-8")
-
-                    link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
+                    link = generate_download_link(
+                        shared_state,
+                        title,
+                        series_url,
+                        mb,
+                        password,
+                        imdb_id,
+                        hostname,
+                    )
 
                     releases.append(
                         {
@@ -230,7 +238,6 @@ def sj_search(
                                 "hostname": hostname,
                                 "imdb_id": imdb_id,
                                 "link": link,
-                                "mirror": mirror,
                                 "size": size,
                                 "date": published,
                                 "source": series_url,

@@ -4,12 +4,19 @@
 
 import re
 import time
-from base64 import urlsafe_b64encode
 from datetime import datetime
 from html import unescape
 
 from bs4 import BeautifulSoup
 
+from quasarr.constants import (
+    CODEC_REGEX,
+    RESOLUTION_REGEX,
+    SEARCH_CAT_BOOKS,
+    SEARCH_CAT_MOVIES,
+    SEARCH_CAT_SHOWS,
+    XXX_REGEX,
+)
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.imdb_metadata import get_localized_title, get_year
 from quasarr.providers.log import debug, info, trace, warn
@@ -18,12 +25,13 @@ from quasarr.providers.sessions.dl import (
     invalidate_session,
     retrieve_and_validate_session,
 )
+from quasarr.providers.utils import (
+    generate_download_link,
+    is_imdb_id,
+    is_valid_release,
+)
 
 hostname = "dl"
-
-RESOLUTION_REGEX = re.compile(r"\d{3,4}p", re.I)
-CODEC_REGEX = re.compile(r"x264|x265|h264|h265|hevc|avc", re.I)
-XXX_REGEX = re.compile(r"\.xxx\.", re.I)
 
 
 def convert_to_rss_date(iso_date_str):
@@ -43,9 +51,9 @@ def convert_to_rss_date(iso_date_str):
         return datetime.now().strftime("%a, %d %b %Y %H:%M:%S +0000")
 
 
-def normalize_title_for_sonarr(title):
+def normalize_title_for_arr(title):
     """
-    Normalize title for Sonarr by replacing spaces with dots.
+    Normalize title for *arr by replacing spaces with dots.
     """
     title = title.replace(" ", ".")
     title = re.sub(r"\s*-\s*", "-", title)
@@ -55,19 +63,22 @@ def normalize_title_for_sonarr(title):
     return title
 
 
-def dl_feed(shared_state, start_time, request_from, mirror=None):
+def dl_feed(shared_state, start_time, search_category):
     """
     Parse the correct forum and return releases.
     """
     releases = []
     host = shared_state.values["config"]("Hostnames").get(hostname)
 
-    if "lazylibrarian" in request_from.lower():
+    if search_category == SEARCH_CAT_BOOKS:
         forum = "magazine-zeitschriften.72"
-    elif "radarr" in request_from.lower():
+    elif search_category == SEARCH_CAT_MOVIES:
         forum = "hd.8"
-    else:
+    elif search_category == SEARCH_CAT_SHOWS:
         forum = "hd.14"
+    else:
+        warn(f"Unknown search category: {search_category}")
+        return releases
 
     if not host:
         debug("hostname not configured")
@@ -104,7 +115,7 @@ def dl_feed(shared_state, start_time, request_from, mirror=None):
                     continue
 
                 title = unescape(title)
-                title = normalize_title_for_sonarr(title)
+                title = normalize_title_for_arr(title)
 
                 # Extract thread URL
                 thread_url = title_elem.get("href")
@@ -124,12 +135,15 @@ def dl_feed(shared_state, start_time, request_from, mirror=None):
                 imdb_id = None
                 password = ""
 
-                payload = urlsafe_b64encode(
-                    f"{title}|{thread_url}|{mirror}|{mb}|{password}|{imdb_id or ''}|{hostname}".encode(
-                        "utf-8"
-                    )
-                ).decode("utf-8")
-                link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
+                link = generate_download_link(
+                    shared_state,
+                    title,
+                    thread_url,
+                    mb,
+                    password,
+                    imdb_id or "",
+                    hostname,
+                )
 
                 releases.append(
                     {
@@ -138,7 +152,6 @@ def dl_feed(shared_state, start_time, request_from, mirror=None):
                             "hostname": hostname,
                             "imdb_id": imdb_id,
                             "link": link,
-                            "mirror": mirror,
                             "size": mb * 1024 * 1024,
                             "date": published,
                             "source": thread_url,
@@ -190,8 +203,7 @@ def _search_single_page(
     search_id,
     page_num,
     imdb_id,
-    mirror,
-    request_from,
+    search_category,
     season,
     episode,
 ):
@@ -257,10 +269,10 @@ def _search_single_page(
 
                 title = re.sub(r"\s+", " ", title)
                 title = unescape(title)
-                title_normalized = normalize_title_for_sonarr(title)
+                title_normalized = normalize_title_for_arr(title)
 
                 # Filter: Skip if no resolution or codec info (unless LazyLibrarian)
-                if "lazylibrarian" not in request_from.lower():
+                if search_category != SEARCH_CAT_BOOKS:
                     if not (
                         RESOLUTION_REGEX.search(title_normalized)
                         or CODEC_REGEX.search(title_normalized)
@@ -278,8 +290,8 @@ def _search_single_page(
                 if thread_url.startswith("/"):
                     thread_url = f"https://www.{host}{thread_url}"
 
-                if not shared_state.is_valid_release(
-                    title_normalized, request_from, search_string, season, episode
+                if not is_valid_release(
+                    title_normalized, search_category, search_string, season, episode
                 ):
                     continue
 
@@ -291,12 +303,15 @@ def _search_single_page(
                 mb = 0
                 password = ""
 
-                payload = urlsafe_b64encode(
-                    f"{title_normalized}|{thread_url}|{mirror}|{mb}|{password}|{imdb_id or ''}|{hostname}".encode(
-                        "utf-8"
-                    )
-                ).decode("utf-8")
-                link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
+                link = generate_download_link(
+                    shared_state,
+                    title_normalized,
+                    thread_url,
+                    mb,
+                    password,
+                    imdb_id or "",
+                    hostname,
+                )
 
                 page_releases.append(
                     {
@@ -305,7 +320,6 @@ def _search_single_page(
                             "hostname": hostname,
                             "imdb_id": imdb_id,
                             "link": link,
-                            "mirror": mirror,
                             "size": mb * 1024 * 1024,
                             "date": published,
                             "source": thread_url,
@@ -330,9 +344,8 @@ def _search_single_page(
 def dl_search(
     shared_state,
     start_time,
-    request_from,
+    search_category,
     search_string,
-    mirror=None,
     season=None,
     episode=None,
 ):
@@ -343,7 +356,7 @@ def dl_search(
     releases = []
     host = shared_state.values["config"]("Hostnames").get(hostname)
 
-    imdb_id = shared_state.is_imdb_id(search_string)
+    imdb_id = is_imdb_id(search_string)
     if imdb_id:
         title = get_localized_title(shared_state, imdb_id, "de")
         if not title:
@@ -383,8 +396,7 @@ def dl_search(
                 search_id,
                 page_num,
                 imdb_id,
-                mirror,
-                request_from,
+                search_category,
                 season,
                 episode,
             )
@@ -420,7 +432,9 @@ def dl_search(
         )
         invalidate_session(shared_state)
 
-    trace(f"FINAL - Found {len(releases)} valid releases - providing to {request_from}")
+    trace(
+        f"FINAL - Found {len(releases)} valid releases - providing to {search_category}"
+    )
 
     elapsed = time.time() - start_time
     debug(f"Time taken: {elapsed:.2f}s")

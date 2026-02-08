@@ -4,16 +4,22 @@
 
 import re
 import time
-from base64 import urlsafe_b64encode
 
 import requests
 from bs4 import BeautifulSoup
 
+from quasarr.constants import SEARCH_CAT_BOOKS, SEARCH_CAT_MOVIES
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.log import debug, info, trace, warn
+from quasarr.providers.utils import (
+    convert_to_mb,
+    generate_download_link,
+    is_imdb_id,
+    is_valid_release,
+    sanitize_title,
+)
 
 hostname = "fx"
-supported_mirrors = ["rapidgator"]
 
 
 def extract_size(text):
@@ -26,23 +32,20 @@ def extract_size(text):
         raise ValueError(f"Invalid size format: {text}")
 
 
-def fx_feed(shared_state, start_time, request_from, mirror=None):
+def fx_feed(shared_state, start_time, search_category):
     releases = []
 
     fx = shared_state.values["config"]("Hostnames").get(hostname.lower())
 
-    if not "arr" in request_from.lower():
+    if search_category == SEARCH_CAT_BOOKS:
         debug(
-            f'<d>Skipping {request_from} search on "{hostname.upper()}" (unsupported media type)!</d>'
+            f"<d>Skipping <y>{search_category}</y> on <g>{hostname.upper()}</g> (category not supported)!</d>"
         )
         return releases
-
-    if mirror and mirror not in supported_mirrors:
-        debug(
-            f'Mirror "{mirror}" not supported by "{hostname.upper()}". Supported mirrors: {supported_mirrors}.'
-            " Skipping search!"
-        )
-        return releases
+    elif search_category == SEARCH_CAT_MOVIES:
+        pass
+    else:
+        pass
 
     password = fx.split(".")[0]
     url = f"https://{fx}/"
@@ -76,7 +79,7 @@ def fx_feed(shared_state, start_time, request_from, mirror=None):
                 i = 0
                 for title in titles:
                     link = title["href"]
-                    title = shared_state.sanitize_title(title.text)
+                    title = sanitize_title(title.text)
 
                     try:
                         imdb_link = article.find("a", href=re.compile(r"imdb\.com"))
@@ -94,14 +97,18 @@ def fx_feed(shared_state, start_time, request_from, mirror=None):
                             .strip()
                         )
                         size_item = extract_size(size_info)
-                        mb = shared_state.convert_to_mb(size_item)
+                        mb = convert_to_mb(size_item)
                         size = mb * 1024 * 1024
-                        payload = urlsafe_b64encode(
-                            f"{title}|{link}|{mirror}|{mb}|{password}|{imdb_id}|{hostname}".encode(
-                                "utf-8"
-                            )
-                        ).decode("utf-8")
-                        link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
+
+                        link = generate_download_link(
+                            shared_state,
+                            title,
+                            link,
+                            mb,
+                            password,
+                            imdb_id,
+                            hostname,
+                        )
                     except:
                         continue
 
@@ -119,7 +126,6 @@ def fx_feed(shared_state, start_time, request_from, mirror=None):
                                 "hostname": hostname.lower(),
                                 "imdb_id": imdb_id,
                                 "link": link,
-                                "mirror": mirror,
                                 "size": size,
                                 "date": published,
                                 "source": source,
@@ -145,9 +151,8 @@ def fx_feed(shared_state, start_time, request_from, mirror=None):
 def fx_search(
     shared_state,
     start_time,
-    request_from,
+    search_category,
     search_string,
-    mirror=None,
     season=None,
     episode=None,
 ):
@@ -155,21 +160,18 @@ def fx_search(
     fx = shared_state.values["config"]("Hostnames").get(hostname.lower())
     password = fx.split(".")[0]
 
-    if not "arr" in request_from.lower():
+    if search_category == SEARCH_CAT_BOOKS:
         debug(
-            f'<d>Skipping {request_from} search on "{hostname.upper()}" (unsupported media type)!</d>'
+            f"<d>Skipping <y>{search_category}</y> on <g>{hostname.upper()}</g> (category not supported)!</d>"
         )
         return releases
-
-    if mirror and mirror not in supported_mirrors:
-        debug(
-            f'Mirror "{mirror}" not supported by "{hostname.upper()}". Supported mirrors: {supported_mirrors}.'
-            " Skipping search!"
-        )
-        return releases
+    elif search_category == SEARCH_CAT_MOVIES:
+        pass
+    else:
+        pass
 
     if search_string != "":
-        imdb_id = shared_state.is_imdb_id(search_string)
+        imdb_id = is_imdb_id(search_string)
     else:
         imdb_id = None
 
@@ -216,10 +218,10 @@ def fx_search(
                     i = 0
                     for title in titles:
                         link = title["href"]
-                        title = shared_state.sanitize_title(title.text)
+                        title = sanitize_title(title.text)
 
-                        if not shared_state.is_valid_release(
-                            title, request_from, search_string, season, episode
+                        if not is_valid_release(
+                            title, search_category, search_string, season, episode
                         ):
                             continue
 
@@ -248,14 +250,18 @@ def fx_search(
                                 .strip()
                             )
                             size_item = extract_size(size_info)
-                            mb = shared_state.convert_to_mb(size_item)
+                            mb = convert_to_mb(size_item)
                             size = mb * 1024 * 1024
-                            payload = urlsafe_b64encode(
-                                f"{title}|{link}|{mirror}|{mb}|{password}|{imdb_id}|{hostname}".encode(
-                                    "utf-8"
-                                )
-                            ).decode("utf-8")
-                            link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
+
+                            link = generate_download_link(
+                                shared_state,
+                                title,
+                                link,
+                                mb,
+                                password,
+                                imdb_id,
+                                hostname,
+                            )
                         except:
                             continue
 
@@ -273,7 +279,6 @@ def fx_search(
                                     "hostname": hostname.lower(),
                                     "imdb_id": imdb_id,
                                     "link": link,
-                                    "mirror": mirror,
                                     "size": size,
                                     "date": published,
                                     "source": result_source,

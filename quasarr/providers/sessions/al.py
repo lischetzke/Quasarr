@@ -12,6 +12,7 @@ import requests
 from bs4 import BeautifulSoup
 from requests.exceptions import RequestException, Timeout
 
+from quasarr.constants import SESSION_MAX_AGE_SECONDS
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.log import debug, info
 from quasarr.providers.utils import is_flaresolverr_available, is_site_usable
@@ -30,8 +31,6 @@ class FlareSolverrNotAvailableError(Exception):
 
 
 hostname = "al"
-
-SESSION_MAX_AGE_SECONDS = 24 * 60 * 60  # 24 hours
 
 
 def create_and_persist_session(shared_state):

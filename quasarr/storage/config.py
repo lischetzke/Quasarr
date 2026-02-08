@@ -11,6 +11,7 @@ from Cryptodome.Cipher import AES
 from Cryptodome.Random import get_random_bytes
 from Cryptodome.Util.Padding import pad
 
+from quasarr.constants import HOSTNAMES
 from quasarr.providers import shared_state
 from quasarr.storage.sqlite_database import DataBase
 
@@ -28,26 +29,7 @@ class Config(object):
         "Settings": [
             ("hostnames_url", "secret", ""),
         ],
-        "Hostnames": [
-            ("al", "secret", ""),
-            ("by", "secret", ""),
-            ("dd", "secret", ""),
-            ("dj", "secret", ""),
-            ("dl", "secret", ""),
-            ("dt", "secret", ""),
-            ("dw", "secret", ""),
-            ("fx", "secret", ""),
-            ("he", "secret", ""),
-            ("hs", "secret", ""),
-            ("mb", "secret", ""),
-            ("nk", "secret", ""),
-            ("nx", "secret", ""),
-            ("sf", "secret", ""),
-            ("sj", "secret", ""),
-            ("sl", "secret", ""),
-            ("wd", "secret", ""),
-            ("wx", "secret", ""),
-        ],
+        "Hostnames": [(hostname, "secret", "") for hostname in HOSTNAMES],
         "FlareSolverr": [
             ("url", "str", ""),
         ],
@@ -55,6 +37,7 @@ class Config(object):
         "DD": [("user", "secret", ""), ("password", "secret", "")],
         "DL": [("user", "secret", ""), ("password", "secret", "")],
         "NX": [("user", "secret", ""), ("password", "secret", "")],
+        "JUNKIES": [("user", "secret", ""), ("password", "secret", "")],
     }
     __config__ = []
 

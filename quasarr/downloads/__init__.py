@@ -3,71 +3,43 @@
 # Project by https://github.com/rix1337
 
 import hashlib
+import importlib
 import json
-import re
 
+from quasarr.constants import (
+    AUTO_DECRYPT_PATTERNS,
+    HOSTNAMES_WITH_CUSTOM_DOWNLOAD_HANDLER,
+    PROTECTED_PATTERNS,
+)
 from quasarr.downloads.linkcrypters.hide import decrypt_links_if_hide
 from quasarr.downloads.packages import get_packages
-from quasarr.downloads.sources.al import get_al_download_links
-from quasarr.downloads.sources.by import get_by_download_links
-from quasarr.downloads.sources.dd import get_dd_download_links
-from quasarr.downloads.sources.dj import get_dj_download_links
-from quasarr.downloads.sources.dl import get_dl_download_links
-from quasarr.downloads.sources.dt import get_dt_download_links
-from quasarr.downloads.sources.dw import get_dw_download_links
-from quasarr.downloads.sources.he import get_he_download_links
-from quasarr.downloads.sources.hs import get_hs_download_links
-from quasarr.downloads.sources.mb import get_mb_download_links
-from quasarr.downloads.sources.nk import get_nk_download_links
-from quasarr.downloads.sources.nx import get_nx_download_links
-from quasarr.downloads.sources.sf import get_sf_download_links
-from quasarr.downloads.sources.sj import get_sj_download_links
-from quasarr.downloads.sources.sl import get_sl_download_links
-from quasarr.downloads.sources.wd import get_wd_download_links
-from quasarr.downloads.sources.wx import get_wx_download_links
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.log import info, warn
 from quasarr.providers.notifications import send_discord_message
 from quasarr.providers.statistics import StatsHelper
-from quasarr.providers.utils import filter_offline_links
+from quasarr.providers.utils import (
+    download_package,
+    extract_client_type,
+    filter_offline_links,
+)
+from quasarr.storage.categories import (
+    download_category_exists,
+    get_download_category_mirrors,
+)
 
-# =============================================================================
-# CRYPTER CONFIGURATION
-# =============================================================================
+# All getters have signature: (shared_state, url, mirrors, title, password)
+_SOURCE_GETTERS = {}
 
-# Patterns match crypter name only - TLDs may change
-AUTO_DECRYPT_PATTERNS = {
-    "hide": re.compile(r"hide\.", re.IGNORECASE),
-}
-
-PROTECTED_PATTERNS = {
-    "filecrypt": re.compile(r"filecrypt\.", re.IGNORECASE),
-    "tolink": re.compile(r"tolink\.", re.IGNORECASE),
-    "keeplinks": re.compile(r"keeplinks\.", re.IGNORECASE),
-}
-
-# Source key -> getter function mapping
-# All getters have signature: (shared_state, url, mirror, title, password)
-# AL uses password as release_id, others ignore it
-SOURCE_GETTERS = {
-    "al": get_al_download_links,
-    "by": get_by_download_links,
-    "dd": get_dd_download_links,
-    "dj": get_dj_download_links,
-    "dl": get_dl_download_links,
-    "dt": get_dt_download_links,
-    "dw": get_dw_download_links,
-    "he": get_he_download_links,
-    "hs": get_hs_download_links,
-    "mb": get_mb_download_links,
-    "nk": get_nk_download_links,
-    "nx": get_nx_download_links,
-    "sf": get_sf_download_links,
-    "sj": get_sj_download_links,
-    "sl": get_sl_download_links,
-    "wd": get_wd_download_links,
-    "wx": get_wx_download_links,
-}
+for source in HOSTNAMES_WITH_CUSTOM_DOWNLOAD_HANDLER:
+    try:
+        module = importlib.import_module(f"quasarr.downloads.sources.{source}")
+        getter_func = getattr(module, f"get_{source}_download_links", None)
+        if getter_func:
+            _SOURCE_GETTERS[source] = getter_func
+    except ImportError:
+        warn(f"Could not import download source: {source}")
+    except Exception as e:
+        warn(f"Error loading download source {source}: {e}")
 
 
 # =============================================================================
@@ -75,33 +47,7 @@ SOURCE_GETTERS = {
 # =============================================================================
 
 
-def extract_client_type(request_from):
-    """
-    Extract client type from User-Agent, stripping version info.
-
-    Examples:
-        "Radarr/6.0.4.10291 (alpine 3.23.2)" → "radarr"
-        "Sonarr/4.0.0.123" → "sonarr"
-        "LazyLibrarian/1.0" → "lazylibrarian"
-    """
-    if not request_from:
-        return "unknown"
-
-    # Extract the client name before the version (first part before '/')
-    client = request_from.split("/")[0].lower().strip()
-
-    # Normalize known clients
-    if "radarr" in client:
-        return "radarr"
-    elif "sonarr" in client:
-        return "sonarr"
-    elif "lazylibrarian" in client:
-        return "lazylibrarian"
-
-    return client
-
-
-def generate_deterministic_package_id(title, source_key, client_type):
+def generate_deterministic_package_id(title, source_key, client_type, category):
     """
     Generate a deterministic package ID from title, source, and client type.
 
@@ -112,6 +58,7 @@ def generate_deterministic_package_id(title, source_key, client_type):
         title: Release title (e.g., "Movie.Name.2024.1080p.BluRay")
         source_key: Source identifier/hostname shorthand (e.g., "nx", "dl", "al")
         client_type: Client type without version (e.g., "radarr", "sonarr", "lazylibrarian")
+        category: Optional category override (e.g., "movies", "tv", "docs")
 
     Returns:
         Deterministic package ID in format: Quasarr_{category}_{hash32}
@@ -121,16 +68,20 @@ def generate_deterministic_package_id(title, source_key, client_type):
     normalized_source = source_key.lower().strip() if source_key else "unknown"
     normalized_client = client_type.lower().strip() if client_type else "unknown"
 
-    # Category mapping (for compatibility with existing package ID format)
-    category_map = {"lazylibrarian": "docs", "radarr": "movies", "sonarr": "tv"}
-    category = category_map.get(normalized_client, "tv")
+    # Determine category
+    if category and download_category_exists(category):
+        final_category = category
+    else:
+        # Fallback to client type mapping
+        category_map = {"lazylibrarian": "docs", "radarr": "movies", "sonarr": "tv"}
+        final_category = category_map.get(normalized_client, "tv")
 
     # Create deterministic hash from combination using SHA256
     hash_input = f"{normalized_title}|{normalized_source}|{normalized_client}"
     hash_bytes = hashlib.sha256(hash_input.encode("utf-8")).hexdigest()
 
     # Use first 32 characters for good collision resistance (128-bit)
-    return f"Quasarr_{category}_{hash_bytes[:32]}"
+    return f"Quasarr_{final_category}_{hash_bytes[:32]}"
 
 
 # =============================================================================
@@ -194,7 +145,7 @@ def handle_direct_links(shared_state, links, title, password, package_id):
     urls = [link[0] for link in links]
     info(f"Sending {len(urls)} direct download links for {title}")
 
-    if shared_state.download_package(urls, title, password, package_id):
+    if download_package(urls, title, password, package_id, shared_state):
         StatsHelper(shared_state).increment_package_with_links(urls)
         return {"success": True}
     return {
@@ -216,7 +167,7 @@ def handle_auto_decrypt_links(shared_state, links, title, password, package_id):
 
     info(f"Decrypted <g>{len(decrypted_urls)}</g> download links for {title}")
 
-    if shared_state.download_package(decrypted_urls, title, password, package_id):
+    if download_package(decrypted_urls, title, password, package_id, shared_state):
         StatsHelper(shared_state).increment_package_with_links(decrypted_urls)
         return {"success": True}
     return {"success": False, "reason": "Failed to add decrypted links to linkgrabber"}
@@ -396,13 +347,13 @@ def package_id_exists(shared_state, package_id):
 def download(
     shared_state,
     request_from,
+    category,
     title,
     url,
-    mirror,
     size_mb,
     password,
-    imdb_id=None,
-    source_key=None,
+    imdb_id,
+    source_key,
 ):
     """
     Main download entry point.
@@ -410,9 +361,9 @@ def download(
     Args:
         shared_state: Application shared state
         request_from: User-Agent string (e.g., "Radarr/6.0.4.10291")
+        category: Category (e.g., "movies", "tv", "docs")
         title: Release title
         url: Source URL
-        mirror: Preferred mirror/hoster
         size_mb: Size in MB
         password: Archive password
         imdb_id: IMDb ID (optional)
@@ -432,11 +383,14 @@ def download(
     label = None
     detected_source_key = None
 
-    for key, getter in SOURCE_GETTERS.items():
+    mirrors = get_download_category_mirrors(category, lowercase=True)
+
+    for key, getter in _SOURCE_GETTERS.items():
         hostname = config.get(key)
         if hostname and hostname.lower() in url.lower():
             try:
-                source_result = getter(shared_state, url, mirror, title, password)
+                # Mirror is None as it is now handled by category settings
+                source_result = getter(shared_state, url, mirrors, title, password)
                 if source_result and source_result.get("links"):
                     clear_hostname_issue(key)
             except Exception as e:
@@ -461,7 +415,9 @@ def download(
     final_source_key = source_key if source_key else detected_source_key
 
     # Generate DETERMINISTIC package_id
-    package_id = generate_deterministic_package_id(title, final_source_key, client_type)
+    package_id = generate_deterministic_package_id(
+        title, final_source_key, client_type, category
+    )
 
     # Skip Download if package_id already exists
     if package_id_exists(shared_state, package_id):

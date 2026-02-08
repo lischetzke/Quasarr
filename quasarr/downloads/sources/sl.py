@@ -24,7 +24,7 @@ def derive_mirror_from_host(host):
     return host.split(".")[0] if host else "unknown"
 
 
-def get_sl_download_links(shared_state, url, mirror, title, password):
+def get_sl_download_links(shared_state, url, mirrors, title, password):
     """
     KEEP THE SIGNATURE EVEN IF SOME PARAMETERS ARE UNUSED!
 
@@ -89,9 +89,11 @@ def get_sl_download_links(shared_state, url, mirror, title, password):
         if not any(host.startswith(m + ".") for m in supported_mirrors):
             continue
 
-        if not mirror or mirror in href:
-            mirror_name = derive_mirror_from_host(host)
-            filtered.append([href, mirror_name])
+        if mirrors and not any(m in href for m in mirrors):
+            continue
+
+        mirror_name = derive_mirror_from_host(host)
+        filtered.append([href, mirror_name])
 
     # regex fallback if still empty
     if not filtered:
@@ -108,9 +110,11 @@ def get_sl_download_links(shared_state, url, mirror, title, password):
             if not any(host.startswith(m + ".") for m in supported_mirrors):
                 continue
 
-            if not mirror or mirror in u:
-                mirror_name = derive_mirror_from_host(host)
-                filtered.append([u, mirror_name])
+            if mirrors and not any(m in u for m in mirrors):
+                continue
+
+            mirror_name = derive_mirror_from_host(host)
+            filtered.append([u, mirror_name])
 
     if filtered:
         clear_hostname_issue(hostname)

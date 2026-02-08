@@ -4,40 +4,44 @@
 
 import html
 import time
-from base64 import urlsafe_b64encode
 
 import requests
 
+from quasarr.constants import (
+    SEARCH_CAT_BOOKS,
+    SEARCH_CAT_MOVIES,
+    SEARCH_CAT_SHOWS,
+)
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.imdb_metadata import get_localized_title, get_year
 from quasarr.providers.log import debug, info, trace, warn
+from quasarr.providers.utils import (
+    convert_to_mb,
+    generate_download_link,
+    is_imdb_id,
+    is_valid_release,
+    normalize_magazine_title,
+)
 
 hostname = "nx"
-supported_mirrors = ["filer"]
 
 
-def nx_feed(shared_state, start_time, request_from, mirror=None):
+def nx_feed(shared_state, start_time, search_category):
     releases = []
     nx = shared_state.values["config"]("Hostnames").get(hostname.lower())
     password = nx
 
-    if "lazylibrarian" in request_from.lower():
-        category = "ebook"
-    elif "radarr" in request_from.lower():
-        category = "movie"
+    if search_category == SEARCH_CAT_BOOKS:
+        stype = "ebook"
+    elif search_category == SEARCH_CAT_MOVIES:
+        stype = "movie"
+    elif search_category == SEARCH_CAT_SHOWS:
+        stype = "episode"
     else:
-        category = "episode"
-
-    if mirror and mirror not in supported_mirrors:
-        debug(
-            f'Mirror "{mirror}" not supported by "{hostname.upper()}". Supported mirrors: {supported_mirrors}. '
-            "Skipping search!"
-        )
+        warn(f"Unknown search category: {search_category}")
         return releases
 
-    url = (
-        f"https://{nx}/api/frontend/releases/category/{category}/tag/all/1/51?sort=date"
-    )
+    url = f"https://{nx}/api/frontend/releases/category/{stype}/tag/all/1/51?sort=date"
     headers = {
         "User-Agent": shared_state.values["user_agent"],
     }
@@ -60,19 +64,23 @@ def nx_feed(shared_state, start_time, request_from, mirror=None):
 
             if title:
                 try:
-                    if "lazylibrarian" in request_from.lower():
+                    if search_category == SEARCH_CAT_BOOKS:
                         # lazylibrarian can only detect specific date formats / issue numbering for magazines
-                        title = shared_state.normalize_magazine_title(title)
+                        title = normalize_magazine_title(title)
 
                     source = f"https://{nx}/release/{item['slug']}"
                     imdb_id = item.get("_media", {}).get("imdbid", None)
-                    mb = shared_state.convert_to_mb(item)
-                    payload = urlsafe_b64encode(
-                        f"{title}|{source}|{mirror}|{mb}|{password}|{imdb_id}|{hostname}".encode(
-                            "utf-8"
-                        )
-                    ).decode("utf-8")
-                    link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
+                    mb = convert_to_mb(item)
+
+                    link = generate_download_link(
+                        shared_state,
+                        title,
+                        source,
+                        mb,
+                        password,
+                        imdb_id,
+                        hostname,
+                    )
                 except:
                     continue
 
@@ -93,7 +101,6 @@ def nx_feed(shared_state, start_time, request_from, mirror=None):
                             "hostname": hostname.lower(),
                             "imdb_id": imdb_id,
                             "link": link,
-                            "mirror": mirror,
                             "size": size,
                             "date": published,
                             "source": source,
@@ -119,31 +126,30 @@ def nx_feed(shared_state, start_time, request_from, mirror=None):
 def nx_search(
     shared_state,
     start_time,
-    request_from,
+    search_category,
     search_string,
-    mirror=None,
     season=None,
     episode=None,
 ):
+    """
+    Search using internal API.
+    Deduplicates results by fulltitle - each unique release appears only once.
+    """
     releases = []
     nx = shared_state.values["config"]("Hostnames").get(hostname.lower())
     password = nx
 
-    if "lazylibrarian" in request_from.lower():
+    if search_category == SEARCH_CAT_BOOKS:
         valid_type = "ebook"
-    elif "radarr" in request_from.lower():
+    elif search_category == SEARCH_CAT_MOVIES:
         valid_type = "movie"
-    else:
+    elif search_category == SEARCH_CAT_SHOWS:
         valid_type = "episode"
-
-    if mirror and mirror not in supported_mirrors:
-        debug(
-            f'Mirror "{mirror}" not supported by "{hostname.upper()}". Supported mirrors: {supported_mirrors}. '
-            "Skipping search!"
-        )
+    else:
+        warn(f"Unknown search category: {search_category}")
         return releases
 
-    imdb_id = shared_state.is_imdb_id(search_string)
+    imdb_id = is_imdb_id(search_string)
     if imdb_id:
         search_string = get_localized_title(shared_state, imdb_id, "de")
         if not search_string:
@@ -176,14 +182,14 @@ def nx_search(
             if item["type"] == valid_type:
                 title = item["name"]
                 if title:
-                    if not shared_state.is_valid_release(
-                        title, request_from, search_string, season, episode
+                    if not is_valid_release(
+                        title, search_category, search_string, season, episode
                     ):
                         continue
 
-                    if "lazylibrarian" in request_from.lower():
+                    if search_category == SEARCH_CAT_BOOKS:
                         # lazylibrarian can only detect specific date formats / issue numbering for magazines
-                        title = shared_state.normalize_magazine_title(title)
+                        title = normalize_magazine_title(title)
 
                     try:
                         source = f"https://{nx}/release/{item['slug']}"
@@ -197,13 +203,17 @@ def nx_search(
                         if release_imdb_id is None:
                             release_imdb_id = imdb_id
 
-                        mb = shared_state.convert_to_mb(item)
-                        payload = urlsafe_b64encode(
-                            f"{title}|{source}|{mirror}|{mb}|{password}|{release_imdb_id}".encode(
-                                "utf-8"
-                            )
-                        ).decode("utf-8")
-                        link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
+                        mb = convert_to_mb(item)
+
+                        link = generate_download_link(
+                            shared_state,
+                            title,
+                            source,
+                            mb,
+                            password,
+                            release_imdb_id,
+                            hostname,
+                        )
                     except:
                         continue
 
@@ -224,7 +234,6 @@ def nx_search(
                                 "hostname": hostname.lower(),
                                 "imdb_id": release_imdb_id,
                                 "link": link,
-                                "mirror": mirror,
                                 "size": size,
                                 "date": published,
                                 "source": source,

@@ -28,21 +28,6 @@ installed in your browser.
 
 ---
 
-## FlareSolverr (Optional)
-
-FlareSolverr is **optional** but **required for some sites** (e.g., AL) that use Cloudflare protection. You can skip
-FlareSolverr during setup and configure it later via the web UI.
-
-If using FlareSolverr, provide your URL including the version path:
-
-```
-http://192.168.1.1:8191/v1
-```
-
-> **Note:** Sites requiring FlareSolverr will show a warning in the console when it's not configured.
-
----
-
 ## Quasarr
 
 > ⚠️ Quasarr requires at least one valid hostname to start. It does not provide or endorse any specific sources, but
@@ -80,6 +65,23 @@ Radarr/Sonarr/LazyLibrarian integration.
 
 ---
 
+## Categories & Mirrors
+
+You can manage categories in the Quasarr Web UI.
+
+* **Setup:** Add or edit categories to organize your downloads.
+* **Download Mirror Whitelist:**
+    * Inside a category, you can whitelist specific mirrors.
+    * This does not affect search results.
+    * If specific mirrors are set, downloads will fail unless the release contains them.
+* **Search Hostname Whitelist:**
+    * Inside a category, you can whitelist specific hostnames.
+    * This affects search results.
+    * If specific hostnames are set, only these will be searched by the given category.
+* **Emoji:** Will be used in the Packages view on the Quasarr Web UI.
+
+---
+
 ## Radarr / Sonarr
 
 > ⚠️ **Sonarr users:** Set all shows (including anime) to the **Standard** series type. Quasarr cannot find releases for
@@ -88,6 +90,8 @@ Radarr/Sonarr/LazyLibrarian integration.
 
 Add Quasarr as both a **Newznab Indexer** and **SABnzbd Download Client** using your Quasarr URL and API Key.
 
+Be sure to set a category in the **SABnzbd Download client** (default: `movies` for Radarr and `tv` for Sonarr).
+
 <details>
 <summary>Show download status in Radarr/Sonarr</summary>
 
@@ -95,19 +99,26 @@ Add Quasarr as both a **Newznab Indexer** and **SABnzbd Download Client** using 
 
 </details>
 
+---
+
+## Prowlarr
+
+Add Quasarr as a **Generic Newznab Indexer**.
+
+* **Url:** Your Quasarr URL
+* **ApiKey:** Your Quasarr API Key
+
 <details>
-<summary>Restrict results to a specific mirror</summary>
+<summary>Allowed search parameters and categories</summary>
 
-1. In the Newznab Settings for Quasarr, enable advanced settings.
-2. Append the desired mirror name to the `API Path` field.
+#### Movies / TV:
 
-```
-/api/dropbox/
-```
+* Use IMDb ID, Syntax: `{ImdbId:tt0133093}` and pick category `2000` (Movies) or `5000` (TV)
+* Simple text search is **not** supported.
 
-Using the `URL` field will not work!
+#### Books/Magazines:
 
-Only releases with `dropbox` in a link will be returned. If the mirror isn't available, the release will fail.
+* Use simple text search and pick category`7000` (Books/Magazines).
 
 </details>
 
@@ -163,27 +174,23 @@ docker run -d \
   -e 'INTERNAL_ADDRESS'='http://192.168.0.1:8080' \
   -e 'EXTERNAL_ADDRESS'='https://foo.bar/' \
   -e 'DISCORD'='https://discord.com/api/webhooks/1234567890/ABCDEFGHIJKLMN' \
-  -e 'HOSTNAMES'='https://quasarr-host.name/ini?token=123...' \
   -e 'USER'='admin' \
   -e 'PASS'='change-me' \
   -e 'AUTH'='form' \
   -e 'SILENT'='True' \
-  -e 'DEBUG'='' \
   -e 'TZ'='Europe/Berlin' \
   ghcr.io/rix1337/quasarr:latest
   ```
 
-| Parameter          | Description                                                                                                                                                                                                                                 |
-|--------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `INTERNAL_ADDRESS` | **Required.** Internal URL so Radarr/Sonarr/LazyLibrarian can reach Quasarr. **Must include port.**                                                                                                                                         |
-| `EXTERNAL_ADDRESS` | Optional. External URL (e.g. reverse proxy). Always protect external access with authentication.                                                                                                                                            |
-| `DISCORD`          | Optional. Discord webhook URL for notifications.                                                                                                                                                                                            |
-| `HOSTNAMES`        | Optional. URL to a hostname list to skip manual setup. Must be a publicly accessible `HTTP`/`HTTPS` link, point to a raw `.ini` or plain text file (not HTML or JSON), and contain at least one hostname per line in the format `ab = xyz`. |
-| `USER` / `PASS`    | Optional, but recommended! Username / Password to protect the web UI.                                                                                                                                                                       |
-| `AUTH`             | Authentication mode. Supported values: `form` or `basic`.                                                                                                                                                                                   |
-| `SILENT`           | Optional. If `True`, silences all Discord notifications except SponsorHelper error messages.                                                                                                                                                |
-| `DEBUG`            | Optional. If `True`, enables debug logging.                                                                                                                                                                                                 |
-| `TZ`               | Optional. Timezone. Incorrect values may cause HTTPS/SSL issues.                                                                                                                                                                            |
+| Parameter          | Description                                                                                         |
+|--------------------|-----------------------------------------------------------------------------------------------------|
+| `INTERNAL_ADDRESS` | **Required.** Internal URL so Radarr/Sonarr/LazyLibrarian can reach Quasarr. **Must include port.** |
+| `EXTERNAL_ADDRESS` | Optional. External URL (e.g. reverse proxy). Always protect external access with authentication.    |
+| `DISCORD`          | Optional. Discord webhook URL for notifications.                                                    |
+| `USER` / `PASS`    | Optional, but recommended! Username / Password to protect the web UI.                               |
+| `AUTH`             | Authentication mode. Supported values: `form` or `basic`.                                           |
+| `SILENT`           | Optional. If `True`, silences all Discord notifications except SponsorHelper error messages.        ||
+| `TZ`               | Optional. Timezone. Incorrect values may cause HTTPS/SSL issues.                                    |
 
 # Manual setup
 
@@ -194,16 +201,14 @@ docker run -d \
 `uv tool install quasarr`
 
 ```
+export INTERNAL_ADDRESS=http://192.168.0.1:8080
+export EXTERNAL_ADDRESS=https://foo.bar/
+export DISCORD=https://discord.com/api/webhooks/1234567890/ABCDEFGHIJKLMN
 quasarr
-  --port=8080
-  --discord=https://discord.com/api/webhooks/1234567890/ABCDEFGHIJKLMN
-  --external_address=https://foo.bar/
-  --hostnames=https://quasarr-host.name/ini?token=123...
   ```
 
-* `--discord` see `DISCORD`docker variable
-* `--external_address` see `EXTERNAL_ADDRESS`docker variable
-* `--hostnames` see `HOSTNAMES`docker variable
+* `DISCORD` see `DISCORD`docker variable
+* `EXTERNAL_ADDRESS` see `EXTERNAL_ADDRESS`docker variable
 
 # Philosophy
 
@@ -264,7 +269,7 @@ Image access is limited to [active monthly GitHub sponsors](https://github.com/u
 3. Copy the **API Key** value
 4. Use this value for the `QUASARR_API_KEY` environment variable
 
-> **Note:** The API Key is required for SponsorsHelper to communicate securely with Quasarr. Without it, all requests
+> **Note:** The API key is required for SponsorsHelper to communicate securely with Quasarr. Without it, all requests
 > will be rejected with a 401/403 error.
 
 ---
@@ -292,21 +297,18 @@ docker run -d \
   -e 'DEATHBYCAPTCHA_TOKEN'='2FMum5zuDBxMmbXDIsADnllEFl73bomydIpzo7...' \
   -e 'GITHUB_TOKEN'='ghp_123.....456789' \
   -e 'FLARESOLVERR_URL'='http://10.10.0.1:8191/v1' \
-  -e 'NX_USER'='your_nx_username' \
-  -e 'NX_PASS'='your_nx_password' \
-  -e 'JUNKIES_USER'='your_junkies_username' \
-  -e 'JUNKIES_PASS'='your_junkies_password' \
-  -e 'JUNKIES_HOSTER'='your_desired_hoster' \
   ghcr.io/rix1337-sponsors/docker/helper:latest
 ```
 
-| Parameter                       | Description                                                                           |
-|---------------------------------|---------------------------------------------------------------------------------------|
-| `QUASARR_URL`                   | Local URL of Quasarr (e.g., `http://192.168.0.1:8080`)                                |
-| `QUASARR_API_KEY`               | Your Quasarr API Key (found in Quasarr web UI under "API Settings")                   |
-| `DEATHBYCAPTCHA_TOKEN`          | [DeathByCaptcha](https://deathbycaptcha.com/register?refid=6184288242b) account token |
-| `GITHUB_TOKEN`                  | Classic GitHub PAT with the scopes listed above                                       |
-| `FLARESOLVERR_URL`              | Local URL of [FlareSolverr](https://github.com/FlareSolverr/FlareSolverr)             |
-| `NX_USER` / `NX_PASS`           | Optional. NX account credentials                                                      |
-| `JUNKIES_USER` / `JUNKIES_PASS` | Optional. Junkies account credentials                                                 |
-| `JUNKIES_HOSTER`                | Optional. Preferred hoster for Junkies links                                          |
+| Parameter              | Description                                                                           |
+|------------------------|---------------------------------------------------------------------------------------|
+| `QUASARR_URL`          | Local URL of Quasarr (e.g., `http://192.168.0.1:8080`)                                |
+| `QUASARR_API_KEY`      | Your Quasarr API key (found in Quasarr web UI under "API Settings")                   |
+| `APIKEY_2CAPTCHA`      | [2Captcha](https://2captcha.com/?from=27506687) account API key                       |
+| `DEATHBYCAPTCHA_TOKEN` | [DeathByCaptcha](https://deathbycaptcha.com/register?refid=6184288242b) account token |
+| `GITHUB_TOKEN`         | Classic GitHub PAT with the scopes listed above                                       |
+| `FLARESOLVERR_URL`     | Local URL of [FlareSolverr](https://github.com/FlareSolverr/FlareSolverr)             |
+
+> - [2Captcha](https://2captcha.com/?from=27506687) is the recommended CAPTCHA solving service.
+> - [DeathByCaptcha](https://deathbycaptcha.com/register?refid=6184288242b) can serve as a fallback or work on its own.
+> - If you set both `APIKEY_2CAPTCHA` and `DEATHBYCAPTCHA_TOKEN` both services will be used alternately.

@@ -4,7 +4,6 @@
 
 import re
 import time
-from base64 import urlsafe_b64encode
 from datetime import datetime
 from html import unescape
 from urllib.parse import urljoin
@@ -12,12 +11,18 @@ from urllib.parse import urljoin
 import requests
 from bs4 import BeautifulSoup
 
+from quasarr.constants import SEARCH_CAT_BOOKS
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.imdb_metadata import get_localized_title, get_year
 from quasarr.providers.log import debug, info, trace
+from quasarr.providers.utils import (
+    convert_to_mb,
+    generate_download_link,
+    is_imdb_id,
+    is_valid_release,
+)
 
 hostname = "nk"
-supported_mirrors = ["rapidgator", "ddownload"]
 
 
 def convert_to_rss_date(date_str: str) -> str:
@@ -63,28 +68,23 @@ def nk_feed(*args, **kwargs):
 def nk_search(
     shared_state,
     start_time,
-    request_from,
+    search_category,
     search_string="",
-    mirror=None,
     season=None,
     episode=None,
 ):
     releases = []
     host = shared_state.values["config"]("Hostnames").get(hostname)
 
-    if not "arr" in request_from.lower():
+    if search_category == SEARCH_CAT_BOOKS:
         debug(
-            f'<d>Skipping {request_from} search on "{hostname.upper()}" (unsupported media type)!</d>'
+            f"<d>Skipping <y>{search_category}</y> on <g>{hostname.upper()}</g> (category not supported)!</d>"
         )
-        return releases
-
-    if mirror and mirror not in supported_mirrors:
-        debug(f'Mirror "{mirror}" not supported.')
         return releases
 
     source_search = ""
     if search_string != "":
-        imdb_id = shared_state.is_imdb_id(search_string)
+        imdb_id = is_imdb_id(search_string)
         if imdb_id:
             local_title = get_localized_title(shared_state, imdb_id, "de")
             if not local_title:
@@ -162,8 +162,8 @@ def nk_search(
             if release_imdb_id is None:
                 release_imdb_id = imdb_id
 
-            if not shared_state.is_valid_release(
-                title, request_from, search_string, season, episode
+            if not is_valid_release(
+                title, search_category, search_string, season, episode
             ):
                 continue
 
@@ -173,7 +173,7 @@ def nk_search(
             size_text = get_release_field(result, "Größe")
             if size_text:
                 size_item = extract_size(size_text)
-                mb = shared_state.convert_to_mb(size_item)
+                mb = convert_to_mb(size_item)
 
             if season != "" and episode == "":
                 mb = 0  # Size unknown for season packs
@@ -204,13 +204,14 @@ def nk_search(
 
             published = convert_to_rss_date(date_text) if date_text else ""
 
-            payload = urlsafe_b64encode(
-                f"{title}|{source}|{mirror}|{mb}|{password}|{release_imdb_id}|{hostname}".encode(
-                    "utf-8"
-                )
-            ).decode()
-            link = (
-                f"{shared_state.values['internal_address']}/download/?payload={payload}"
+            link = generate_download_link(
+                shared_state,
+                title,
+                source,
+                mb,
+                password,
+                release_imdb_id,
+                hostname,
             )
 
             releases.append(
@@ -220,7 +221,6 @@ def nk_search(
                         "hostname": hostname,
                         "imdb_id": release_imdb_id,
                         "link": link,
-                        "mirror": mirror,
                         "size": size,
                         "date": published,
                         "source": source,

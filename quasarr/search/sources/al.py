@@ -3,12 +3,16 @@
 # Project by https://github.com/rix1337
 
 import time
-from base64 import urlsafe_b64encode
 from html import unescape
 from urllib.parse import quote_plus, urljoin
 
 from bs4 import BeautifulSoup
 
+from quasarr.constants import (
+    SEARCH_CAT_BOOKS,
+    SEARCH_CAT_MOVIES,
+    SEARCH_CAT_SHOWS,
+)
 from quasarr.downloads.sources.al import (
     guess_title,
     parse_info_from_download_item,
@@ -16,11 +20,17 @@ from quasarr.downloads.sources.al import (
 )
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.imdb_metadata import get_localized_title, get_year
-from quasarr.providers.log import debug, error, info, trace
+from quasarr.providers.log import debug, error, info, trace, warn
 from quasarr.providers.sessions.al import fetch_via_requests_session, invalidate_session
+from quasarr.providers.utils import (
+    convert_to_mb,
+    generate_download_link,
+    get_recently_searched,
+    is_imdb_id,
+    sanitize_string,
+)
 
 hostname = "al"
-supported_mirrors = ["rapidgator", "ddownload"]
 
 
 import re
@@ -117,21 +127,21 @@ def get_release_id(tag):
     return 0
 
 
-def al_feed(shared_state, start_time, request_from, mirror=None):
+def al_feed(shared_state, start_time, search_category):
     releases = []
     host = shared_state.values["config"]("Hostnames").get(hostname)
 
-    if not "arr" in request_from.lower():
-        debug(f"<d>Skipping {request_from} search (unsupported media type)!</d>")
+    if search_category == SEARCH_CAT_BOOKS:
+        debug(
+            f"<d>Skipping <y>{search_category}</y> on <g>{hostname.upper()}</g> (category not supported)!</d>"
+        )
         return releases
-
-    if "Radarr" in request_from:
+    elif search_category == SEARCH_CAT_MOVIES:
         wanted_type = "movie"
-    else:
+    elif search_category == SEARCH_CAT_SHOWS:
         wanted_type = "series"
-
-    if mirror and mirror not in supported_mirrors:
-        debug(f'Mirror "{mirror}" not supported.')
+    else:
+        warn(f"Unknown search category: {search_category}")
         return releases
 
     try:
@@ -214,11 +224,15 @@ def al_feed(shared_state, start_time, request_from, mirror=None):
 
                 # Build payload using final_title
                 mb = 0  # size not available in feed
-                raw = f"{final_title}|{url}|{mirror}|{mb}|{release_id}||{hostname}".encode(
-                    "utf-8"
+                link = generate_download_link(
+                    shared_state,
+                    final_title,
+                    url,
+                    mb,
+                    release_id,
+                    None,
+                    hostname,
                 )
-                payload = urlsafe_b64encode(raw).decode("utf-8")
-                link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
 
                 # Append only unique releases
                 if final_title not in [r["details"]["title"] for r in releases]:
@@ -229,7 +243,6 @@ def al_feed(shared_state, start_time, request_from, mirror=None):
                                 "hostname": hostname,
                                 "imdb_id": None,
                                 "link": link,
-                                "mirror": mirror,
                                 "size": mb * 1024 * 1024,
                                 "date": date_converted,
                                 "source": url,
@@ -262,29 +275,28 @@ def extract_season(title: str) -> int | None:
 def al_search(
     shared_state,
     start_time,
-    request_from,
+    search_category,
     search_string,
-    mirror=None,
     season=None,
     episode=None,
 ):
     releases = []
     host = shared_state.values["config"]("Hostnames").get(hostname)
 
-    if not "arr" in request_from.lower():
-        debug(f"<d>Skipping {request_from} search (unsupported media type)!</d>")
+    if search_category == SEARCH_CAT_BOOKS:
+        debug(
+            f"<d>Skipping <y>{search_category}</y> on <g>{hostname.upper()}</g> (category not supported)!</d>"
+        )
         return releases
-
-    if "Radarr" in request_from:
+    elif search_category == SEARCH_CAT_MOVIES:
         valid_type = "movie"
-    else:
+    elif search_category == SEARCH_CAT_SHOWS:
         valid_type = "series"
-
-    if mirror and mirror not in supported_mirrors:
-        debug(f'Mirror "{mirror}" not supported.')
+    else:
+        warn(f"Unknown search category: {search_category}")
         return releases
 
-    imdb_id = shared_state.is_imdb_id(search_string)
+    imdb_id = is_imdb_id(search_string)
     if imdb_id:
         title = get_localized_title(shared_state, imdb_id, "de")
         if not title:
@@ -347,8 +359,8 @@ def al_search(
             url = title_tag["href"].strip()
             name = title_tag.get_text(strip=True)
 
-            sanitized_search_string = shared_state.sanitize_string(search_string)
-            sanitized_title = shared_state.sanitize_string(name)
+            sanitized_search_string = sanitize_string(search_string)
+            sanitized_title = sanitize_string(name)
             if not sanitized_search_string in sanitized_title:
                 debug(f"Search string '{search_string}' doesn't match '{name}'")
                 continue
@@ -376,9 +388,7 @@ def al_search(
 
             context = "recents_al"
             threshold = 60
-            recently_searched = shared_state.get_recently_searched(
-                shared_state, context, threshold
-            )
+            recently_searched = get_recently_searched(shared_state, context, threshold)
             entry = recently_searched.get(url, {})
             ts = entry.get("timestamp")
             use_cache = ts and ts > datetime.now() - timedelta(seconds=threshold)
@@ -436,7 +446,7 @@ def al_search(
                         size_string = candidates[-1][0]
                         try:
                             size_item = extract_size(size_string)
-                            mb = shared_state.convert_to_mb(size_item)
+                            mb = convert_to_mb(size_item)
                         except Exception as e:
                             debug(f"Error extracting size for {title}: {e}")
 
@@ -466,12 +476,15 @@ def al_search(
                     )
                     continue
 
-                payload = urlsafe_b64encode(
-                    f"{release_title}|{url}|{mirror}|{mb}|{release_id}|{imdb_id or ''}".encode(
-                        "utf-8"
-                    )
-                ).decode("utf-8")
-                link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
+                link = generate_download_link(
+                    shared_state,
+                    release_title,
+                    url,
+                    mb,
+                    release_id,
+                    imdb_id or "",
+                    hostname,
+                )
 
                 releases.append(
                     {
@@ -480,7 +493,6 @@ def al_search(
                             "hostname": hostname,
                             "imdb_id": imdb_id,
                             "link": link,
-                            "mirror": mirror,
                             "size": mb * 1024 * 1024,
                             "date": date_str,
                             "source": f"{url}#download_{release_id}",

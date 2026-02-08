@@ -5,49 +5,31 @@
 import datetime
 import re
 import time
-from base64 import urlsafe_b64encode
 
 import requests
 from bs4 import BeautifulSoup
 
+from quasarr.constants import (
+    ENGLISH_MONTHS,
+    GERMAN_MONTHS,
+    SEARCH_CAT_BOOKS,
+    SEARCH_CAT_MOVIES,
+    SEARCH_CAT_SHOWS,
+)
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.log import debug, info, trace, warn
+from quasarr.providers.utils import (
+    convert_to_mb,
+    generate_download_link,
+    is_imdb_id,
+    is_valid_release,
+)
 
 hostname = "dw"
-supported_mirrors = ["1fichier", "rapidgator", "ddownload", "katfile"]
 
 
 def convert_to_rss_date(date_str):
-    german_months = [
-        "Januar",
-        "Februar",
-        "März",
-        "April",
-        "Mai",
-        "Juni",
-        "Juli",
-        "August",
-        "September",
-        "Oktober",
-        "November",
-        "Dezember",
-    ]
-    english_months = [
-        "January",
-        "February",
-        "March",
-        "April",
-        "May",
-        "June",
-        "July",
-        "August",
-        "September",
-        "October",
-        "November",
-        "December",
-    ]
-
-    for german, english in zip(german_months, english_months, strict=False):
+    for german, english in zip(GERMAN_MONTHS, ENGLISH_MONTHS, strict=False):
         if german in date_str:
             date_str = date_str.replace(german, english)
             break
@@ -77,27 +59,23 @@ def extract_size(text):
     raise ValueError(f"Invalid size format: {text}")
 
 
-def dw_feed(shared_state, start_time, request_from, mirror=None):
+def dw_feed(shared_state, start_time, search_category):
     releases = []
     dw = shared_state.values["config"]("Hostnames").get(hostname.lower())
     password = dw
 
-    if not "arr" in request_from.lower():
+    if search_category == SEARCH_CAT_BOOKS:
         debug(
-            f'<d>Skipping {request_from} search on "{hostname.upper()}" (unsupported media type)!</d>'
+            f"<d>Skipping <y>{search_category}</y> on <g>{hostname.upper()}</g> (category not supported)!</d>"
         )
         return releases
 
-    if "Radarr" in request_from:
+    if search_category == SEARCH_CAT_MOVIES:
         feed_type = "videos/filme/"
-    else:
+    elif search_category == SEARCH_CAT_SHOWS:
         feed_type = "videos/serien/"
-
-    if mirror and mirror not in supported_mirrors:
-        debug(
-            f'Mirror "{mirror}" not supported by "{hostname.upper()}". Supported mirrors: {supported_mirrors}.'
-            " Skipping search!"
-        )
+    else:
+        warn(f"Unknown search category: {search_category}")
         return releases
 
     url = f"https://{dw}/{feed_type}"
@@ -123,18 +101,22 @@ def dw_feed(shared_state, start_time, request_from, mirror=None):
 
                 size_info = article.find("span").text.strip()
                 size_item = extract_size(size_info)
-                mb = shared_state.convert_to_mb(size_item)
+                mb = convert_to_mb(size_item)
                 size = mb * 1024 * 1024
                 date = article.parent.parent.find(
                     "span", {"class": "date updated"}
                 ).text.strip()
                 published = convert_to_rss_date(date)
-                payload = urlsafe_b64encode(
-                    f"{title}|{source}|{mirror}|{mb}|{password}|{imdb_id}|{hostname}".encode(
-                        "utf-8"
-                    )
-                ).decode("utf-8")
-                link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
+
+                link = generate_download_link(
+                    shared_state,
+                    title,
+                    source,
+                    mb,
+                    password,
+                    imdb_id,
+                    hostname,
+                )
             except Exception as e:
                 info(f"Error parsing {hostname.upper()} feed: {e}")
                 mark_hostname_issue(
@@ -149,7 +131,6 @@ def dw_feed(shared_state, start_time, request_from, mirror=None):
                         "hostname": hostname.lower(),
                         "imdb_id": imdb_id,
                         "link": link,
-                        "mirror": mirror,
                         "size": size,
                         "date": published,
                         "source": source,
@@ -175,9 +156,8 @@ def dw_feed(shared_state, start_time, request_from, mirror=None):
 def dw_search(
     shared_state,
     start_time,
-    request_from,
+    search_category,
     search_string,
-    mirror=None,
     season=None,
     episode=None,
 ):
@@ -185,21 +165,18 @@ def dw_search(
     dw = shared_state.values["config"]("Hostnames").get(hostname.lower())
     password = dw
 
-    if not "arr" in request_from.lower():
+    if search_category == SEARCH_CAT_BOOKS:
         debug(
-            f'<d>Skipping {request_from} search on "{hostname.upper()}" (unsupported media type)!</d>'
+            f"<d>Skipping <y>{search_category}</y> on <g>{hostname.upper()}</g> (category not supported)!</d>"
         )
         return releases
 
-    if "Radarr" in request_from:
+    if search_category == SEARCH_CAT_MOVIES:
         search_type = "videocategory=filme"
-    else:
+    elif search_category == SEARCH_CAT_SHOWS:
         search_type = "videocategory=serien"
-
-    if mirror and mirror not in ["1fichier", "rapidgator", "ddownload", "katfile"]:
-        debug(
-            f'Mirror "{mirror}" not not supported by {hostname.upper()}. Skipping search!'
-        )
+    else:
+        warn(f"Unknown search category: {search_category}")
         return releases
 
     url = f"https://{dw}/?s={search_string}&{search_type}"
@@ -220,15 +197,15 @@ def dw_search(
         )
         return releases
 
-    imdb_id = shared_state.is_imdb_id(search_string)
+    imdb_id = is_imdb_id(search_string)
 
     if results:
         for result in results:
             try:
                 title = result.a.text.strip()
 
-                if not shared_state.is_valid_release(
-                    title, request_from, search_string, season, episode
+                if not is_valid_release(
+                    title, search_category, search_string, season, episode
                 ):
                     continue
 
@@ -249,18 +226,22 @@ def dw_search(
                 source = result.a["href"]
                 size_info = result.find("span").text.strip()
                 size_item = extract_size(size_info)
-                mb = shared_state.convert_to_mb(size_item)
+                mb = convert_to_mb(size_item)
                 size = mb * 1024 * 1024
                 date = result.parent.parent.find(
                     "span", {"class": "date updated"}
                 ).text.strip()
                 published = convert_to_rss_date(date)
-                payload = urlsafe_b64encode(
-                    f"{title}|{source}|{mirror}|{mb}|{password}|{release_imdb_id}|{hostname}".encode(
-                        "utf-8"
-                    )
-                ).decode("utf-8")
-                link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
+
+                link = generate_download_link(
+                    shared_state,
+                    title,
+                    source,
+                    mb,
+                    password,
+                    release_imdb_id,
+                    hostname,
+                )
             except Exception as e:
                 warn(f"Error parsing {hostname.upper()} search: {e}")
                 mark_hostname_issue(
@@ -275,7 +256,6 @@ def dw_search(
                         "hostname": hostname.lower(),
                         "imdb_id": release_imdb_id,
                         "link": link,
-                        "mirror": mirror,
                         "size": size,
                         "date": published,
                         "source": source,

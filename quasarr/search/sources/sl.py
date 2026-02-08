@@ -7,23 +7,30 @@ import html
 import re
 import time
 import xml.etree.ElementTree as ET
-from base64 import urlsafe_b64encode
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import quote_plus
 
 import requests
 from bs4 import BeautifulSoup
 
+from quasarr.constants import (
+    SEARCH_CAT_BOOKS,
+    SEARCH_CAT_MOVIES,
+    SEARCH_CAT_SHOWS,
+)
 from quasarr.providers.cloudflare import ensure_session_cf_bypassed
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.imdb_metadata import get_localized_title
 from quasarr.providers.log import debug, info, warn
+from quasarr.providers.utils import (
+    convert_to_mb,
+    generate_download_link,
+    is_imdb_id,
+    is_valid_release,
+    normalize_magazine_title,
+)
 
 hostname = "sl"
-supported_mirrors = [
-    "nitroflare",
-    "ddownload",
-]  # ignoring captcha-protected multiup/mirrorace for now
 
 
 def extract_size(text):
@@ -44,23 +51,20 @@ def parse_pubdate_to_iso(pubdate_str):
     return dt.isoformat()
 
 
-def sl_feed(shared_state, start_time, request_from, mirror=None):
+def sl_feed(shared_state, start_time, search_category):
     releases = []
 
     sl = shared_state.values["config"]("Hostnames").get(hostname.lower())
     password = sl
 
-    if "lazylibrarian" in request_from.lower():
+    if search_category == SEARCH_CAT_BOOKS:
         feed_type = "ebooks"
-    elif "radarr" in request_from.lower():
+    elif search_category == SEARCH_CAT_MOVIES:
         feed_type = "movies"
-    else:
+    elif search_category == SEARCH_CAT_SHOWS:
         feed_type = "tv-shows"
-
-    if mirror and mirror not in supported_mirrors:
-        debug(
-            f'Mirror "{mirror}" not supported by "{hostname.upper()}". Supported: {supported_mirrors}. Skipping!'
-        )
+    else:
+        warn(f"Unknown search category: {search_category}")
         return releases
 
     url = f"https://{sl}/{feed_type}/feed/"
@@ -80,9 +84,9 @@ def sl_feed(shared_state, start_time, request_from, mirror=None):
         for item in root.find("channel").findall("item"):
             try:
                 title = item.findtext("title").strip()
-                if "lazylibrarian" in request_from.lower():
+                if search_category == SEARCH_CAT_BOOKS:
                     # lazylibrarian can only detect specific date formats / issue numbering for magazines
-                    title = shared_state.normalize_magazine_title(title)
+                    title = normalize_magazine_title(title)
 
                 source = item.findtext("link").strip()
 
@@ -96,7 +100,7 @@ def sl_feed(shared_state, start_time, request_from, mirror=None):
                     continue
                 size_info = size_match.group(1).strip()
                 size_item = extract_size(size_info)
-                mb = shared_state.convert_to_mb(size_item)
+                mb = convert_to_mb(size_item)
                 size = mb * 1024 * 1024
 
                 pubdate = item.findtext("pubDate").strip()
@@ -105,12 +109,15 @@ def sl_feed(shared_state, start_time, request_from, mirror=None):
                 m = re.search(r"https?://www\.imdb\.com/title/(tt\d+)", desc)
                 imdb_id = m.group(1) if m else None
 
-                payload = urlsafe_b64encode(
-                    f"{title}|{source}|{mirror}|{mb}|{password}|{imdb_id}|{hostname}".encode(
-                        "utf-8"
-                    )
-                ).decode("utf-8")
-                link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
+                link = generate_download_link(
+                    shared_state,
+                    title,
+                    source,
+                    mb,
+                    password,
+                    imdb_id,
+                    hostname,
+                )
 
                 releases.append(
                     {
@@ -119,7 +126,6 @@ def sl_feed(shared_state, start_time, request_from, mirror=None):
                             "hostname": hostname.lower(),
                             "imdb_id": imdb_id,
                             "link": link,
-                            "mirror": mirror,
                             "size": size,
                             "date": published,
                             "source": source,
@@ -152,9 +158,8 @@ def sl_feed(shared_state, start_time, request_from, mirror=None):
 def sl_search(
     shared_state,
     start_time,
-    request_from,
+    search_category,
     search_string,
-    mirror=None,
     season=None,
     episode=None,
 ):
@@ -162,21 +167,18 @@ def sl_search(
     sl = shared_state.values["config"]("Hostnames").get(hostname.lower())
     password = sl
 
-    if "lazylibrarian" in request_from.lower():
+    if search_category == SEARCH_CAT_BOOKS:
         feed_type = "ebooks"
-    elif "radarr" in request_from.lower():
+    elif search_category == SEARCH_CAT_MOVIES:
         feed_type = "movies"
-    else:
+    elif search_category == SEARCH_CAT_SHOWS:
         feed_type = "tv-shows"
-
-    if mirror and mirror not in supported_mirrors:
-        debug(
-            f'Mirror "{mirror}" not supported by "{hostname.upper()}". Supported: {supported_mirrors}. Skipping!'
-        )
+    else:
+        warn(f"Unknown search category: {search_category}")
         return releases
 
     try:
-        imdb_id = shared_state.is_imdb_id(search_string)
+        imdb_id = is_imdb_id(search_string)
         if imdb_id:
             search_string = get_localized_title(shared_state, imdb_id, "en") or ""
             search_string = html.unescape(search_string)
@@ -239,13 +241,13 @@ def sl_search(
                         a = post.find("h1").find("a")
                         title = a.get_text(strip=True)
 
-                        if not shared_state.is_valid_release(
-                            title, request_from, search_string, season, episode
+                        if not is_valid_release(
+                            title, search_category, search_string, season, episode
                         ):
                             continue
 
-                        if "lazylibrarian" in request_from.lower():
-                            title = shared_state.normalize_magazine_title(title)
+                        if search_category == SEARCH_CAT_BOOKS:
+                            title = normalize_magazine_title(title)
                             imdb_id = None
 
                         source = a["href"]
@@ -266,12 +268,15 @@ def sl_search(
 
                         size = 0
 
-                        payload = urlsafe_b64encode(
-                            f"{title}|{source}|{mirror}|0|{password}|{imdb_id}|{hostname}".encode(
-                                "utf-8"
-                            )
-                        ).decode("utf-8")
-                        link = f"{shared_state.values['internal_address']}/download/?payload={payload}"
+                        link = generate_download_link(
+                            shared_state,
+                            title,
+                            source,
+                            0,
+                            password,
+                            imdb_id,
+                            hostname,
+                        )
 
                         releases.append(
                             {
@@ -280,7 +285,6 @@ def sl_search(
                                     "hostname": hostname.lower(),
                                     "imdb_id": imdb_id,
                                     "link": link,
-                                    "mirror": mirror,
                                     "size": size,
                                     "date": published,
                                     "source": source,

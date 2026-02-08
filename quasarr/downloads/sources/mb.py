@@ -13,7 +13,7 @@ from quasarr.providers.log import debug, info
 hostname = "mb"
 
 
-def get_mb_download_links(shared_state, url, mirror, title, password):
+def get_mb_download_links(shared_state, url, mirrors, title, password):
     """
     KEEP THE SIGNATURE EVEN IF SOME PARAMETERS ARE UNUSED!
 
@@ -44,9 +44,9 @@ def get_mb_download_links(shared_state, url, mirror, title, password):
             link = a["href"]
             hoster = a.get_text(strip=True).lower()
 
-            if mirror and mirror.lower() not in hoster.lower():
+            if mirrors and not any(m.lower() in hoster.lower() for m in mirrors):
                 debug(
-                    f'Skipping link from "{hoster}" (not the desired mirror "{mirror}")!'
+                    f'Skipping link from "{hoster}" (not in desired mirrors "{mirrors}")!'
                 )
                 continue
 
