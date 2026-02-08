@@ -23,6 +23,7 @@ from quasarr.storage.categories import (
     get_download_category_from_package_id,
     get_download_category_mirrors,
 )
+from quasarr.storage.config import Config
 
 
 def js_single_quoted_string_safe(text):
@@ -209,12 +210,22 @@ def setup_captcha_routes(app):
         base_url = request.urlparts.scheme + "://" + request.urlparts.netloc
         transfer_url = f"{base_url}/captcha/quick-transfer"
 
+        extra_params = ""
+        if provider_type == "junkies":
+            junkies_user = Config("JUNKIES").get("user")
+            junkies_pass = Config("JUNKIES").get("password")
+            if junkies_user and junkies_pass:
+                extra_params = (
+                    f"&jk_user={quote(junkies_user)}&jk_pass={quote(junkies_pass)}"
+                )
+
         url_with_quick_transfer_params = (
             f"{url}?"
             f"transfer_url={quote(transfer_url)}&"
             f"pkg_id={quote(package_id)}&"
             f"pkg_title={quote(title)}&"
             f"pkg_pass={quote(password)}"
+            f"{extra_params}"
         )
 
         js_url = url_with_quick_transfer_params.replace("'", "\\'")
