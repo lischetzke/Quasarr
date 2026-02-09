@@ -10,6 +10,10 @@ import emoji
 from quasarr.constants import (
     DEFAULT_DOWNLOAD_CATEGORIES,
     DEFAULT_DOWNLOAD_CATEGORY_EMOJIS,
+    SEARCH_CAT_BOOKS,
+    SEARCH_CAT_MOVIES,
+    SEARCH_CAT_MUSIC,
+    SEARCH_CAT_SHOWS,
     SEARCH_CATEGORIES,
 )
 
@@ -64,6 +68,30 @@ def get_download_category_mirrors(name, lowercase=False):
     return []
 
 
+def get_search_categories():
+    """Returns a dictionary of all search categories (default + custom)."""
+    db = DataBase("categories_search")
+
+    # Start with default categories
+    categories = SEARCH_CATEGORIES.copy()
+
+    # Add custom categories from DB
+    custom_cats = db.retrieve_all_titles()
+    for cat_id_tuple in custom_cats:
+        cat_id = cat_id_tuple[0]
+        data_str = db.retrieve(cat_id)
+        if data_str:
+            try:
+                data = json.loads(data_str)
+                # Only include if it has required fields
+                if "name" in data and "emoji" in data:
+                    categories[cat_id] = data
+            except json.JSONDecodeError:
+                pass
+
+    return categories
+
+
 def get_search_category_sources(cat_id):
     """Returns the list of preferred search sources for a search category ID."""
     db = DataBase("categories_search")
@@ -79,19 +107,145 @@ def get_search_category_sources(cat_id):
 
 def update_search_category_sources(cat_id, sources):
     """Updates the preferred search sources for a search category ID."""
-    if str(cat_id) not in SEARCH_CATEGORIES:
-        return False, f"Invalid search category ID: {cat_id}"
+    # Check if it's a default category or a custom one
+    is_default = str(cat_id) in SEARCH_CATEGORIES
 
     db = DataBase("categories_search")
-    data = {"search_sources": sources}
 
-    db.update_store(str(cat_id), json.dumps(data))
+    if is_default:
+        # For default categories, we just store the sources
+        # We need to preserve existing data if any (though for defaults usually there isn't much else)
+        data_str = db.retrieve(str(cat_id))
+        data = {}
+        if data_str:
+            try:
+                data = json.loads(data_str)
+            except json.JSONDecodeError:
+                pass
+
+        data["search_sources"] = sources
+        db.store(str(cat_id), json.dumps(data))
+    else:
+        # For custom categories, we must ensure the category exists
+        data_str = db.retrieve(str(cat_id))
+        if not data_str:
+            return False, f"Custom search category ID {cat_id} not found."
+
+        try:
+            data = json.loads(data_str)
+        except json.JSONDecodeError:
+            return False, "Database error for custom category."
+
+        data["search_sources"] = sources
+        db.update_store(str(cat_id), json.dumps(data))
 
     info(f"Updated search-source-whitelist for search category {cat_id} to {sources}")
     return (
         True,
         f"Search category {cat_id} search-source-whitelist updated successfully.",
     )
+
+
+def add_custom_search_category(base_type):
+    """Adds a new custom search category based on a base type."""
+    base_type_map = {
+        "movies": SEARCH_CAT_MOVIES,
+        "music": SEARCH_CAT_MUSIC,
+        "tv": SEARCH_CAT_SHOWS,
+        "books": SEARCH_CAT_BOOKS,
+    }
+
+    if base_type not in base_type_map:
+        return False, "Invalid base category type."
+
+    base_cat_id = base_type_map[base_type]
+    base_cat_info = SEARCH_CATEGORIES[str(base_cat_id)]
+
+    db = DataBase("categories_search")
+    all_cats = db.retrieve_all_titles()
+
+    # Filter for custom categories (those not in default SEARCH_CATEGORIES)
+    # Note: Default categories might have entries in DB for whitelists, so we check ID range
+    # Custom categories start at base_cat_id + 100000 (e.g. 102000)
+    # Wait, requirement says: "starting with 10... counting up in steps of ten"
+    # "first custom category for music is going to be called 103000 the next is 103010"
+
+    # Base IDs: Movies=2000, Music=3000, TV=5000, Books=7000
+    # Custom IDs: 102000, 103000, 105000, 107000
+
+    start_id = 100000 + base_cat_id
+
+    # Find next available ID
+    existing_ids = [int(c[0]) for c in all_cats if c[0].isdigit()]
+
+    # Count total custom categories
+    custom_count = 0
+    for eid in existing_ids:
+        if eid >= 100000:
+            custom_count += 1
+
+    if custom_count >= 10:
+        return False, "Limit of 10 custom search categories reached."
+
+    # Find next available slot for this specific base type
+    next_id = start_id
+    while next_id in existing_ids:
+        next_id += 10
+
+    # Determine name (Custom 1, Custom 2, etc.)
+    # We need to count how many custom categories of THIS type exist to name it properly?
+    # "dont allow changing the name, just call them custom 1, custom 2 etc."
+    # This likely means global custom 1, or per type?
+    # "the user shant be able to edit the numbers... counting up in steps of ten"
+    # Let's assume "Custom 1" is just a display name.
+    # Let's make it "Custom {Type} {Index}" to be clear, or just "Custom {ID}"
+    # Requirement: "call them custom 1, custom 2 etc."
+
+    # Let's count how many custom categories of this base type exist
+    type_count = 0
+    for eid in existing_ids:
+        if eid >= start_id and eid < start_id + 10000:  # Assuming range won't overlap
+            type_count += 1
+
+    name = f"Custom {base_cat_info['name']} {type_count + 1}"
+
+    data = {
+        "name": name,
+        "emoji": base_cat_info["emoji"],
+        "base_type": base_type,
+        "search_sources": [],
+    }
+
+    db.store(str(next_id), json.dumps(data))
+    info(f"Added custom search category: {name} ({next_id})")
+    return True, f"Custom category '{name}' added successfully."
+
+
+def delete_search_category(cat_id):
+    """Deletes a custom search category."""
+    if str(cat_id) in SEARCH_CATEGORIES:
+        return False, "Cannot delete default search categories."
+
+    db = DataBase("categories_search")
+    if not db.retrieve(str(cat_id)):
+        return False, f"Category {cat_id} not found."
+
+    db.delete(str(cat_id))
+    info(f"Deleted search category: {cat_id}")
+    return True, f"Search category {cat_id} deleted successfully."
+
+
+def search_category_exists(cat_id):
+    """Checks if a search category exists."""
+    if not cat_id:
+        return False
+
+    cat_id = str(cat_id)
+    if cat_id in SEARCH_CATEGORIES:
+        return True
+
+    db = DataBase("categories_search")
+    return db.retrieve(cat_id) is not None
 
 
 def add_download_category(name, emj="📁"):

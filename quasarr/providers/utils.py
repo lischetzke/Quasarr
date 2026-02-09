@@ -24,11 +24,12 @@ from quasarr.constants import (
     MOVIE_REGEX,
     SEARCH_CAT_BOOKS,
     SEARCH_CAT_MOVIES,
+    SEARCH_CAT_MUSIC,
     SEARCH_CAT_SHOWS,
     SEASON_EP_REGEX,
 )
 from quasarr.providers.log import crit, debug, error, trace, warn
-from quasarr.storage.categories import download_category_exists
+from quasarr.storage.categories import download_category_exists, search_category_exists
 
 
 class Unbuffered(object):
@@ -465,19 +466,77 @@ def determine_category(request_from, category=None):
 
     client_type = extract_client_type(request_from)
     # Default mapping
-    category_map = {"lazylibrarian": "docs", "radarr": "movies", "sonarr": "tv"}
+    category_map = {
+        "lazylibrarian": "docs",
+        "lidarr": "music",
+        "radarr": "movies",
+        "sonarr": "tv",
+    }
     return category_map.get(client_type, "tv")
 
 
-def determine_search_category(request_from):
+def get_base_search_category_id(cat_id):
     """
-    Determine the numeric search category based on the client type.
-    Returns 2000 (Movies), 5000 (TV), or 7000 (Books).
-    Defaults to 5000 (TV) if unknown.
+    Reverse-parses a custom or default category ID to its base type ID.
+    E.g., 102010 -> 2000 (Movies), 5040 -> 5000 (TV)
     """
+    try:
+        cat_id = int(cat_id)
+    except (ValueError, TypeError):
+        return None
+
+    # Custom categories are in the 100000+ range
+    if cat_id >= 100000:
+        # e.g. 102010 -> 2010 -> 2000
+        # e.g. 103000 -> 3000 -> 3000
+        base = (cat_id - 100000) // 1000 * 1000
+        if base in [
+            SEARCH_CAT_MOVIES,
+            SEARCH_CAT_MUSIC,
+            SEARCH_CAT_SHOWS,
+            SEARCH_CAT_BOOKS,
+        ]:
+            return base
+
+    # Standard categories and their subcategories
+    elif 2000 <= cat_id < 3000:
+        return SEARCH_CAT_MOVIES
+    elif 3000 <= cat_id < 4000:
+        return SEARCH_CAT_MUSIC
+    elif 5000 <= cat_id < 6000:
+        return SEARCH_CAT_SHOWS
+    elif 7000 <= cat_id < 8000:
+        return SEARCH_CAT_BOOKS
+
+    return None
+
+
+def determine_search_category(request_from, cat_param=None):
+    """
+    Determine the numeric search category based on the client type or cat parameter.
+    Handles default and custom categories.
+    """
+    if cat_param:
+        try:
+            # Handle comma-separated categories (e.g. "5000,5030,5040")
+            # We use the first valid one we can find a base for.
+            cats = [int(c) for c in cat_param.split(",")]
+            if len(cats) > 1:
+                warn(
+                    f"Only one category can be searched at once. You provided multiple: {cat_param}"
+                )
+            for cat in cats:
+                if search_category_exists(cat):
+                    return cat
+        except ValueError:
+            pass  # Fallback to user agent if cat param is invalid
+
+    # Fallback to deriving from user agent
     client_type = extract_client_type(request_from)
     if client_type == "radarr":
         return SEARCH_CAT_MOVIES
+    elif client_type == "lidarr":
+        return SEARCH_CAT_MUSIC
     elif client_type == "lazylibrarian":
         return SEARCH_CAT_BOOKS
     elif client_type == "sonarr":
@@ -507,6 +566,8 @@ def extract_client_type(request_from):
         return "radarr"
     elif "sonarr" in client:
         return "sonarr"
+    elif "lidarr" in client:
+        return "lidarr"
     elif "lazylibrarian" in client:
         return "lazylibrarian"
 
@@ -536,18 +597,28 @@ def convert_to_mb(item):
     return int(size_mb)
 
 
-def sanitize_title(title: str) -> str:
-    umlaut_map = {
-        "Ä": "Ae",
+def replace_umlauts(text):
+    """
+    Replace German umlauts with their ASCII equivalents.
+    """
+    replacements = {
         "ä": "ae",
-        "Ö": "Oe",
         "ö": "oe",
-        "Ü": "Ue",
         "ü": "ue",
+        "Ä": "Ae",
+        "Ö": "Oe",
+        "Ü": "Ue",
         "ß": "ss",
     }
-    for umlaut, replacement in umlaut_map.items():
-        title = title.replace(umlaut, replacement)
+
+    for umlaut, replacement in replacements.items():
+        text = text.replace(umlaut, replacement)
+
+    return text
+
+
+def sanitize_title(title: str) -> str:
+    title = replace_umlauts(title)
 
     title = title.encode("ascii", errors="ignore").decode()
 
@@ -574,10 +645,7 @@ def sanitize_string(s):
     s = s.replace("-", " ")
 
     # Umlauts
-    s = re.sub(r"ä", "ae", s)
-    s = re.sub(r"ö", "oe", s)
-    s = re.sub(r"ü", "ue", s)
-    s = re.sub(r"ß", "ss", s)
+    s = replace_umlauts(s)
 
     # Remove special characters
     s = re.sub(r"[^a-zA-Z0-9\s]", "", s)
@@ -691,6 +759,7 @@ def is_valid_release(
         is_movie_search = search_category == SEARCH_CAT_MOVIES
         is_tv_search = search_category == SEARCH_CAT_SHOWS
         is_docs_search = search_category == SEARCH_CAT_BOOKS
+        is_music_search = search_category == SEARCH_CAT_MUSIC
 
         # if search string is NOT an imdb id check search_string_in_sanitized_title - if not match, it is not valid
         if not is_docs_search and not is_imdb_id(search_string):
@@ -737,6 +806,18 @@ def is_valid_release(
 
         # if it's a document search, it should not contain Movie or TV show tags
         if is_docs_search:
+            # must NOT have any S/E tag present
+            if SEASON_EP_REGEX.search(title):
+                debug(
+                    "Skipping {title!r} as title matches TV show regex: {pattern!r}",
+                    title=title,
+                    pattern=SEASON_EP_REGEX.pattern,
+                )
+                return False
+            return True
+
+        # if it's a music search, it should not contain Movie or TV show tags
+        if is_music_search:
             # must NOT have any S/E tag present
             if SEASON_EP_REGEX.search(title):
                 debug(

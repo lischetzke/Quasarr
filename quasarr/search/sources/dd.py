@@ -6,7 +6,7 @@ import html
 import time
 from datetime import datetime, timezone
 
-from quasarr.constants import SEARCH_CAT_BOOKS
+from quasarr.constants import SEARCH_CAT_BOOKS, SEARCH_CAT_MUSIC
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.imdb_metadata import get_localized_title, get_year
 from quasarr.providers.log import debug, error, info, warn
@@ -17,6 +17,7 @@ from quasarr.providers.sessions.dd import (
 from quasarr.providers.utils import (
     convert_to_mb,
     generate_download_link,
+    get_base_search_category_id,
     is_imdb_id,
     is_valid_release,
 )
@@ -51,7 +52,9 @@ def dd_search(
     dd = shared_state.values["config"]("Hostnames").get(hostname.lower())
     password = dd
 
-    if search_category == SEARCH_CAT_BOOKS:
+    base_category = get_base_search_category_id(search_category)
+
+    if base_category in [SEARCH_CAT_BOOKS, SEARCH_CAT_MUSIC]:
         debug(f"<d>Skipping {search_category} (unsupported media type)!</d>")
         return releases
 
@@ -126,7 +129,7 @@ def dd_search(
                     title = release.get("release")
 
                     if not is_valid_release(
-                        title, search_category, search_string, season, episode
+                        title, base_category, search_string, season, episode
                     ):
                         continue
 

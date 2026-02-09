@@ -2,7 +2,8 @@
 
 <img src="https://raw.githubusercontent.com/rix1337/Quasarr/main/Quasarr.png" data-canonical-src="https://raw.githubusercontent.com/rix1337/Quasarr/main/Quasarr.png" width="64" height="64" />
 
-Quasarr connects JDownloader with Radarr, Sonarr and LazyLibrarian. It also decrypts links protected by CAPTCHAs.
+Quasarr connects JDownloader with Radarr, Sonarr, Lidarr and LazyLibrarian. It also decrypts links protected by
+CAPTCHAs.
 
 [![PyPI version](https://badge.fury.io/py/quasarr.svg)](https://badge.fury.io/py/quasarr)
 [![Discord](https://img.shields.io/discord/1075348594225315891)](https://discord.gg/eM4zA2wWQb)
@@ -48,7 +49,8 @@ login required).
 ## JDownloader
 
 > ⚠️ If using Docker:
-> JDownloader's download path must be available to Radarr/Sonarr/LazyLibrarian with **identical internal and external
+> JDownloader's download path must be available to Radarr/Sonarr/Lidarr/LazyLibrarian with **identical internal and
+external
 path mappings**!
 > Matching only the external path is not sufficient.
 
@@ -59,7 +61,7 @@ path mappings**!
 <summary>Fresh install recommended</summary>
 
 Consider setting up a fresh JDownloader instance. Quasarr will modify JDownloader's settings to enable
-Radarr/Sonarr/LazyLibrarian integration.
+Radarr/Sonarr/Lidarr/LazyLibrarian integration.
 
 </details>
 
@@ -71,18 +73,21 @@ You can manage categories in the Quasarr Web UI.
 
 * **Setup:** Add or edit categories to organize your downloads.
 * **Download Mirror Whitelist:**
-    * Inside a category, you can whitelist specific mirrors.
+    * Inside a **download category**, you can whitelist specific mirrors.
+    * If specific mirrors are set, downloads will fail unless the release is available from them.
     * This does not affect search results.
-    * If specific mirrors are set, downloads will fail unless the release contains them.
+    * This affects the **Quasarr Download Client** in Radarr/Sonarr/Lidarr/LazyLibrarian.
 * **Search Hostname Whitelist:**
-    * Inside a category, you can whitelist specific hostnames.
+    * Inside a **search category**, you can whitelist specific hostnames.
+    * If specific hostnames are set, only these will be searched by the given search category.
     * This affects search results.
-    * If specific hostnames are set, only these will be searched by the given category.
+    * This affects the **Quasarr Newznab Indexer** in Radarr/Sonarr/Lidarr/LazyLibrarian.
+    * **Custom Search Categories:** You can add up to 10 custom search categories per base type (Movies, TV, Music, Books). These allow you to create separate hostname whitelists for different purposes.
 * **Emoji:** Will be used in the Packages view on the Quasarr Web UI.
 
 ---
 
-## Radarr / Sonarr
+## Radarr / Sonarr / Lidarr
 
 > ⚠️ **Sonarr users:** Set all shows (including anime) to the **Standard** series type. Quasarr cannot find releases for
 > shows set to Anime/Absolute.
@@ -90,10 +95,11 @@ You can manage categories in the Quasarr Web UI.
 
 Add Quasarr as both a **Newznab Indexer** and **SABnzbd Download Client** using your Quasarr URL and API Key.
 
-Be sure to set a category in the **SABnzbd Download client** (default: `movies` for Radarr and `tv` for Sonarr).
+Be sure to set a category in the **SABnzbd Download client** (default: `movies` for Radarr, `tv` for Sonarr and `music`
+for Lidarr).
 
 <details>
-<summary>Show download status in Radarr/Sonarr</summary>
+<summary>Show download status in Radarr/Sonarr/Lidarr</summary>
 
 **Activity → Queue → Options** → Enable `Release Title`
 
@@ -116,9 +122,9 @@ Add Quasarr as a **Generic Newznab Indexer**.
 * Use IMDb ID, Syntax: `{ImdbId:tt0133093}` and pick category `2000` (Movies) or `5000` (TV)
 * Simple text search is **not** supported.
 
-#### Books/Magazines:
+#### Music / Books / Magazines:
 
-* Use simple text search and pick category`7000` (Books/Magazines).
+* Use simple text search and pick category `3000` (Music) or `7000` (Books/Magazines).
 
 </details>
 
@@ -182,15 +188,15 @@ docker run -d \
   ghcr.io/rix1337/quasarr:latest
   ```
 
-| Parameter          | Description                                                                                         |
-|--------------------|-----------------------------------------------------------------------------------------------------|
-| `INTERNAL_ADDRESS` | **Required.** Internal URL so Radarr/Sonarr/LazyLibrarian can reach Quasarr. **Must include port.** |
-| `EXTERNAL_ADDRESS` | Optional. External URL (e.g. reverse proxy). Always protect external access with authentication.    |
-| `DISCORD`          | Optional. Discord webhook URL for notifications.                                                    |
-| `USER` / `PASS`    | Optional, but recommended! Username / Password to protect the web UI.                               |
-| `AUTH`             | Authentication mode. Supported values: `form` or `basic`.                                           |
-| `SILENT`           | Optional. If `True`, silences all Discord notifications except SponsorHelper error messages.        ||
-| `TZ`               | Optional. Timezone. Incorrect values may cause HTTPS/SSL issues.                                    |
+| Parameter          | Description                                                                                                |
+|--------------------|------------------------------------------------------------------------------------------------------------|
+| `INTERNAL_ADDRESS` | **Required.** Internal URL so Radarr/Sonarr/Lidarr/LazyLibrarian can reach Quasarr. **Must include port.** |
+| `EXTERNAL_ADDRESS` | Optional. External URL (e.g. reverse proxy). Always protect external access with authentication.           |
+| `DISCORD`          | Optional. Discord webhook URL for notifications.                                                           |
+| `USER` / `PASS`    | Optional, but recommended! Username / Password to protect the web UI.                                      |
+| `AUTH`             | Authentication mode. Supported values: `form` or `basic`.                                                  |
+| `SILENT`           | Optional. If `True`, silences all Discord notifications except SponsorHelper error messages.               ||
+| `TZ`               | Optional. Timezone. Incorrect values may cause HTTPS/SSL issues.                                           |
 
 # Manual setup
 
@@ -217,9 +223,9 @@ Complexity is the killer of small projects like this one. It must be fought at a
 We will not waste precious time on features that will slow future development cycles down.
 Most feature requests can be satisfied by:
 
-- Existing settings in Radarr/Sonarr/LazyLibrarian
+- Existing settings in Radarr/Sonarr/Lidarr/LazyLibrarian
 - Existing settings in JDownloader
-- Existing tools from the *arr ecosystem that integrate directly with Radarr/Sonarr/LazyLibrarian
+- Existing tools from the *arr ecosystem that integrate directly with Radarr/Sonarr/Lidarr/LazyLibrarian
 
 # Roadmap
 

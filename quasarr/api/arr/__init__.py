@@ -23,7 +23,7 @@ from quasarr.providers.utils import (
 )
 from quasarr.providers.version import get_version
 from quasarr.search import get_search_results
-from quasarr.storage.categories import get_download_categories
+from quasarr.storage.categories import get_download_categories, get_search_categories
 
 
 def setup_arr_routes(app):
@@ -249,7 +249,22 @@ def setup_arr_routes(app):
                 mode = request.query.t
                 if mode == "caps":
                     info(f"Providing indexer capability information to {request_from}")
-                    return """<?xml version="1.0" encoding="UTF-8"?>
+
+                    # Generate categories XML dynamically
+                    categories_xml = ""
+                    all_categories = get_search_categories()
+
+                    # Sort categories by ID for cleaner XML
+                    sorted_cats = sorted(
+                        all_categories.items(), key=lambda x: int(x[0])
+                    )
+
+                    for cat_id, details in sorted_cats:
+                        categories_xml += (
+                            f'<category id="{cat_id}" name="{details["name"]}" />\n'
+                        )
+
+                    return f"""<?xml version="1.0" encoding="UTF-8"?>
                                 <caps>
                                   <server 
                                     version="1.33.7" 
@@ -265,13 +280,10 @@ def setup_arr_routes(app):
                                     <movie-search available="yes" supportedParams="imdbid" />
                                   </searching>
                                   <categories>
-                                    <category id="2000" name="Movies" />
-                                    <category id="5000" name="TV" />
-                                    <category id="7000" name="Books">
-                                  </category>
+                                    {categories_xml}
                                   </categories>
                                 </caps>"""
-                elif mode in ["movie", "tvsearch", "book", "search"]:
+                elif mode in ["movie", "tvsearch", "book", "music", "search"]:
                     releases = []
 
                     try:
@@ -286,30 +298,12 @@ def setup_arr_routes(app):
                         debug(f"Error parsing limit parameter: {e}")
                         limit = 1000
 
-                    # Extract category from request, fallback to user agent based
-                    cat_param = getattr(request.query, "cat", None)
-                    if cat_param:
-                        try:
-                            # Handle comma-separated categories (e.g. "5000,5030,5040")
-                            # We just take the first one or check if any match our main categories
-                            cats = [int(c) for c in cat_param.split(",")]
-                            if 2000 in cats:
-                                search_category = 2000
-                            elif 5000 in cats:
-                                search_category = 5000
-                            elif 7000 in cats:
-                                search_category = 7000
-                            else:
-                                # Derive cat from user agent if mismatch
-                                search_category = determine_search_category(
-                                    request_from
-                                )
-                        except ValueError:
-                            # Derive cat from user agent if not in cats
-                            search_category = determine_search_category(request_from)
-                    else:
-                        # Derive cat from user agent if not provided
-                        search_category = determine_search_category(request_from)
+                    # Extract first valid category from request
+                    requested_cat = getattr(request.query, "cat", None)
+
+                    search_category = determine_search_category(
+                        request_from, requested_cat
+                    )
 
                     if mode == "movie":
                         # supported params: imdbid
@@ -339,7 +333,7 @@ def setup_arr_routes(app):
                             limit=limit,
                         )
 
-                    elif mode == "book":
+                    elif mode in ["book", "music"]:
                         author = getattr(request.query, "author", "")
                         title = getattr(request.query, "title", "")
                         search_phrase = " ".join(filter(None, [author, title]))
@@ -363,6 +357,16 @@ def setup_arr_routes(app):
                                 offset=offset,
                                 limit=limit,
                             )
+                        elif "lidarr" in request_from.lower():
+                            search_phrase = getattr(request.query, "q", "")
+                            releases = get_search_results(
+                                shared_state,
+                                request_from,
+                                search_category,
+                                search_phrase=search_phrase,
+                                offset=offset,
+                                limit=limit,
+                            )
                         else:
                             # sonarr expects this but we will not support non-imdbid searches
                             debug(
@@ -371,18 +375,25 @@ def setup_arr_routes(app):
 
                     # XML Generation (releases are already sliced)
                     items = ""
+                    now_rfc822 = datetime.now().strftime("%a, %d %b %Y %H:%M:%S +0000")
+
                     for release in releases:
                         release = release.get("details", {})
 
                         # Ensure clean XML output
                         title = sax_utils.escape(release.get("title", ""))
                         source = sax_utils.escape(release.get("source", ""))
+                        if not title:
+                            debug(f"Title missing for release from {source}")
+                            continue
 
                         if not "lazylibrarian" in request_from.lower():
                             title = f"[{release.get('hostname', '').upper()}] {title}"
 
                         # Get publication date - sources should provide valid dates
                         pub_date = release.get("date", "").strip()
+                        if not pub_date:
+                            pub_date = now_rfc822
 
                         items += f'''
                         <item>
@@ -404,25 +415,31 @@ def setup_arr_routes(app):
                             <guid isPermaLink="False">0</guid>
                             <link>https://github.com/rix1337/Quasarr</link>
                             <comments>No results matched your search criteria.</comments>
-                            <pubDate>{datetime.now().strftime("%a, %d %b %Y %H:%M:%S +0000")}</pubDate>
+                            <pubDate>{now_rfc822}</pubDate>
                             <enclosure url="https://github.com/rix1337/Quasarr" length="0" type="application/x-nzb" />
                         </item>"""
 
                     return f"""<?xml version="1.0" encoding="UTF-8"?>
                                 <rss>
                                     <channel>
+                                        <title>Quasarr Indexer</title>
+                                        <description>Quasarr Indexer API</description>
+                                        <link>https://quasarr.indexer/</link>
+                                        <pubDate>{now_rfc822}</pubDate>
                                         {items}
                                     </channel>
                                 </rss>"""
             except Exception as e:
                 error(f"Error loading search results: {e} " + traceback.format_exc())
             warn(f"Unknown indexer request: {dict(request.query)}")
-            return """<?xml version="1.0" encoding="UTF-8"?>
+            now_rfc822 = datetime.now().strftime("%a, %d %b %Y %H:%M:%S +0000")
+            return f"""<?xml version="1.0" encoding="UTF-8"?>
                         <rss>
                             <channel>
                                 <title>Quasarr Indexer</title>
                                 <description>Quasarr Indexer API</description>
                                 <link>https://quasarr.indexer/</link>
+                                <pubDate>{now_rfc822}</pubDate>
                             </channel>
                         </rss>"""
 

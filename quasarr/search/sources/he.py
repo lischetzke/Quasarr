@@ -13,6 +13,7 @@ from bs4 import BeautifulSoup
 from quasarr.constants import (
     SEARCH_CAT_BOOKS,
     SEARCH_CAT_MOVIES,
+    SEARCH_CAT_MUSIC,
     SEARCH_CAT_SHOWS,
 )
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
@@ -21,6 +22,7 @@ from quasarr.providers.log import debug, info, trace, warn
 from quasarr.providers.utils import (
     convert_to_mb,
     generate_download_link,
+    get_base_search_category_id,
     is_imdb_id,
     is_valid_release,
 )
@@ -80,14 +82,16 @@ def he_search(
     releases = []
     host = shared_state.values["config"]("Hostnames").get(hostname)
 
-    if search_category == SEARCH_CAT_BOOKS:
+    base_category = get_base_search_category_id(search_category)
+
+    if base_category in [SEARCH_CAT_BOOKS, SEARCH_CAT_MUSIC]:
         debug(
             f"<d>Skipping <y>{search_category}</y> on <g>{hostname.upper()}</g> (category not supported)!</d>"
         )
         return releases
-    elif search_category == SEARCH_CAT_MOVIES:
+    elif base_category == SEARCH_CAT_MOVIES:
         tag = "movies"
-    elif search_category == SEARCH_CAT_SHOWS:
+    elif base_category == SEARCH_CAT_SHOWS:
         tag = "tv-shows"
     else:
         warn(f"Unknown search category: {search_category}")
@@ -169,7 +173,7 @@ def he_search(
             title = head_split[0].strip()
 
             if not is_valid_release(
-                title, search_category, search_string, season, episode
+                title, base_category, search_string, season, episode
             ):
                 continue
 

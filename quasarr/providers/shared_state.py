@@ -9,7 +9,7 @@ from urllib import parse
 
 import quasarr
 from quasarr.constants import (
-    SHARE_HOSTERS,
+    SHARE_HOSTERS_LOWERCASE,
 )
 from quasarr.providers.log import debug, error, info, warn
 from quasarr.providers.myjd_api import (
@@ -75,8 +75,8 @@ def extract_valid_hostname(url, shorthand):
             message = f'Error: "{domain}" must contain a "." somewhere in the middle – you need to provide a full domain name!'
             domain = None
 
-        elif any(hoster in parts for hoster in SHARE_HOSTERS):
-            offending = next(host for host in parts if host in SHARE_HOSTERS)
+        elif any(hoster in parts for hoster in SHARE_HOSTERS_LOWERCASE):
+            offending = next(host for host in parts if host in SHARE_HOSTERS_LOWERCASE)
             message = (
                 f'Error: "{domain}" is a file‑hosting domain and cannot be used here directly! '
                 f'Instead please provide a valid hostname that serves direct file links (including "{offending}").'

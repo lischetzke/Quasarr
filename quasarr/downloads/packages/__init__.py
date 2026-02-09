@@ -742,24 +742,16 @@ def delete_package(shared_state, package_id, package_title=None):
 
         matches = []
 
-        # 1. Validate ID format
-        is_valid_id = is_quasarr_package(package_id)
-        if not is_valid_id:
-            debug(
-                f"delete_package: Provided ID '{package_id}' does not match Quasarr pattern. Skipping ID search."
-            )
+        # 1. Try to find by ID
+        for package_location in packages:
+            for package in packages[package_location]:
+                if str(package.get("nzo_id", "")) == str(package_id):
+                    matches.append(package)
 
-        # 2. Try to find by ID (if valid)
-        if is_valid_id:
-            for package_location in packages:
-                for package in packages[package_location]:
-                    if str(package.get("nzo_id", "")) == str(package_id):
-                        matches.append(package)
-
-        # 3. If not found by ID, try to find by Title
+        # 2. If not found by ID, try to find by Title
         if not matches and package_title:
             debug(
-                f"delete_package: ID '{package_id}' not found or invalid, trying title '{package_title}'"
+                f"delete_package: ID '{package_id}' not found, trying title '{package_title}'"
             )
             for package_location in packages:
                 for package in packages[package_location]:

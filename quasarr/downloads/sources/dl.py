@@ -6,7 +6,7 @@ import re
 
 from bs4 import BeautifulSoup, NavigableString
 
-from quasarr.constants import COMMON_TLDS
+from quasarr.constants import COMMON_TLDS, SHARE_HOSTERS_LOWERCASE
 from quasarr.providers.hostname_issues import mark_hostname_issue
 from quasarr.providers.log import debug, info
 from quasarr.providers.sessions.dl import (
@@ -31,6 +31,13 @@ def normalize_mirror_name(name):
         if normalized.endswith(tld):
             normalized = normalized[: -len(tld)]
             break
+
+    # Handle alternative spellings/shorthands
+    if normalized in ["rg"]:
+        return "rapidgator"
+    if normalized in ["ddl"]:
+        return "ddownload"
+
     return normalized
 
 
@@ -87,7 +94,8 @@ def extract_mirror_name_from_link(link_element):
     }
 
     # Known hoster patterns for image detection
-    known_hosters = {
+    # Maps patterns to normalized names in SHARE_HOSTERS
+    hoster_patterns = {
         "rapidgator": ["rapidgator", "rg"],
         "ddownload": ["ddownload", "ddl"],
         "turbobit": ["turbobit"],
@@ -100,7 +108,7 @@ def extract_mirror_name_from_link(link_element):
         if cleaned and cleaned not in common_non_hosters:
             main_part = cleaned.split()[0] if " " in cleaned else cleaned
             if 2 < len(main_part) < 30:
-                return main_part
+                return normalize_mirror_name(main_part)
 
     # Check previous siblings including text nodes
     for sibling in link_element.previous_siblings:
@@ -117,7 +125,7 @@ def extract_mirror_name_from_link(link_element):
                     if parts:
                         mirror = parts[-1]
                         if 2 < len(mirror) < 30:
-                            return mirror
+                            return normalize_mirror_name(mirror)
             continue
 
         # Skip non-Tag elements
@@ -135,7 +143,7 @@ def extract_mirror_name_from_link(link_element):
             img_identifiers = (
                 img.get("src", "") + img.get("alt", "") + img.get("data-url", "")
             ).lower()
-            for hoster, patterns in known_hosters.items():
+            for hoster, patterns in hoster_patterns.items():
                 if any(pattern in img_identifiers for pattern in patterns):
                     return hoster
 
@@ -150,7 +158,8 @@ def extract_mirror_name_from_link(link_element):
         ):
             cleaned = re.sub(r"[^\w\s-]", "", sibling_text).strip()
             if cleaned and 2 < len(cleaned) < 30:
-                return cleaned.split()[0] if " " in cleaned else cleaned
+                mirror = cleaned.split()[0] if " " in cleaned else cleaned
+                return normalize_mirror_name(mirror)
 
     return None
 
@@ -249,9 +258,13 @@ def build_filecrypt_status_map(soup):
                 if parts:
                     mirror_name = parts[-1] if len(parts[-1]) > 2 else cleaned
 
-        if mirror_name and mirror_name not in status_map:
-            status_map[mirror_name] = status_url
-            debug(f"Mapped status image for mirror: {mirror_name} -> {status_url}")
+        if mirror_name:
+            mirror_normalized = normalize_mirror_name(mirror_name)
+            if mirror_normalized not in status_map:
+                status_map[mirror_normalized] = status_url
+                debug(
+                    f"Mapped status image for mirror: {mirror_normalized} -> {status_url}"
+                )
 
     return status_map
 
@@ -295,10 +308,12 @@ def extract_links_and_password_from_post(post_content, host):
             # Try to find in status map by mirror name (normalized, case-insensitive, TLD-stripped)
             mirror_normalized = normalize_mirror_name(mirror_name)
             for map_key, map_url in filecrypt_status_map.items():
-                map_key_normalized = normalize_mirror_name(map_key)
                 if (
-                    mirror_normalized in map_key_normalized
-                    or map_key_normalized in mirror_normalized
+                    mirror_normalized in map_key
+                    or map_key in mirror_normalized
+                    or mirror_normalized in SHARE_HOSTERS_LOWERCASE
+                    and map_key in SHARE_HOSTERS_LOWERCASE
+                    and mirror_normalized == map_key
                 ):
                     status_url = map_url
                     break

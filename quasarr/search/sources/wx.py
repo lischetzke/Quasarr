@@ -14,6 +14,7 @@ from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning
 from quasarr.constants import (
     SEARCH_CAT_BOOKS,
     SEARCH_CAT_MOVIES,
+    SEARCH_CAT_MUSIC,
     SEARCH_CAT_SHOWS,
 )
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
@@ -21,6 +22,7 @@ from quasarr.providers.imdb_metadata import get_localized_title, get_year
 from quasarr.providers.log import debug, error, trace, warn
 from quasarr.providers.utils import (
     generate_download_link,
+    get_base_search_category_id,
     is_imdb_id,
     is_valid_release,
 )
@@ -39,7 +41,9 @@ def wx_feed(shared_state, start_time, search_category):
     releases = []
     host = shared_state.values["config"]("Hostnames").get(hostname)
 
-    if search_category == SEARCH_CAT_BOOKS:
+    base_category = get_base_search_category_id(search_category)
+
+    if base_category in [SEARCH_CAT_BOOKS, SEARCH_CAT_MUSIC]:
         debug(
             f"<d>Skipping <y>{search_category}</y> on <g>{hostname.upper()}</g> (category not supported)!</d>"
         )
@@ -163,7 +167,9 @@ def wx_search(
     releases = []
     host = shared_state.values["config"]("Hostnames").get(hostname)
 
-    if search_category == SEARCH_CAT_BOOKS:
+    base_category = get_base_search_category_id(search_category)
+
+    if base_category in [SEARCH_CAT_BOOKS, SEARCH_CAT_MUSIC]:
         debug(f"<d>Skipping <y>{search_category}</>: unsupported category.</d>")
         return releases
 
@@ -202,9 +208,9 @@ def wx_search(
         "sortOrder": "desc",
     }
 
-    if search_category == SEARCH_CAT_SHOWS:
+    if base_category == SEARCH_CAT_SHOWS:
         params["types"] = "series,anime"
-    elif search_category == SEARCH_CAT_MOVIES:
+    elif base_category == SEARCH_CAT_MOVIES:
         params["types"] = "movie"
     else:
         warn(f"Unknown search category: {search_category}")
@@ -277,7 +283,7 @@ def wx_search(
                     title = title.replace(" ", ".")
 
                     if is_valid_release(
-                        title, search_category, search_string, season, episode
+                        title, base_category, search_string, season, episode
                     ):
                         # Skip if we've already seen this exact title
                         if title in seen_titles:
@@ -334,7 +340,7 @@ def wx_search(
 
                             if not is_valid_release(
                                 release_title,
-                                search_category,
+                                base_category,
                                 search_string,
                                 season,
                                 episode,

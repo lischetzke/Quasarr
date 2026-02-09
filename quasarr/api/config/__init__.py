@@ -11,20 +11,22 @@ import time
 from bottle import request, response
 
 from quasarr.constants import (
-    COMMON_HOSTERS,
     DEFAULT_DOWNLOAD_CATEGORIES,
     HOSTNAMES,
-    SEARCH_CATEGORIES,
-    TIER_1_HOSTERS,
+    RECOMMENDED_HOSTERS,
+    SHARE_HOSTERS,
 )
 from quasarr.providers.html_templates import render_button, render_form
 from quasarr.providers.log import info
 from quasarr.storage.categories import (
+    add_custom_search_category,
     add_download_category,
     delete_download_category,
+    delete_search_category,
     get_download_categories,
     get_download_category_emoji,
     get_download_category_mirrors,
+    get_search_categories,
     get_search_category_sources,
     update_download_category_emoji,
     update_download_category_mirrors,
@@ -173,7 +175,13 @@ def setup_config(app, shared_state):
 
         # Generate list items for Search Categories
         search_list_items = ""
-        for cat_id, details in SEARCH_CATEGORIES.items():
+        all_search_categories = get_search_categories()
+        # Sort by ID
+        sorted_search_cats = sorted(
+            all_search_categories.items(), key=lambda x: int(x[0])
+        )
+
+        for cat_id, details in sorted_search_cats:
             name = details["name"]
             emoji = details["emoji"]
             search_sources = get_search_category_sources(cat_id)
@@ -183,6 +191,13 @@ def setup_config(app, shared_state):
                 else "All"
             )
             search_sources_json = json.dumps(search_sources)
+
+            delete_btn = ""
+            # Allow deleting custom categories (ID >= 100000)
+            if int(cat_id) >= 100000:
+                delete_btn = f"""
+                <button class="btn-danger" onclick="deleteSearchCategory('{cat_id}')">Delete</button>
+                """
 
             edit_btn = f"""
             <button class="btn-primary" onclick='editSearchCategory("{cat_id}", "{name}", {search_sources_json})'>Edit</button>
@@ -196,14 +211,15 @@ def setup_config(app, shared_state):
                     <span class="category-mirrors">Hostnames: {search_sources_str}</span>
                 </div>
                 <div class="category-actions">
+                    {delete_btn}
                     {edit_btn}
                 </div>
             </div>
             """
 
         # Prepare hosters list for JS
-        hosters_js = json.dumps(COMMON_HOSTERS)
-        tier1_js = json.dumps(TIER_1_HOSTERS)
+        hosters_js = json.dumps(SHARE_HOSTERS)
+        recommended_js = json.dumps(RECOMMENDED_HOSTERS)
         search_sources_js = json.dumps(HOSTNAMES)
 
         form_html = f"""
@@ -213,7 +229,7 @@ def setup_config(app, shared_state):
                 flex-direction: column;
                 gap: 0.5rem;
                 margin-bottom: 1.5rem;
-                max-height: 400px;
+                max-height: 380px;
                 overflow-y: auto;
                 border: 1px solid var(--border-color, #dee2e6);
                 border-radius: 0.5rem;
@@ -255,7 +271,7 @@ def setup_config(app, shared_state):
                 margin-bottom: 1rem;
                 align-items: stretch;
             }}
-            .add-category-form input {{
+            .add-category-form input, .add-category-form select {{
                 margin-bottom: 0 !important;
             }}
             .add-category-form button {{
@@ -350,12 +366,25 @@ def setup_config(app, shared_state):
         <div class="category-list" id="searchCategoryList">
             {search_list_items}
         </div>
+        
+        <div class="add-category-form category-list">
+            <div class="category-item">
+                <select id="newSearchCategoryBase" style="flex: 1;">
+                    <option value="" disabled selected>Select Base Category Type</option>
+                    <option value="movies">Movies (2000)</option>
+                    <option value="tv">TV (5000)</option>
+                    <option value="music">Music (3000)</option>
+                    <option value="books">Books (7000)</option>
+                </select>
+                <button class="btn-primary" onclick="addSearchCategory()">Add Custom Category</button>
+            </div>
+        </div>
 
         <p>{render_button("Back", "secondary", {"onclick": "location.href='/'"})}</p>
 
         <script>
         const ALL_HOSTERS = {hosters_js};
-        const TIER1_HOSTERS = {tier1_js};
+        const TIER1_HOSTERS = {recommended_js};
         const HOSTNAMES = {search_sources_js};
 
         function addCategory() {{
@@ -381,6 +410,30 @@ def setup_config(app, shared_state):
             }})
             .catch(error => {{
                 showModal('Error', 'Failed to add category: ' + error.message);
+            }});
+        }}
+        
+        function addSearchCategory() {{
+            const baseSelect = document.getElementById('newSearchCategoryBase');
+            const baseType = baseSelect.value;
+            
+            if (!baseType) return;
+            
+            fetch('/api/categories_search', {{
+                method: 'POST',
+                headers: {{ 'Content-Type': 'application/json' }},
+                body: JSON.stringify({{ base_type: baseType }})
+            }})
+            .then(response => response.json())
+            .then(data => {{
+                if (data.success) {{
+                    window.location.reload();
+                }} else {{
+                    showModal('Error', data.message);
+                }}
+            }})
+            .catch(error => {{
+                showModal('Error', 'Failed to add search category: ' + error.message);
             }});
         }}
 
@@ -521,6 +574,13 @@ def setup_config(app, shared_state):
                 '<button class="btn-danger" onclick="performDeleteCategory(\\'' + name + '\\')">Delete</button>'
             );
         }}
+        
+        function deleteSearchCategory(catId) {{
+            showModal('Delete Search Category?', 'Are you sure you want to delete search category "' + catId + '"?', 
+                '<button class="btn-secondary" onclick="closeModal()">Cancel</button>' +
+                '<button class="btn-danger" onclick="performDeleteSearchCategory(\\'' + catId + '\\')">Delete</button>'
+            );
+        }}
 
         function performDeleteCategory(name) {{
             closeModal();
@@ -539,6 +599,24 @@ def setup_config(app, shared_state):
                 showModal('Error', 'Failed to delete category: ' + error.message);
             }});
         }}
+        
+        function performDeleteSearchCategory(catId) {{
+            closeModal();
+            fetch('/api/categories_search/' + catId, {{
+                method: 'DELETE'
+            }})
+            .then(response => response.json())
+            .then(data => {{
+                if (data.success) {{
+                    window.location.reload();
+                }} else {{
+                    showModal('Error', data.message);
+                }}
+            }})
+            .catch(error => {{
+                showModal('Error', 'Failed to delete search category: ' + error.message);
+            }});
+        }}
         </script>
         """
         return render_form("Categories", form_html)
@@ -551,6 +629,17 @@ def setup_config(app, shared_state):
             name = data.get("name")
             emoji = data.get("emoji", "📁")
             success, message = add_download_category(name, emoji)
+            return {"success": success, "message": message}
+        except Exception as e:
+            return {"success": False, "message": str(e)}
+
+    @app.post("/api/categories_search")
+    def add_search_category_api():
+        response.content_type = "application/json"
+        try:
+            data = request.json
+            base_type = data.get("base_type")
+            success, message = add_custom_search_category(base_type)
             return {"success": success, "message": message}
         except Exception as e:
             return {"success": False, "message": str(e)}
@@ -593,6 +682,15 @@ def setup_config(app, shared_state):
         response.content_type = "application/json"
         try:
             success, message = delete_download_category(name)
+            return {"success": success, "message": message}
+        except Exception as e:
+            return {"success": False, "message": str(e)}
+
+    @app.delete("/api/categories_search/<cat_id>")
+    def delete_search_category_api(cat_id):
+        response.content_type = "application/json"
+        try:
+            success, message = delete_search_category(cat_id)
             return {"success": success, "message": message}
         except Exception as e:
             return {"success": False, "message": str(e)}

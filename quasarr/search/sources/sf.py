@@ -17,6 +17,7 @@ from quasarr.providers.log import debug, info, trace, warn
 from quasarr.providers.utils import (
     convert_to_mb,
     generate_download_link,
+    get_base_search_category_id,
     get_recently_searched,
     is_imdb_id,
     is_valid_release,
@@ -107,7 +108,9 @@ def sf_feed(shared_state, start_time, search_category):
     sf = shared_state.values["config"]("Hostnames").get(hostname.lower())
     password = check(sf)
 
-    if search_category != SEARCH_CAT_SHOWS:  # Only TV supported
+    base_category = get_base_search_category_id(search_category)
+
+    if base_category != SEARCH_CAT_SHOWS:  # Only TV supported
         debug(
             f"<d>Skipping <y>{search_category}</y> on <g>{hostname.upper()}</g> (category not supported)!</d>"
         )
@@ -225,6 +228,8 @@ def sf_search(
     sf = shared_state.values["config"]("Hostnames").get(hostname.lower())
     password = check(sf)
 
+    base_category = get_base_search_category_id(search_category)
+
     imdb_id_in_search = is_imdb_id(search_string)
     if imdb_id_in_search:
         search_string = get_localized_title(shared_state, imdb_id_in_search, "de")
@@ -233,7 +238,7 @@ def sf_search(
             return releases
         search_string = html.unescape(search_string)
 
-    if search_category != SEARCH_CAT_SHOWS:  # Only TV supported
+    if base_category != SEARCH_CAT_SHOWS:  # Only TV supported
         debug(
             f"<d>Skipping <y>{search_category}</y> on <g>{hostname.upper()}</g> (category not supported)!</d>"
         )
@@ -409,7 +414,7 @@ def sf_search(
 
                 # check down here on purpose, because the title may be modified at episode stage
                 if not is_valid_release(
-                    title, search_category, search_string, season, episode
+                    title, base_category, search_string, season, episode
                 ):
                     continue
 
