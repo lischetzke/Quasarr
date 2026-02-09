@@ -11,7 +11,7 @@ import time
 from bottle import request, response
 
 from quasarr.constants import (
-    DEFAULT_DOWNLOAD_CATEGORIES,
+    DOWNLOAD_CATEGORIES,
     HOSTNAMES,
     RECOMMENDED_HOSTERS,
     SHARE_HOSTERS,
@@ -149,7 +149,7 @@ def setup_config(app, shared_state):
 
             delete_btn = ""
             # Prevent deleting default categories
-            if cat not in DEFAULT_DOWNLOAD_CATEGORIES:
+            if cat not in DOWNLOAD_CATEGORIES:
                 delete_btn = f"""
                 <button class="btn-danger" onclick="deleteCategory('{cat}')">Delete</button>
                 """

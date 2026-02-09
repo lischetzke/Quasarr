@@ -52,6 +52,7 @@ SEARCH_CAT_MUSIC = 3000
 SEARCH_CAT_SHOWS = 5000
 SEARCH_CAT_BOOKS = 7000
 
+# Default Set of Search Categories
 SEARCH_CATEGORIES = {
     "2000": {"name": "Movies", "emoji": "🎬"},
     "3000": {"name": "Music", "emoji": "🎵"},
@@ -59,15 +60,13 @@ SEARCH_CATEGORIES = {
     "7000": {"name": "Books", "emoji": "📚"},
 }
 
-DEFAULT_DOWNLOAD_CATEGORIES = ["movies", "music", "tv", "docs"]
-
-DEFAULT_DOWNLOAD_CATEGORY_EMOJIS = {
-    "movies": "🎬",
-    "music": "🎵",
-    "tv": "📺",
-    "docs": "📄",
+# Default SEt of Download Categories
+DOWNLOAD_CATEGORIES = {
+    "movies": {"emoji": "🎬"},
+    "music": {"emoji": "🎵"},
+    "tv": {"emoji": "📺"},
+    "docs": {"emoji": "📄"},
 }
-
 
 # ==============================================================================
 # HOSTERS & MIRRORS
