@@ -30,6 +30,7 @@ from quasarr.providers.utils import (
     generate_download_link,
     is_imdb_id,
     is_valid_release,
+    replace_umlauts,
 )
 
 hostname = "dl"
@@ -182,23 +183,6 @@ def dl_feed(shared_state, start_time, search_category):
     return releases
 
 
-def _replace_umlauts(text):
-    replacements = {
-        "ä": "ae",
-        "ö": "oe",
-        "ü": "ue",
-        "Ä": "Ae",
-        "Ö": "Oe",
-        "Ü": "Ue",
-        "ß": "ss",
-    }
-
-    for umlaut, replacement in replacements.items():
-        text = text.replace(umlaut, replacement)
-
-    return text
-
-
 def _search_single_page(
     shared_state,
     host,
@@ -215,7 +199,7 @@ def _search_single_page(
     """
     page_releases = []
 
-    search_string = _replace_umlauts(search_string)
+    search_string = replace_umlauts(search_string)
 
     try:
         if page_num == 1:

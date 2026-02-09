@@ -37,8 +37,11 @@ def convert_to_rss_date(date_str):
     """
     BY date format: 'dd.mm.yy HH:MM', e.g. '20.07.25 17:48'
     """
-    dt_obj = datetime.strptime(date_str, "%d.%m.%y %H:%M")
-    return dt_obj.strftime("%a, %d %b %Y %H:%M:%S +0000")
+    try:
+        dt_obj = datetime.strptime(date_str, "%d.%m.%y %H:%M")
+        return dt_obj.strftime("%a, %d %b %Y %H:%M:%S +0000")
+    except:
+        return ""
 
 
 def extract_size(text):
@@ -133,7 +136,25 @@ def _parse_posts(
                             date_str = val
                         elif label.startswith("Größe"):
                             size_str = val
+
+                if not date_str:
+                    cols = entry.find_all("td")
+                    if len(cols) >= 2:
+                        val = cols[1].get_text(strip=True)
+                        if re.match(r"\d{2}\.\d{2}\.\d{2} \d{2}:\d{2}", val):
+                            date_str = val
+
+                if not size_str:
+                    cols = entry.find_all("td")
+                    for col in cols:
+                        val = col.get_text(strip=True)
+                        if re.match(r"\d+(?:[.,]\d+)?\s*[A-Za-z]+", val):
+                            size_str = val
+                            break
+
                 published = convert_to_rss_date(date_str) if date_str else ""
+                if not published:
+                    debug("fuck")
                 size_info = (
                     extract_size(size_str)
                     if size_str
@@ -166,6 +187,12 @@ def _parse_posts(
                 source = base_url + title_tag["href"]
                 date_cell = row.find_all("td")[2]
                 date_str = date_cell.get_text(strip=True)
+                if not re.match(r"\d{2}\.\d{2}\.\d{2} \d{2}:\d{2}", date_str):
+                    cols = row.find_all("td")
+                    if len(cols) >= 2:
+                        val = cols[1].get_text(strip=True)
+                        if re.match(r"\d{2}\.\d{2}\.\d{2} \d{2}:\d{2}", val):
+                            date_str = val
                 published = convert_to_rss_date(date_str)
                 size_bytes = 0
                 mb = 0

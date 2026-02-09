@@ -73,45 +73,41 @@ DEFAULT_DOWNLOAD_CATEGORY_EMOJIS = {
 # HOSTERS & MIRRORS
 # ==============================================================================
 
-# Used to identify share hosters
-SHARE_HOSTERS = {
-    "rapidgator",
-    "ddownload",
-    "keep2share",
-    "1fichier",
-    "katfile",
-    "filer",
-    "turbobit",
-    "nitroflare",
-    "filefactory",
-    "uptobox",
-    "mediafire",
-    "mega",
-}
-
 # As of 01.02.2026
-COMMON_HOSTERS = [
+# Format: (Name, is_tier1)
+HOSTERS = [
     # --- TIER 1: The Standards (Required for most downloaders) ---
-    "Rapidgator",  # Global King. Most files are here.
-    "DDownload",  # The "Euro Standard". Cheaper alternative to RG.
+    ("Rapidgator", True),  # Global King. Most files are here.
+    ("DDownload", True),  # The "Euro Standard". Cheaper alternative to RG.
     # --- TIER 2: Very Popular / High Retention ---
-    "1fichier",  # Massive retention, cheap, very popular in France/Global.
-    "Keep2Share",  # "Premium" tier. High speeds, expensive, very stable.
-    "Nitroflare",  # Old guard. Expensive, but essential for some exclusive content.
+    ("1fichier", False),  # Massive retention, cheap, very popular in France/Global.
+    ("Keep2Share", False),  # "Premium" tier. High speeds, expensive, very stable.
+    (
+        "Nitroflare",
+        False,
+    ),  # Old guard. Expensive, but essential for some exclusive content.
     # --- TIER 3: Common Mirrors (The "Third Link") ---
-    "Turbobit",  # Everywhere, but often disliked by free users.
-    "Hitfile",  # Turbobit's sibling site. Often seen together.
-    "Katfile",  # Very common secondary mirror for smaller uploaders.
-    "Alfafile",  # Stable mid-tier host, often seen on DDL blogs.
+    ("Turbobit", False),  # Everywhere, but often disliked by free users.
+    ("Hitfile", False),  # Turbobit's sibling site. Often seen together.
+    ("Katfile", False),  # Very common secondary mirror for smaller uploaders.
+    ("Alfafile", False),  # Stable mid-tier host, often seen on DDL blogs.
     # --- TIER 4: Niche / Backup / User Requested ---
-    "Filer",  # Strong in German-speaking areas, niche elsewhere.
-    "IronFiles",  # Active. Smaller ecosystem, often specific to certain boards.
-    "Fikper",  # Newer player (relative to RG), gained traction in 2024-25.
-    "Mega",  # Active, but functions differently (cloud drive vs. OCH).
+    ("Filer", False),  # Strong in German-speaking areas, niche elsewhere.
+    (
+        "IronFiles",
+        False,
+    ),  # Active. Smaller ecosystem, often specific to certain boards.
+    ("Fikper", False),  # Newer player (relative to RG), gained traction in 2024-25.
+    ("Mega", False),  # Active, but functions differently (cloud drive vs. OCH).
+    ("frdl", False),  # Rarely used in some forums
 ]
 
+# Used to identify share hosters (lowercase for comparison)
+SHARE_HOSTERS_LOWERCASE = {h[0].lower() for h in HOSTERS}
+SHARE_HOSTERS = [h[0] for h in HOSTERS]
+
 # Recommend only these
-TIER_1_HOSTERS = ["Rapidgator", "DDownload"]
+RECOMMENDED_HOSTERS = [h[0] for h in HOSTERS if h[1]]
 
 # Common TLDs to strip for mirror name comparison
 COMMON_TLDS = {
@@ -264,72 +260,31 @@ ARCHIVE_EXTENSIONS = frozenset(
 
 SESSION_MAX_AGE_SECONDS = 24 * 60 * 60  # 24 hours
 
-GERMAN_MONTHS = [
-    "Januar",
-    "Februar",
-    "März",
-    "April",
-    "Mai",
-    "Juni",
-    "Juli",
-    "August",
-    "September",
-    "Oktober",
-    "November",
-    "Dezember",
+# Source of truth for month names and mappings
+# Format: (Month Number, English Name, German Name, [Additional Synonyms])
+_MONTHS_CONFIG = [
+    (1, "January", "Januar", ["jan"]),
+    (2, "February", "Februar", ["feb"]),
+    (3, "March", "März", ["maerz", "mär", "mrz", "mae"]),
+    (4, "April", "April", ["apr"]),
+    (5, "May", "Mai", ["may"]),
+    (6, "June", "Juni", ["jun", "june"]),
+    (7, "July", "Juli", ["jul", "july"]),
+    (8, "August", "August", ["aug"]),
+    (9, "September", "September", ["sep"]),
+    (10, "October", "Oktober", ["okt", "october"]),
+    (11, "November", "November", ["nov"]),
+    (12, "December", "Dezember", ["dez", "december"]),
 ]
+
+ENGLISH_MONTHS = [m[1] for m in _MONTHS_CONFIG]
+GERMAN_MONTHS = [m[2] for m in _MONTHS_CONFIG]
 
 MONTHS_MAP = {
-    "januar": 1,
-    "jan": 1,
-    "februar": 2,
-    "feb": 2,
-    "märz": 3,
-    "maerz": 3,
-    "mär": 3,
-    "mrz": 3,
-    "mae": 3,
-    "april": 4,
-    "apr": 4,
-    "mai": 5,
-    "may": 5,
-    "juni": 6,
-    "jun": 6,
-    "june": 6,
-    "juli": 7,
-    "jul": 7,
-    "july": 7,
-    "august": 8,
-    "aug": 8,
-    "september": 9,
-    "sep": 9,
-    "oktober": 10,
-    "okt": 10,
-    "october": 10,
-    "november": 11,
-    "nov": 11,
-    "dezember": 12,
-    "dez": 12,
-    "january": 1,
-    "february": 2,
-    "march": 3,
-    "december": 12,
+    name.lower(): nr
+    for nr, en, de, synonyms in _MONTHS_CONFIG
+    for name in [en, de] + synonyms
 }
-
-ENGLISH_MONTHS = [
-    "January",
-    "February",
-    "March",
-    "April",
-    "May",
-    "June",
-    "July",
-    "August",
-    "September",
-    "October",
-    "November",
-    "December",
-]
 
 
 # ==============================================================================

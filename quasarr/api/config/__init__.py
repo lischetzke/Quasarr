@@ -11,11 +11,11 @@ import time
 from bottle import request, response
 
 from quasarr.constants import (
-    COMMON_HOSTERS,
     DEFAULT_DOWNLOAD_CATEGORIES,
     HOSTNAMES,
+    RECOMMENDED_HOSTERS,
     SEARCH_CATEGORIES,
-    TIER_1_HOSTERS,
+    SHARE_HOSTERS,
 )
 from quasarr.providers.html_templates import render_button, render_form
 from quasarr.providers.log import info
@@ -202,8 +202,8 @@ def setup_config(app, shared_state):
             """
 
         # Prepare hosters list for JS
-        hosters_js = json.dumps(COMMON_HOSTERS)
-        tier1_js = json.dumps(TIER_1_HOSTERS)
+        hosters_js = json.dumps(SHARE_HOSTERS)
+        recommended_js = json.dumps(RECOMMENDED_HOSTERS)
         search_sources_js = json.dumps(HOSTNAMES)
 
         form_html = f"""
@@ -355,7 +355,7 @@ def setup_config(app, shared_state):
 
         <script>
         const ALL_HOSTERS = {hosters_js};
-        const TIER1_HOSTERS = {tier1_js};
+        const TIER1_HOSTERS = {recommended_js};
         const HOSTNAMES = {search_sources_js};
 
         function addCategory() {{

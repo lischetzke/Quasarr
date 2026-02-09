@@ -546,18 +546,28 @@ def convert_to_mb(item):
     return int(size_mb)
 
 
-def sanitize_title(title: str) -> str:
-    umlaut_map = {
-        "Ä": "Ae",
+def replace_umlauts(text):
+    """
+    Replace German umlauts with their ASCII equivalents.
+    """
+    replacements = {
         "ä": "ae",
-        "Ö": "Oe",
         "ö": "oe",
-        "Ü": "Ue",
         "ü": "ue",
+        "Ä": "Ae",
+        "Ö": "Oe",
+        "Ü": "Ue",
         "ß": "ss",
     }
-    for umlaut, replacement in umlaut_map.items():
-        title = title.replace(umlaut, replacement)
+
+    for umlaut, replacement in replacements.items():
+        text = text.replace(umlaut, replacement)
+
+    return text
+
+
+def sanitize_title(title: str) -> str:
+    title = replace_umlauts(title)
 
     title = title.encode("ascii", errors="ignore").decode()
 
@@ -584,10 +594,7 @@ def sanitize_string(s):
     s = s.replace("-", " ")
 
     # Umlauts
-    s = re.sub(r"ä", "ae", s)
-    s = re.sub(r"ö", "oe", s)
-    s = re.sub(r"ü", "ue", s)
-    s = re.sub(r"ß", "ss", s)
+    s = replace_umlauts(s)
 
     # Remove special characters
     s = re.sub(r"[^a-zA-Z0-9\s]", "", s)

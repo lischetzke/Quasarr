@@ -391,18 +391,25 @@ def setup_arr_routes(app):
 
                     # XML Generation (releases are already sliced)
                     items = ""
+                    now_rfc822 = datetime.now().strftime("%a, %d %b %Y %H:%M:%S +0000")
+
                     for release in releases:
                         release = release.get("details", {})
 
                         # Ensure clean XML output
                         title = sax_utils.escape(release.get("title", ""))
                         source = sax_utils.escape(release.get("source", ""))
+                        if not title:
+                            debug(f"Title missing for release from {source}")
+                            continue
 
                         if not "lazylibrarian" in request_from.lower():
                             title = f"[{release.get('hostname', '').upper()}] {title}"
 
                         # Get publication date - sources should provide valid dates
                         pub_date = release.get("date", "").strip()
+                        if not pub_date:
+                            pub_date = now_rfc822
 
                         items += f'''
                         <item>
@@ -424,25 +431,31 @@ def setup_arr_routes(app):
                             <guid isPermaLink="False">0</guid>
                             <link>https://github.com/rix1337/Quasarr</link>
                             <comments>No results matched your search criteria.</comments>
-                            <pubDate>{datetime.now().strftime("%a, %d %b %Y %H:%M:%S +0000")}</pubDate>
+                            <pubDate>{now_rfc822}</pubDate>
                             <enclosure url="https://github.com/rix1337/Quasarr" length="0" type="application/x-nzb" />
                         </item>"""
 
                     return f"""<?xml version="1.0" encoding="UTF-8"?>
                                 <rss>
                                     <channel>
+                                        <title>Quasarr Indexer</title>
+                                        <description>Quasarr Indexer API</description>
+                                        <link>https://quasarr.indexer/</link>
+                                        <pubDate>{now_rfc822}</pubDate>
                                         {items}
                                     </channel>
                                 </rss>"""
             except Exception as e:
                 error(f"Error loading search results: {e} " + traceback.format_exc())
             warn(f"Unknown indexer request: {dict(request.query)}")
-            return """<?xml version="1.0" encoding="UTF-8"?>
+            now_rfc822 = datetime.now().strftime("%a, %d %b %Y %H:%M:%S +0000")
+            return f"""<?xml version="1.0" encoding="UTF-8"?>
                         <rss>
                             <channel>
                                 <title>Quasarr Indexer</title>
                                 <description>Quasarr Indexer API</description>
                                 <link>https://quasarr.indexer/</link>
+                                <pubDate>{now_rfc822}</pubDate>
                             </channel>
                         </rss>"""
 
