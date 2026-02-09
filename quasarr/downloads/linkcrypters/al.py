@@ -93,7 +93,9 @@ class CNL:
         return urls
 
 
-def decrypt_content(content_items: list[dict], mirrors: list[str] | None) -> list[str]:
+def decrypt_content(
+    content_items: list[dict] | dict, mirrors: list[str] | None
+) -> list[str]:
     """
     Go through every item in `content_items`, but if `mirrors` is not None,
     only attempt to decrypt those whose "hoster" field contains one of the `mirrors`.
@@ -101,10 +103,16 @@ def decrypt_content(content_items: list[dict], mirrors: list[str] | None) -> lis
 
     Returns a flat list of all decrypted URLs.
     """
+    # Ensure content_items is a list of items
+    if isinstance(content_items, dict):
+        items_list = list(content_items.values())
+    else:
+        items_list = content_items
+
     if mirrors:
         filtered = [
             item
-            for item in content_items
+            for item in items_list
             if any(mirror in item.get("hoster", "") for mirror in mirrors)
         ]
     else:
@@ -114,17 +122,14 @@ def decrypt_content(content_items: list[dict], mirrors: list[str] | None) -> lis
         info(
             f"No items found for mirrors='{mirrors}'. Falling back to all content_items."
         )
-        filtered = content_items.copy()
+        filtered = list(items_list)
 
     if not mirrors:
-        filtered = content_items.copy()
+        filtered = list(items_list)
 
     decrypted_links: list[str] = []
 
-    # If 'filtered' is a dictionary, iterate over its values; otherwise, assume it's a list.
-    items_to_process = filtered.values() if isinstance(filtered, dict) else filtered
-
-    for idx, item in enumerate(items_to_process):
+    for idx, item in enumerate(filtered):
         if not isinstance(item, dict):
             info(
                 f"[Item {idx}] Invalid item format; expected dict, got {type(item).__name__}"

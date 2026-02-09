@@ -8,8 +8,7 @@ import re
 import emoji
 
 from quasarr.constants import (
-    DEFAULT_DOWNLOAD_CATEGORIES,
-    DEFAULT_DOWNLOAD_CATEGORY_EMOJIS,
+    DOWNLOAD_CATEGORIES,
     SEARCH_CAT_BOOKS,
     SEARCH_CAT_MOVIES,
     SEARCH_CAT_MUSIC,
@@ -26,14 +25,14 @@ def get_download_categories():
     db = DataBase("categories_download")
 
     # Ensure default categories always exist
-    for cat in DEFAULT_DOWNLOAD_CATEGORIES:
+    for cat, cat_info in DOWNLOAD_CATEGORIES.items():
         if not db.retrieve(cat):
             # Store default emoji in the value JSON
-            emoji = DEFAULT_DOWNLOAD_CATEGORY_EMOJIS.get(cat, "📁")
-            db.store(cat, json.dumps({"emoji": emoji}))
+            emj = cat_info.get("emoji", "📁")
+            db.store(cat, json.dumps({"emoji": emj}))
             info(f"Restored default category: {cat}")
 
-    cats = db.retrieve_all_titles()
+    cats = db.retrieve_all_titles() or []
     return sorted([c[0] for c in cats])
 
 
@@ -49,7 +48,7 @@ def get_download_category_emoji(name):
             pass
 
     # Fallback for defaults if DB is somehow corrupted or old format
-    return DEFAULT_DOWNLOAD_CATEGORY_EMOJIS.get(name, "📁")
+    return DOWNLOAD_CATEGORIES.get(name, {}).get("emoji", "📁")
 
 
 def get_download_category_mirrors(name, lowercase=False):
@@ -72,11 +71,17 @@ def get_search_categories():
     """Returns a dictionary of all search categories (default + custom)."""
     db = DataBase("categories_search")
 
+    # Ensure default categories always exist in DB (for whitelists)
+    for cat_id, cat_info in SEARCH_CATEGORIES.items():
+        if not db.retrieve(cat_id):
+            db.store(cat_id, json.dumps(cat_info))
+            info(f"Restored default search category: {cat_id} ({cat_info['name']})")
+
     # Start with default categories
     categories = SEARCH_CATEGORIES.copy()
 
     # Add custom categories from DB
-    custom_cats = db.retrieve_all_titles()
+    custom_cats = db.retrieve_all_titles() or []
     for cat_id_tuple in custom_cats:
         cat_id = cat_id_tuple[0]
         data_str = db.retrieve(cat_id)
@@ -162,13 +167,7 @@ def add_custom_search_category(base_type):
     base_cat_info = SEARCH_CATEGORIES[str(base_cat_id)]
 
     db = DataBase("categories_search")
-    all_cats = db.retrieve_all_titles()
-
-    # Filter for custom categories (those not in default SEARCH_CATEGORIES)
-    # Note: Default categories might have entries in DB for whitelists, so we check ID range
-    # Custom categories start at base_cat_id + 100000 (e.g. 102000)
-    # Wait, requirement says: "starting with 10... counting up in steps of ten"
-    # "first custom category for music is going to be called 103000 the next is 103010"
+    all_cats = db.retrieve_all_titles() or []
 
     # Base IDs: Movies=2000, Music=3000, TV=5000, Books=7000
     # Custom IDs: 102000, 103000, 105000, 107000
@@ -191,15 +190,6 @@ def add_custom_search_category(base_type):
     next_id = start_id
     while next_id in existing_ids:
         next_id += 10
-
-    # Determine name (Custom 1, Custom 2, etc.)
-    # We need to count how many custom categories of THIS type exist to name it properly?
-    # "dont allow changing the name, just call them custom 1, custom 2 etc."
-    # This likely means global custom 1, or per type?
-    # "the user shant be able to edit the numbers... counting up in steps of ten"
-    # Let's assume "Custom 1" is just a display name.
-    # Let's make it "Custom {Type} {Index}" to be clear, or just "Custom {ID}"
-    # Requirement: "call them custom 1, custom 2 etc."
 
     # Let's count how many custom categories of this base type exist
     type_count = 0
@@ -272,10 +262,8 @@ def add_download_category(name, emj="📁"):
     if db.retrieve(name):
         return False, f"Category '{name}' already exists."
 
-    all_cats = db.retrieve_all_titles()
-    custom_count = len(
-        [c[0] for c in all_cats if c[0] not in DEFAULT_DOWNLOAD_CATEGORIES]
-    )
+    all_cats = db.retrieve_all_titles() or []
+    custom_count = len([c[0] for c in all_cats if c[0] not in DOWNLOAD_CATEGORIES])
     if custom_count >= 10:
         return False, "Limit of 10 custom categories reached."
 
@@ -324,7 +312,7 @@ def update_download_category_mirrors(name, mirrors):
     try:
         data = json.loads(data_str)
     except json.JSONDecodeError:
-        data = {"emoji": DEFAULT_DOWNLOAD_CATEGORY_EMOJIS.get(name, "📁")}
+        data = {"emoji": DOWNLOAD_CATEGORIES.get(name, {}).get("emoji", "📁")}
 
     data["mirrors"] = mirrors
     db.update_store(name, json.dumps(data))
@@ -336,7 +324,7 @@ def delete_download_category(name):
     """Deletes a category."""
     name = name.strip().lower()
 
-    if name in DEFAULT_DOWNLOAD_CATEGORIES:
+    if name in DOWNLOAD_CATEGORIES:
         return False, f"Cannot delete default category '{name}'."
 
     db = DataBase("categories_download")
