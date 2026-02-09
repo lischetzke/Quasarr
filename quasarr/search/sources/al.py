@@ -26,6 +26,7 @@ from quasarr.providers.sessions.al import fetch_via_requests_session, invalidate
 from quasarr.providers.utils import (
     convert_to_mb,
     generate_download_link,
+    get_base_search_category_id,
     get_recently_searched,
     is_imdb_id,
     sanitize_string,
@@ -132,14 +133,16 @@ def al_feed(shared_state, start_time, search_category):
     releases = []
     host = shared_state.values["config"]("Hostnames").get(hostname)
 
-    if search_category in [SEARCH_CAT_BOOKS, SEARCH_CAT_MUSIC]:
+    base_category = get_base_search_category_id(search_category)
+
+    if base_category in [SEARCH_CAT_BOOKS, SEARCH_CAT_MUSIC]:
         debug(
             f"<d>Skipping <y>{search_category}</y> on <g>{hostname.upper()}</g> (category not supported)!</d>"
         )
         return releases
-    elif search_category == SEARCH_CAT_MOVIES:
+    elif base_category == SEARCH_CAT_MOVIES:
         wanted_type = "movie"
-    elif search_category == SEARCH_CAT_SHOWS:
+    elif base_category == SEARCH_CAT_SHOWS:
         wanted_type = "series"
     else:
         warn(f"Unknown search category: {search_category}")
@@ -284,14 +287,16 @@ def al_search(
     releases = []
     host = shared_state.values["config"]("Hostnames").get(hostname)
 
-    if search_category in [SEARCH_CAT_BOOKS, SEARCH_CAT_MUSIC]:
+    base_category = get_base_search_category_id(search_category)
+
+    if base_category in [SEARCH_CAT_BOOKS, SEARCH_CAT_MUSIC]:
         debug(
             f"<d>Skipping <y>{search_category}</y> on <g>{hostname.upper()}</g> (category not supported)!</d>"
         )
         return releases
-    elif search_category == SEARCH_CAT_MOVIES:
+    elif base_category == SEARCH_CAT_MOVIES:
         valid_type = "movie"
-    elif search_category == SEARCH_CAT_SHOWS:
+    elif base_category == SEARCH_CAT_SHOWS:
         valid_type = "series"
     else:
         warn(f"Unknown search category: {search_category}")

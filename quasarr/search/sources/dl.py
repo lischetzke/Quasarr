@@ -28,6 +28,7 @@ from quasarr.providers.sessions.dl import (
 )
 from quasarr.providers.utils import (
     generate_download_link,
+    get_base_search_category_id,
     is_imdb_id,
     is_valid_release,
     replace_umlauts,
@@ -72,13 +73,15 @@ def dl_feed(shared_state, start_time, search_category):
     releases = []
     host = shared_state.values["config"]("Hostnames").get(hostname)
 
-    if search_category == SEARCH_CAT_BOOKS:
+    base_category = get_base_search_category_id(search_category)
+
+    if base_category == SEARCH_CAT_BOOKS:
         forum = "magazine-zeitschriften.72"
-    elif search_category == SEARCH_CAT_MOVIES:
+    elif base_category == SEARCH_CAT_MOVIES:
         forum = "hd.8"
-    elif search_category == SEARCH_CAT_SHOWS:
+    elif base_category == SEARCH_CAT_SHOWS:
         forum = "hd.14"
-    elif search_category == SEARCH_CAT_MUSIC:
+    elif base_category == SEARCH_CAT_MUSIC:
         forum = "alben.42"
     else:
         warn(f"Unknown search category: {search_category}")
@@ -199,6 +202,8 @@ def _search_single_page(
     """
     page_releases = []
 
+    base_category = get_base_search_category_id(search_category)
+
     search_string = replace_umlauts(search_string)
 
     try:
@@ -260,8 +265,8 @@ def _search_single_page(
 
                 # Filter: Skip if no resolution or codec info (unless LazyLibrarian/Lidarr)
                 if (
-                    search_category != SEARCH_CAT_BOOKS
-                    and search_category != SEARCH_CAT_MUSIC
+                    base_category != SEARCH_CAT_BOOKS
+                    and base_category != SEARCH_CAT_MUSIC
                 ):
                     if not (
                         RESOLUTION_REGEX.search(title_normalized)
@@ -281,7 +286,7 @@ def _search_single_page(
                     thread_url = f"https://www.{host}{thread_url}"
 
                 if not is_valid_release(
-                    title_normalized, search_category, search_string, season, episode
+                    title_normalized, base_category, search_string, season, episode
                 ):
                     continue
 

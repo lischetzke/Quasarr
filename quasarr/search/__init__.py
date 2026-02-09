@@ -20,6 +20,7 @@ from quasarr.providers.imdb_metadata import get_imdb_metadata
 from quasarr.providers.log import debug, info, trace, warn
 from quasarr.providers.utils import (
     determine_search_category,
+    get_base_search_category_id,
 )
 from quasarr.storage.categories import get_search_category_sources
 
@@ -45,10 +46,17 @@ def get_search_results(
     if not search_category:
         search_category = determine_search_category(request_from)
 
+    # Resolve base category for logic (Movies, TV, etc.)
+    base_category = get_base_search_category_id(search_category)
+    if not base_category:
+        # Fallback if somehow invalid
+        base_category = search_category
+
     # Config retrieval
     config = shared_state.values["config"]("Hostnames")
 
     # Filter out sources that are not in the search category's whitelist
+    # We use the original search_category ID here to get the specific whitelist
     whitelisted_sources = get_search_category_sources(search_category)
 
     if whitelisted_sources:
@@ -96,17 +104,18 @@ def get_search_results(
 
     use_pagination = True
 
+    # Use base_category for logic branching
     if imdb_id:
-        if search_category == SEARCH_CAT_MOVIES:
-            args = (shared_state, start_time, search_category, imdb_id)
+        if base_category == SEARCH_CAT_MOVIES:
+            args = (shared_state, start_time, base_category, imdb_id)
             kwargs = {}
             for name, url, func in imdb_map:
                 if url and (not whitelisted_sources or name in whitelisted_sources):
                     search_executor.add(
                         func, args, kwargs, use_cache=True, source_name=name.upper()
                     )
-        elif search_category == SEARCH_CAT_SHOWS:
-            args = (shared_state, start_time, search_category, imdb_id)
+        elif base_category == SEARCH_CAT_SHOWS:
+            args = (shared_state, start_time, base_category, imdb_id)
             kwargs = {"season": season, "episode": episode}
             for name, url, func in imdb_map:
                 if url and (not whitelisted_sources or name in whitelisted_sources):
@@ -115,20 +124,20 @@ def get_search_results(
                     )
         else:
             warn(
-                f"{stype} is not supported for {request_from}, category: {search_category}"
+                f"{stype} is not supported for {request_from}, category: {search_category} (Base: {base_category})"
             )
 
     elif search_phrase:
-        if search_category == SEARCH_CAT_BOOKS:
-            args = (shared_state, start_time, search_category, search_phrase)
+        if base_category == SEARCH_CAT_BOOKS:
+            args = (shared_state, start_time, base_category, search_phrase)
             kwargs = {}
             for name, url, func in phrase_map:
                 if url and (not whitelisted_sources or name in whitelisted_sources):
                     search_executor.add(
                         func, args, kwargs, use_cache=True, source_name=name.upper()
                     )
-        elif search_category == SEARCH_CAT_MUSIC:
-            args = (shared_state, start_time, search_category, search_phrase)
+        elif base_category == SEARCH_CAT_MUSIC:
+            args = (shared_state, start_time, base_category, search_phrase)
             kwargs = {}
             for name, url, func in phrase_map:
                 if url and (not whitelisted_sources or name in whitelisted_sources):
@@ -137,11 +146,11 @@ def get_search_results(
                     )
         else:
             warn(
-                f"{stype} is not supported for {request_from}, category: {search_category}"
+                f"{stype} is not supported for {request_from}, category: {search_category} (Base: {base_category})"
             )
 
     else:
-        args = (shared_state, start_time, search_category)
+        args = (shared_state, start_time, base_category)
         kwargs = {}
         use_pagination = False
         for name, url, func in feed_map:

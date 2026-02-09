@@ -82,6 +82,7 @@ You can manage categories in the Quasarr Web UI.
     * If specific hostnames are set, only these will be searched by the given search category.
     * This affects search results.
     * This affects the **Quasarr Newznab Indexer** in Radarr/Sonarr/Lidarr/LazyLibrarian.
+    * **Custom Search Categories:** You can add up to 10 custom search categories per base type (Movies, TV, Music, Books). These allow you to create separate hostname whitelists for different purposes.
 * **Emoji:** Will be used in the Packages view on the Quasarr Web UI.
 
 ---

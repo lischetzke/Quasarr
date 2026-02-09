@@ -29,7 +29,7 @@ from quasarr.constants import (
     SEASON_EP_REGEX,
 )
 from quasarr.providers.log import crit, debug, error, trace, warn
-from quasarr.storage.categories import download_category_exists
+from quasarr.storage.categories import download_category_exists, search_category_exists
 
 
 class Unbuffered(object):
@@ -475,12 +475,63 @@ def determine_category(request_from, category=None):
     return category_map.get(client_type, "tv")
 
 
-def determine_search_category(request_from):
+def get_base_search_category_id(cat_id):
     """
-    Determine the numeric search category based on the client type.
-    Returns 2000 (Movies), 5000 (TV), or 7000 (Books).
-    Defaults to 5000 (TV) if unknown.
+    Reverse-parses a custom or default category ID to its base type ID.
+    E.g., 102010 -> 2000 (Movies), 5040 -> 5000 (TV)
     """
+    try:
+        cat_id = int(cat_id)
+    except (ValueError, TypeError):
+        return None
+
+    # Custom categories are in the 100000+ range
+    if cat_id >= 100000:
+        # e.g. 102010 -> 2010 -> 2000
+        # e.g. 103000 -> 3000 -> 3000
+        base = (cat_id - 100000) // 1000 * 1000
+        if base in [
+            SEARCH_CAT_MOVIES,
+            SEARCH_CAT_MUSIC,
+            SEARCH_CAT_SHOWS,
+            SEARCH_CAT_BOOKS,
+        ]:
+            return base
+
+    # Standard categories and their subcategories
+    elif 2000 <= cat_id < 3000:
+        return SEARCH_CAT_MOVIES
+    elif 3000 <= cat_id < 4000:
+        return SEARCH_CAT_MUSIC
+    elif 5000 <= cat_id < 6000:
+        return SEARCH_CAT_SHOWS
+    elif 7000 <= cat_id < 8000:
+        return SEARCH_CAT_BOOKS
+
+    return None
+
+
+def determine_search_category(request_from, cat_param=None):
+    """
+    Determine the numeric search category based on the client type or cat parameter.
+    Handles default and custom categories.
+    """
+    if cat_param:
+        try:
+            # Handle comma-separated categories (e.g. "5000,5030,5040")
+            # We use the first valid one we can find a base for.
+            cats = [int(c) for c in cat_param.split(",")]
+            if len(cats) > 1:
+                warn(
+                    f"Only one category can be searched at once. You provided multiple: {cat_param}"
+                )
+            for cat in cats:
+                if search_category_exists(cat):
+                    return cat
+        except ValueError:
+            pass  # Fallback to user agent if cat param is invalid
+
+    # Fallback to deriving from user agent
     client_type = extract_client_type(request_from)
     if client_type == "radarr":
         return SEARCH_CAT_MOVIES

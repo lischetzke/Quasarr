@@ -17,6 +17,7 @@ from quasarr.providers.sessions.dd import (
 from quasarr.providers.utils import (
     convert_to_mb,
     generate_download_link,
+    get_base_search_category_id,
     is_imdb_id,
     is_valid_release,
 )
@@ -51,7 +52,9 @@ def dd_search(
     dd = shared_state.values["config"]("Hostnames").get(hostname.lower())
     password = dd
 
-    if search_category in [SEARCH_CAT_BOOKS, SEARCH_CAT_MUSIC]:
+    base_category = get_base_search_category_id(search_category)
+
+    if base_category in [SEARCH_CAT_BOOKS, SEARCH_CAT_MUSIC]:
         debug(f"<d>Skipping {search_category} (unsupported media type)!</d>")
         return releases
 
@@ -126,7 +129,7 @@ def dd_search(
                     title = release.get("release")
 
                     if not is_valid_release(
-                        title, search_category, search_string, season, episode
+                        title, base_category, search_string, season, episode
                     ):
                         continue
 

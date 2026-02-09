@@ -23,6 +23,7 @@ from quasarr.constants import (
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.utils import (
     generate_download_link,
+    get_base_search_category_id,
     is_imdb_id,
     is_valid_release,
 )
@@ -188,6 +189,8 @@ def _parse_search_results(
     """
     releases = []
 
+    base_category = get_base_search_category_id(search_category)
+
     # Find all result entries - they appear as sections with date/title headers
     # Pattern: "dd.mm.yy, HH:MM · [Title](url)"
     for article in soup.find_all(
@@ -257,7 +260,7 @@ def _parse_search_results(
             for title in unique_episodes:
                 # Validate release against search criteria
                 if not is_valid_release(
-                    title, search_category, search_string, season, episode
+                    title, base_category, search_string, season, episode
                 ):
                     continue
 
@@ -293,7 +296,7 @@ def _parse_search_results(
             # Also add the main title (season pack) with full size - if not duplicate
             if main_title.lower() not in seen:
                 if is_valid_release(
-                    main_title, search_category, search_string, season, episode
+                    main_title, base_category, search_string, season, episode
                 ):
                     link = generate_download_link(
                         shared_state,
@@ -333,10 +336,12 @@ def hs_feed(shared_state, start_time, search_category):
     hs = shared_state.values["config"]("Hostnames").get(hostname)
     password = hs
 
+    base_category = get_base_search_category_id(search_category)
+
     if not hs:
         return releases
 
-    if search_category in [SEARCH_CAT_BOOKS, SEARCH_CAT_MUSIC]:
+    if base_category in [SEARCH_CAT_BOOKS, SEARCH_CAT_MUSIC]:
         debug(
             f'<d>Skipping {search_category} feed on "{hostname.upper()}" (unsupported media type)!</d>'
         )
@@ -439,10 +444,12 @@ def hs_search(
     hs = shared_state.values["config"]("Hostnames").get(hostname)
     password = hs
 
+    base_category = get_base_search_category_id(search_category)
+
     if not hs:
         return releases
 
-    if search_category in [SEARCH_CAT_BOOKS, SEARCH_CAT_MUSIC]:
+    if base_category in [SEARCH_CAT_BOOKS, SEARCH_CAT_MUSIC]:
         debug(
             f"<d>Skipping <y>{search_category}</y> on <g>{hostname.upper()}</g> (category not supported)!</d>"
         )

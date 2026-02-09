@@ -26,6 +26,7 @@ from quasarr.providers.log import debug, error, warn
 from quasarr.providers.utils import (
     convert_to_mb,
     generate_download_link,
+    get_base_search_category_id,
     is_imdb_id,
     is_valid_release,
 )
@@ -58,6 +59,8 @@ def _parse_posts(
     releases = []
     one_hour_ago = (datetime.now() - timedelta(hours=1)).strftime("%Y-%m-%d %H:%M:%S")
 
+    base_category = get_base_search_category_id(search_category)
+
     for post in soup.select("div.post"):
         try:
             # title & source
@@ -84,7 +87,7 @@ def _parse_posts(
 
             if is_search:
                 if not is_valid_release(
-                    title, search_category, search_string, season, episode
+                    title, base_category, search_string, season, episode
                 ):
                     continue
 
@@ -156,16 +159,18 @@ def _parse_posts(
 def mb_feed(shared_state, start_time, search_category):
     mb = shared_state.values["config"]("Hostnames").get(hostname)
 
-    if search_category in [SEARCH_CAT_BOOKS, SEARCH_CAT_MUSIC]:
+    base_category = get_base_search_category_id(search_category)
+
+    if base_category in [SEARCH_CAT_BOOKS, SEARCH_CAT_MUSIC]:
         debug(
             f"<d>Skipping <y>{search_category}</y> on <g>{hostname.upper()}</g> (category not supported)!</d>"
         )
         return []
 
     password = mb
-    if search_category == SEARCH_CAT_MOVIES:
+    if base_category == SEARCH_CAT_MOVIES:
         section = "neuerscheinungen"
-    elif search_category == SEARCH_CAT_SHOWS:
+    elif base_category == SEARCH_CAT_SHOWS:
         section = "serie"
     else:
         warn(f"Unknown search category: {search_category}")
@@ -201,7 +206,9 @@ def mb_search(
 ):
     mb = shared_state.values["config"]("Hostnames").get(hostname)
 
-    if search_category in [SEARCH_CAT_BOOKS, SEARCH_CAT_MUSIC]:
+    base_category = get_base_search_category_id(search_category)
+
+    if base_category in [SEARCH_CAT_BOOKS, SEARCH_CAT_MUSIC]:
         debug(
             f"<d>Skipping <y>{search_category}</y> on <g>{hostname.upper()}</g> (category not supported)!</d>"
         )

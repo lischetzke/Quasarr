@@ -23,7 +23,7 @@ from quasarr.providers.utils import (
 )
 from quasarr.providers.version import get_version
 from quasarr.search import get_search_results
-from quasarr.storage.categories import get_download_categories
+from quasarr.storage.categories import get_download_categories, get_search_categories
 
 
 def setup_arr_routes(app):
@@ -249,7 +249,22 @@ def setup_arr_routes(app):
                 mode = request.query.t
                 if mode == "caps":
                     info(f"Providing indexer capability information to {request_from}")
-                    return """<?xml version="1.0" encoding="UTF-8"?>
+
+                    # Generate categories XML dynamically
+                    categories_xml = ""
+                    all_categories = get_search_categories()
+
+                    # Sort categories by ID for cleaner XML
+                    sorted_cats = sorted(
+                        all_categories.items(), key=lambda x: int(x[0])
+                    )
+
+                    for cat_id, details in sorted_cats:
+                        categories_xml += (
+                            f'<category id="{cat_id}" name="{details["name"]}" />\n'
+                        )
+
+                    return f"""<?xml version="1.0" encoding="UTF-8"?>
                                 <caps>
                                   <server 
                                     version="1.33.7" 
@@ -265,11 +280,7 @@ def setup_arr_routes(app):
                                     <movie-search available="yes" supportedParams="imdbid" />
                                   </searching>
                                   <categories>
-                                    <category id="2000" name="Movies" />
-                                    <category id="3000" name="Music" />
-                                    <category id="5000" name="TV" />
-                                    <category id="7000" name="Books">
-                                  </category>
+                                    {categories_xml}
                                   </categories>
                                 </caps>"""
                 elif mode in ["movie", "tvsearch", "book", "music", "search"]:
@@ -287,39 +298,12 @@ def setup_arr_routes(app):
                         debug(f"Error parsing limit parameter: {e}")
                         limit = 1000
 
-                    # Extract category from request, fallback to user agent based
-                    cat_param = getattr(request.query, "cat", None)
-                    if cat_param:
-                        try:
-                            # Handle comma-separated categories (e.g. "5000,5030,5040")
-                            # We just take the first one or check if any match our main categories
-                            cats = [int(c) for c in cat_param.split(",")]
-                            search_category = None
-                            for cat in cats:
-                                if 2000 <= cat < 3000:
-                                    search_category = 2000
-                                    break
-                                elif 3000 <= cat < 4000:
-                                    search_category = 3000
-                                    break
-                                elif 5000 <= cat < 6000:
-                                    search_category = 5000
-                                    break
-                                elif 7000 <= cat < 8000:
-                                    search_category = 7000
-                                    break
+                    # Extract first valid category from request
+                    requested_cat = getattr(request.query, "cat", None)
 
-                            if not search_category:
-                                # Derive cat from user agent if mismatch
-                                search_category = determine_search_category(
-                                    request_from
-                                )
-                        except ValueError:
-                            # Derive cat from user agent if not in cats
-                            search_category = determine_search_category(request_from)
-                    else:
-                        # Derive cat from user agent if not provided
-                        search_category = determine_search_category(request_from)
+                    search_category = determine_search_category(
+                        request_from, requested_cat
+                    )
 
                     if mode == "movie":
                         # supported params: imdbid

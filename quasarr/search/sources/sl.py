@@ -26,6 +26,7 @@ from quasarr.providers.log import debug, info, warn
 from quasarr.providers.utils import (
     convert_to_mb,
     generate_download_link,
+    get_base_search_category_id,
     is_imdb_id,
     is_valid_release,
     normalize_magazine_title,
@@ -58,13 +59,15 @@ def sl_feed(shared_state, start_time, search_category):
     sl = shared_state.values["config"]("Hostnames").get(hostname.lower())
     password = sl
 
-    if search_category == SEARCH_CAT_BOOKS:
+    base_category = get_base_search_category_id(search_category)
+
+    if base_category == SEARCH_CAT_BOOKS:
         feed_type = "ebooks"
-    elif search_category == SEARCH_CAT_MOVIES:
+    elif base_category == SEARCH_CAT_MOVIES:
         feed_type = "movies"
-    elif search_category == SEARCH_CAT_SHOWS:
+    elif base_category == SEARCH_CAT_SHOWS:
         feed_type = "tv-shows"
-    elif search_category == SEARCH_CAT_MUSIC:
+    elif base_category == SEARCH_CAT_MUSIC:
         feed_type = "music"
     else:
         warn(f"Unknown search category: {search_category}")
@@ -87,7 +90,7 @@ def sl_feed(shared_state, start_time, search_category):
         for item in root.find("channel").findall("item"):
             try:
                 title = item.findtext("title").strip()
-                if search_category == SEARCH_CAT_BOOKS:
+                if base_category == SEARCH_CAT_BOOKS:
                     # lazylibrarian can only detect specific date formats / issue numbering for magazines
                     title = normalize_magazine_title(title)
 
@@ -170,13 +173,15 @@ def sl_search(
     sl = shared_state.values["config"]("Hostnames").get(hostname.lower())
     password = sl
 
-    if search_category == SEARCH_CAT_BOOKS:
+    base_category = get_base_search_category_id(search_category)
+
+    if base_category == SEARCH_CAT_BOOKS:
         feed_type = "ebooks"
-    elif search_category == SEARCH_CAT_MOVIES:
+    elif base_category == SEARCH_CAT_MOVIES:
         feed_type = "movies"
-    elif search_category == SEARCH_CAT_SHOWS:
+    elif base_category == SEARCH_CAT_SHOWS:
         feed_type = "tv-shows"
-    elif search_category == SEARCH_CAT_MUSIC:
+    elif base_category == SEARCH_CAT_MUSIC:
         feed_type = "music"
     else:
         warn(f"Unknown search category: {search_category}")
@@ -247,11 +252,11 @@ def sl_search(
                         title = a.get_text(strip=True)
 
                         if not is_valid_release(
-                            title, search_category, search_string, season, episode
+                            title, base_category, search_string, season, episode
                         ):
                             continue
 
-                        if search_category == SEARCH_CAT_BOOKS:
+                        if base_category == SEARCH_CAT_BOOKS:
                             title = normalize_magazine_title(title)
                             imdb_id = None
 

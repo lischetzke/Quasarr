@@ -14,6 +14,7 @@ from quasarr.providers.log import debug, info, trace, warn
 from quasarr.providers.utils import (
     convert_to_mb,
     generate_download_link,
+    get_base_search_category_id,
     is_imdb_id,
     is_valid_release,
     sanitize_title,
@@ -37,7 +38,9 @@ def fx_feed(shared_state, start_time, search_category):
 
     fx = shared_state.values["config"]("Hostnames").get(hostname.lower())
 
-    if search_category in [SEARCH_CAT_BOOKS, SEARCH_CAT_MUSIC]:
+    base_category = get_base_search_category_id(search_category)
+
+    if base_category in [SEARCH_CAT_BOOKS, SEARCH_CAT_MUSIC]:
         debug(
             f"<d>Skipping <y>{search_category}</y> on <g>{hostname.upper()}</g> (category not supported)!</d>"
         )
@@ -156,7 +159,9 @@ def fx_search(
     fx = shared_state.values["config"]("Hostnames").get(hostname.lower())
     password = fx.split(".")[0]
 
-    if search_category in [SEARCH_CAT_BOOKS, SEARCH_CAT_MUSIC]:
+    base_category = get_base_search_category_id(search_category)
+
+    if base_category in [SEARCH_CAT_BOOKS, SEARCH_CAT_MUSIC]:
         debug(
             f"<d>Skipping <y>{search_category}</y> on <g>{hostname.upper()}</g> (category not supported)!</d>"
         )
@@ -213,7 +218,7 @@ def fx_search(
                         title = sanitize_title(title.text)
 
                         if not is_valid_release(
-                            title, search_category, search_string, season, episode
+                            title, base_category, search_string, season, episode
                         ):
                             continue
 

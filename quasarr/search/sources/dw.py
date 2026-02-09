@@ -22,6 +22,7 @@ from quasarr.providers.log import debug, info, trace, warn
 from quasarr.providers.utils import (
     convert_to_mb,
     generate_download_link,
+    get_base_search_category_id,
     is_imdb_id,
     is_valid_release,
 )
@@ -65,15 +66,17 @@ def dw_feed(shared_state, start_time, search_category):
     dw = shared_state.values["config"]("Hostnames").get(hostname.lower())
     password = dw
 
-    if search_category in [SEARCH_CAT_BOOKS, SEARCH_CAT_MUSIC]:
+    base_category = get_base_search_category_id(search_category)
+
+    if base_category in [SEARCH_CAT_BOOKS, SEARCH_CAT_MUSIC]:
         debug(
             f"<d>Skipping <y>{search_category}</y> on <g>{hostname.upper()}</g> (category not supported)!</d>"
         )
         return releases
 
-    if search_category == SEARCH_CAT_MOVIES:
+    if base_category == SEARCH_CAT_MOVIES:
         feed_type = "videos/filme/"
-    elif search_category == SEARCH_CAT_SHOWS:
+    elif base_category == SEARCH_CAT_SHOWS:
         feed_type = "videos/serien/"
     else:
         warn(f"Unknown search category: {search_category}")
@@ -166,15 +169,17 @@ def dw_search(
     dw = shared_state.values["config"]("Hostnames").get(hostname.lower())
     password = dw
 
-    if search_category in [SEARCH_CAT_BOOKS, SEARCH_CAT_MUSIC]:
+    base_category = get_base_search_category_id(search_category)
+
+    if base_category in [SEARCH_CAT_BOOKS, SEARCH_CAT_MUSIC]:
         debug(
             f"<d>Skipping <y>{search_category}</y> on <g>{hostname.upper()}</g> (category not supported)!</d>"
         )
         return releases
 
-    if search_category == SEARCH_CAT_MOVIES:
+    if base_category == SEARCH_CAT_MOVIES:
         search_type = "videocategory=filme"
-    elif search_category == SEARCH_CAT_SHOWS:
+    elif base_category == SEARCH_CAT_SHOWS:
         search_type = "videocategory=serien"
     else:
         warn(f"Unknown search category: {search_category}")
@@ -206,7 +211,7 @@ def dw_search(
                 title = result.a.text.strip()
 
                 if not is_valid_release(
-                    title, search_category, search_string, season, episode
+                    title, base_category, search_string, season, episode
                 ):
                     continue
 

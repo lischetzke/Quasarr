@@ -16,6 +16,7 @@ from quasarr.providers.imdb_metadata import get_localized_title
 from quasarr.providers.log import debug, error, trace, warn
 from quasarr.providers.utils import (
     generate_download_link,
+    get_base_search_category_id,
     is_imdb_id,
     is_valid_release,
     sanitize_string,
@@ -36,7 +37,9 @@ def convert_to_rss_date(date_str):
 def dj_feed(shared_state, start_time, search_category):
     releases = []
 
-    if search_category != SEARCH_CAT_SHOWS:  # Only TV supported
+    base_category = get_base_search_category_id(search_category)
+
+    if base_category != SEARCH_CAT_SHOWS:  # Only TV supported
         debug(
             f"<d>Skipping <y>{search_category}</y> on <g>{hostname.upper()}</g> (category not supported)!</d>"
         )
@@ -131,7 +134,9 @@ def dj_search(
 ):
     releases = []
 
-    if search_category != SEARCH_CAT_SHOWS:  # Only TV supported
+    base_category = get_base_search_category_id(search_category)
+
+    if base_category != SEARCH_CAT_SHOWS:  # Only TV supported
         debug(
             f"<d>Skipping <y>{search_category}</y> on <g>{hostname.upper()}</g> (category not supported)!</d>"
         )
@@ -208,7 +213,7 @@ def dj_search(
                         continue
 
                     if not is_valid_release(
-                        title, search_category, search_string, season, episode
+                        title, base_category, search_string, season, episode
                     ):
                         continue
 
