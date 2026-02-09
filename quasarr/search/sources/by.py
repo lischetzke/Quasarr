@@ -16,6 +16,7 @@ from quasarr.constants import (
     RESOLUTION_REGEX,
     SEARCH_CAT_BOOKS,
     SEARCH_CAT_MOVIES,
+    SEARCH_CAT_MUSIC,
     SEARCH_CAT_SHOWS,
     XXX_REGEX,
 )
@@ -71,6 +72,18 @@ def _parse_posts(
             for tbl in feed_container.find_all("table"):
                 if tbl.find(string=re.compile(r"Erstellt am:")):
                     candidates.append(tbl)
+
+        # --- FALLBACK LOGIC ---
+        # If the standard audio list logic found nothing, check the default list layout
+        if not candidates:
+            feed_container = soup.find("table", class_="DEFAULT_ITEMLIST")
+            if feed_container:
+                # This layout uses TRs for items instead of nested Tables
+                # We filter by looking for the "TITLE" paragraph class unique to content rows
+                for tr in feed_container.find_all("tr"):
+                    if tr.find("p", class_="TITLE"):
+                        candidates.append(tr)
+
         items = candidates
     else:
         search_table = soup.find("table", class_="SEARCH_ITEMLIST")
@@ -199,6 +212,8 @@ def by_feed(shared_state, start_time, search_category):
         feed_type = "?cat=1"
     elif search_category == SEARCH_CAT_SHOWS:
         feed_type = "?cat=2"
+    elif search_category == SEARCH_CAT_MUSIC:
+        feed_type = "?cat=35"
     else:
         warn(f"Invalid search category: {search_category}")
         return []

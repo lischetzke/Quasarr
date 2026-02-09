@@ -17,6 +17,7 @@ from quasarr.constants import (
     RESOLUTION_REGEX,
     SEARCH_CAT_BOOKS,
     SEARCH_CAT_MOVIES,
+    SEARCH_CAT_MUSIC,
     SEARCH_CAT_SHOWS,
     XXX_REGEX,
 )
@@ -155,7 +156,7 @@ def _parse_posts(
 def mb_feed(shared_state, start_time, search_category):
     mb = shared_state.values["config"]("Hostnames").get(hostname)
 
-    if search_category == SEARCH_CAT_BOOKS:
+    if search_category in [SEARCH_CAT_BOOKS, SEARCH_CAT_MUSIC]:
         debug(
             f"<d>Skipping <y>{search_category}</y> on <g>{hostname.upper()}</g> (category not supported)!</d>"
         )
@@ -200,7 +201,7 @@ def mb_search(
 ):
     mb = shared_state.values["config"]("Hostnames").get(hostname)
 
-    if search_category == SEARCH_CAT_BOOKS:
+    if search_category in [SEARCH_CAT_BOOKS, SEARCH_CAT_MUSIC]:
         debug(
             f"<d>Skipping <y>{search_category}</y> on <g>{hostname.upper()}</g> (category not supported)!</d>"
         )

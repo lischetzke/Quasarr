@@ -11,7 +11,7 @@ from urllib.parse import urljoin
 import requests
 from bs4 import BeautifulSoup
 
-from quasarr.constants import SEARCH_CAT_BOOKS
+from quasarr.constants import SEARCH_CAT_BOOKS, SEARCH_CAT_MUSIC
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.imdb_metadata import get_localized_title, get_year
 from quasarr.providers.log import debug, info, trace
@@ -76,7 +76,7 @@ def nk_search(
     releases = []
     host = shared_state.values["config"]("Hostnames").get(hostname)
 
-    if search_category == SEARCH_CAT_BOOKS:
+    if search_category in [SEARCH_CAT_BOOKS, SEARCH_CAT_MUSIC]:
         debug(
             f"<d>Skipping <y>{search_category}</y> on <g>{hostname.upper()}</g> (category not supported)!</d>"
         )

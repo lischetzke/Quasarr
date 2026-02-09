@@ -14,6 +14,7 @@ from quasarr.constants import (
     RESOLUTION_REGEX,
     SEARCH_CAT_BOOKS,
     SEARCH_CAT_MOVIES,
+    SEARCH_CAT_MUSIC,
     SEARCH_CAT_SHOWS,
     XXX_REGEX,
 )
@@ -76,6 +77,8 @@ def dl_feed(shared_state, start_time, search_category):
         forum = "hd.8"
     elif search_category == SEARCH_CAT_SHOWS:
         forum = "hd.14"
+    elif search_category == SEARCH_CAT_MUSIC:
+        forum = "alben.42"
     else:
         warn(f"Unknown search category: {search_category}")
         return releases
@@ -271,8 +274,11 @@ def _search_single_page(
                 title = unescape(title)
                 title_normalized = normalize_title_for_arr(title)
 
-                # Filter: Skip if no resolution or codec info (unless LazyLibrarian)
-                if search_category != SEARCH_CAT_BOOKS:
+                # Filter: Skip if no resolution or codec info (unless LazyLibrarian/Lidarr)
+                if (
+                    search_category != SEARCH_CAT_BOOKS
+                    and search_category != SEARCH_CAT_MUSIC
+                ):
                     if not (
                         RESOLUTION_REGEX.search(title_normalized)
                         or CODEC_REGEX.search(title_normalized)

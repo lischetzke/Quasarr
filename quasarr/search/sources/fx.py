@@ -8,7 +8,7 @@ import time
 import requests
 from bs4 import BeautifulSoup
 
-from quasarr.constants import SEARCH_CAT_BOOKS, SEARCH_CAT_MOVIES
+from quasarr.constants import SEARCH_CAT_BOOKS, SEARCH_CAT_MUSIC
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.log import debug, info, trace, warn
 from quasarr.providers.utils import (
@@ -37,15 +37,11 @@ def fx_feed(shared_state, start_time, search_category):
 
     fx = shared_state.values["config"]("Hostnames").get(hostname.lower())
 
-    if search_category == SEARCH_CAT_BOOKS:
+    if search_category in [SEARCH_CAT_BOOKS, SEARCH_CAT_MUSIC]:
         debug(
             f"<d>Skipping <y>{search_category}</y> on <g>{hostname.upper()}</g> (category not supported)!</d>"
         )
         return releases
-    elif search_category == SEARCH_CAT_MOVIES:
-        pass
-    else:
-        pass
 
     password = fx.split(".")[0]
     url = f"https://{fx}/"
@@ -160,15 +156,11 @@ def fx_search(
     fx = shared_state.values["config"]("Hostnames").get(hostname.lower())
     password = fx.split(".")[0]
 
-    if search_category == SEARCH_CAT_BOOKS:
+    if search_category in [SEARCH_CAT_BOOKS, SEARCH_CAT_MUSIC]:
         debug(
             f"<d>Skipping <y>{search_category}</y> on <g>{hostname.upper()}</g> (category not supported)!</d>"
         )
         return releases
-    elif search_category == SEARCH_CAT_MOVIES:
-        pass
-    else:
-        pass
 
     if search_string != "":
         imdb_id = is_imdb_id(search_string)

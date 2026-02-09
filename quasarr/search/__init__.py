@@ -13,6 +13,7 @@ from quasarr.constants import (
     HOSTNAMES_SUPPORTING_SEARCH_PHRASE,
     SEARCH_CAT_BOOKS,
     SEARCH_CAT_MOVIES,
+    SEARCH_CAT_MUSIC,
     SEARCH_CAT_SHOWS,
 )
 from quasarr.providers.imdb_metadata import get_imdb_metadata
@@ -123,7 +124,17 @@ def get_search_results(
             kwargs = {}
             for name, url, func in phrase_map:
                 if url and (not whitelisted_sources or name in whitelisted_sources):
-                    search_executor.add(func, args, kwargs, source_name=name.upper())
+                    search_executor.add(
+                        func, args, kwargs, use_cache=True, source_name=name.upper()
+                    )
+        elif search_category == SEARCH_CAT_MUSIC:
+            args = (shared_state, start_time, search_category, search_phrase)
+            kwargs = {}
+            for name, url, func in phrase_map:
+                if url and (not whitelisted_sources or name in whitelisted_sources):
+                    search_executor.add(
+                        func, args, kwargs, use_cache=True, source_name=name.upper()
+                    )
         else:
             warn(
                 f"{stype} is not supported for {request_from}, category: {search_category}"
@@ -135,7 +146,14 @@ def get_search_results(
         use_pagination = False
         for name, url, func in feed_map:
             if url and (not whitelisted_sources or name in whitelisted_sources):
-                search_executor.add(func, args, kwargs, source_name=name.upper())
+                search_executor.add(
+                    func,
+                    args,
+                    kwargs,
+                    use_cache=True,
+                    ttl=60,
+                    source_name=name.upper(),
+                )
 
     debug(f"Starting <g>{len(search_executor.searches)}</g> searches for {stype}...")
 
@@ -193,7 +211,7 @@ class SearchExecutor:
     def __init__(self):
         self.searches = []
 
-    def add(self, func, args, kwargs, use_cache=False, source_name=None):
+    def add(self, func, args, kwargs, use_cache=False, ttl=300, source_name=None):
         key_args = list(args)
         key_args[1] = None
         key_args = tuple(key_args)
@@ -203,6 +221,7 @@ class SearchExecutor:
                 key,
                 lambda: func(*args, **kwargs),
                 use_cache,
+                ttl,
                 source_name or func.__name__,
             )
         )
@@ -220,7 +239,7 @@ class SearchExecutor:
             current_index = 0
             pending_futures = []
 
-            for key, func, use_cache, source_name in self.searches:
+            for key, func, use_cache, ttl, source_name in self.searches:
                 cached_result = None
                 exp = 0
 
@@ -233,14 +252,14 @@ class SearchExecutor:
                     results.extend(cached_result)
 
                     # Calculate TTL for this cached item
-                    ttl = exp - time.time()
-                    if ttl < min_ttl:
-                        min_ttl = ttl
+                    ttl_left = exp - time.time()
+                    if ttl_left < min_ttl:
+                        min_ttl = ttl_left
                 else:
                     all_cached = False
                     future = executor.submit(func)
-                    cache_key = key if use_cache else None
-                    future_to_meta[future] = (current_index, cache_key, source_name)
+                    cache_meta = (key, ttl) if use_cache else None
+                    future_to_meta[future] = (current_index, cache_meta, source_name)
                     pending_futures.append(future)
                     current_index += 1
 
@@ -248,7 +267,7 @@ class SearchExecutor:
                 results_badges = [""] * len(pending_futures)
 
                 for future in as_completed(pending_futures):
-                    index, cache_key, source_name = future_to_meta[future]
+                    index, cache_meta, source_name = future_to_meta[future]
                     try:
                         res = future.result()
                         if res and len(res) > 0:
@@ -259,8 +278,9 @@ class SearchExecutor:
 
                         results_badges[index] = badge
                         results.extend(res)
-                        if cache_key:
-                            search_cache.set(cache_key, res)
+                        if cache_meta:
+                            cache_key, cache_ttl = cache_meta
+                            search_cache.set(cache_key, res, ttl=cache_ttl)
                     except Exception as e:
                         results_badges[index] = (
                             f"<bg red><white>{source_name}</white></bg red>"

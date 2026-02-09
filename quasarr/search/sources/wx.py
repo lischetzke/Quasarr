@@ -14,6 +14,7 @@ from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning
 from quasarr.constants import (
     SEARCH_CAT_BOOKS,
     SEARCH_CAT_MOVIES,
+    SEARCH_CAT_MUSIC,
     SEARCH_CAT_SHOWS,
 )
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
@@ -39,7 +40,7 @@ def wx_feed(shared_state, start_time, search_category):
     releases = []
     host = shared_state.values["config"]("Hostnames").get(hostname)
 
-    if search_category == SEARCH_CAT_BOOKS:
+    if search_category in [SEARCH_CAT_BOOKS, SEARCH_CAT_MUSIC]:
         debug(
             f"<d>Skipping <y>{search_category}</y> on <g>{hostname.upper()}</g> (category not supported)!</d>"
         )
@@ -163,7 +164,7 @@ def wx_search(
     releases = []
     host = shared_state.values["config"]("Hostnames").get(hostname)
 
-    if search_category == SEARCH_CAT_BOOKS:
+    if search_category in [SEARCH_CAT_BOOKS, SEARCH_CAT_MUSIC]:
         debug(f"<d>Skipping <y>{search_category}</>: unsupported category.</d>")
         return releases
 

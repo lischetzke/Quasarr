@@ -14,6 +14,7 @@ from quasarr.constants import (
     GERMAN_MONTHS,
     SEARCH_CAT_BOOKS,
     SEARCH_CAT_MOVIES,
+    SEARCH_CAT_MUSIC,
     SEARCH_CAT_SHOWS,
 )
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
@@ -64,7 +65,7 @@ def dw_feed(shared_state, start_time, search_category):
     dw = shared_state.values["config"]("Hostnames").get(hostname.lower())
     password = dw
 
-    if search_category == SEARCH_CAT_BOOKS:
+    if search_category in [SEARCH_CAT_BOOKS, SEARCH_CAT_MUSIC]:
         debug(
             f"<d>Skipping <y>{search_category}</y> on <g>{hostname.upper()}</g> (category not supported)!</d>"
         )
@@ -165,7 +166,7 @@ def dw_search(
     dw = shared_state.values["config"]("Hostnames").get(hostname.lower())
     password = dw
 
-    if search_category == SEARCH_CAT_BOOKS:
+    if search_category in [SEARCH_CAT_BOOKS, SEARCH_CAT_MUSIC]:
         debug(
             f"<d>Skipping <y>{search_category}</y> on <g>{hostname.upper()}</g> (category not supported)!</d>"
         )

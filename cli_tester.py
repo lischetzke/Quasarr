@@ -51,6 +51,7 @@ load_dotenv(override=True)
 DEFAULT_URL = "http://localhost:8080"
 USER_AGENT_RADARR = "Radarr/3.0.0.0 (Mock Client for Testing)"
 USER_AGENT_SONARR = "Sonarr/3.0.0.0 (Mock Client for Testing)"
+USER_AGENT_LIDARR = "Lidarr/3.0.0.0 (Mock Client for Testing)"
 USER_AGENT_LL = "LazyLibrarian/1.7.0 (Mock Client for Testing)"
 
 console = Console()
@@ -91,7 +92,9 @@ class LoadingScreen:
         spinner = self.frames[frame_idx]
 
         lines = []
-        lines.append(HTML(f"<b><ansicyan>--- {self.title.upper()} ---</ansicyan></b>"))
+        lines.append(
+            HTML(f"<b><ansicyan>--- {escape(self.title.upper())} ---</ansicyan></b>")
+        )
         lines.append(HTML("<grey>Keys: [Backspace/←] Cancel Operation</grey>"))
         lines.append(HTML(""))
 
@@ -256,7 +259,9 @@ class PaginatedSelector:
         total_pages = max(1, (len(self.items) + self.page_size - 1) // self.page_size)
 
         lines = []
-        lines.append(HTML(f"<b><ansicyan>--- {self.title.upper()} ---</ansicyan></b>"))
+        lines.append(
+            HTML(f"<b><ansicyan>--- {escape(self.title.upper())} ---</ansicyan></b>")
+        )
 
         # Header with Sort Info
         current_sort_key = self.allowed_sorts[self.sort_index]
@@ -264,7 +269,7 @@ class PaginatedSelector:
 
         lines.append(
             HTML(
-                f"<grey>Keys: [↑/↓] Nav | [Enter] Select | [Tab] Sort: <b>{sort_label}</b> | [Back] Exit</grey>"
+                f"<grey>Keys: [↑/↓] Nav | [Enter] Select | [Tab] Sort: <b>{escape(sort_label)}</b> | [Back] Exit</grey>"
             )
         )
 
@@ -272,12 +277,12 @@ class PaginatedSelector:
         if self.duration is not None:
             summary += f" | Took {self.duration:.2f}s"
 
-        lines.append(HTML(f"<i>{summary}</i>"))
+        lines.append(HTML(f"<i>{escape(summary)}</i>"))
         lines.append(HTML(""))
 
         for i in range(start, end):
             label, _ = self.items[i]
-            safe_label = label.replace("<", "&lt;").replace(">", "&gt;")
+            safe_label = escape(label)
 
             if i == self.selected_index:
                 lines.append(HTML(f"<reverse>  {safe_label}  </reverse>"))
@@ -373,7 +378,9 @@ class MenuSelector:
 
     def get_text(self):
         lines = []
-        lines.append(HTML(f"<b><ansicyan>--- {self.title.upper()} ---</ansicyan></b>"))
+        lines.append(
+            HTML(f"<b><ansicyan>--- {escape(self.title.upper())} ---</ansicyan></b>")
+        )
 
         if self.allow_back:
             lines.append(
@@ -391,7 +398,7 @@ class MenuSelector:
         lines.append(HTML(""))
 
         for i, (label, _) in enumerate(self.items):
-            safe_label = label.replace("<", "&lt;").replace(">", "&gt;")
+            safe_label = escape(label)
             if i == self.selected_index:
                 lines.append(HTML(f"<reverse>  {safe_label}  </reverse>"))
             else:
@@ -489,7 +496,7 @@ class TextInput:
         while True:
             try:
                 prompt_text = HTML(
-                    f"<b><ansicyan>--- {self.title.upper()} ---</ansicyan></b>\n<grey>Keys: [Enter] Confirm | [Esc] Cancel</grey>\n[{self.default}]: "
+                    f"<b><ansicyan>--- {escape(self.title.upper())} ---</ansicyan></b>\n<grey>Keys: [Enter] Confirm | [Esc] Cancel</grey>\n[{escape(self.default)}]: "
                 )
                 result = session.prompt(prompt_text, default=self.default)
 
@@ -534,7 +541,7 @@ def press_any_key(message="Press any key to continue..."):
         kb.add(key)(exit_app)
 
     text_control = FormattedTextControl(
-        text=HTML(f"<grey>{message}</grey>"), show_cursor=False
+        text=HTML(f"<grey>{escape(message)}</grey>"), show_cursor=False
     )
     layout = Layout(HSplit([Window(content=text_control, height=1)]))
     app = Application(layout=layout, key_bindings=kb, full_screen=False)
@@ -592,6 +599,10 @@ class QuasarrClient:
             return self._parse_xml(
                 self._get({"t": "tvsearch", "cat": "5000"}, USER_AGENT_SONARR)
             )
+        elif feed_type == "music":
+            return self._parse_xml(
+                self._get({"t": "music", "cat": "3000"}, USER_AGENT_LIDARR)
+            )
         elif feed_type == "doc":
             return self._parse_xml(
                 self._get({"t": "book", "cat": "7000"}, USER_AGENT_LL)
@@ -610,6 +621,11 @@ class QuasarrClient:
         if ep:
             params["ep"] = ep
         return self._fetch_all_results(params, USER_AGENT_SONARR)
+
+    def search_music(self, query):
+        return self._fetch_all_results(
+            {"t": "music", "title": query, "cat": "3000"}, USER_AGENT_LIDARR
+        )
 
     def search_doc(self, query):
         return self._fetch_all_results(
@@ -671,6 +687,8 @@ class QuasarrClient:
         user_agent = USER_AGENT_RADARR
         if category == "tv":
             user_agent = USER_AGENT_SONARR
+        elif category == "music":
+            user_agent = USER_AGENT_LIDARR
         elif category == "docs":
             user_agent = USER_AGENT_LL
 
@@ -946,6 +964,7 @@ def handle_feeds_menu(client):
             [
                 ("🎬 Movie (Radarr)", "movie"),
                 ("📺 TV (Sonarr)", "tv"),
+                ("🎵 Music (Lidarr)", "music"),
                 ("📄 Doc (LazyLib)", "doc"),
             ],
         ).run()
@@ -961,14 +980,19 @@ def handle_feeds_menu(client):
         clear_screen()
 
         if results is not None:
-            cat_map = {"movie": "movies", "tv": "tv", "doc": "docs"}
+            cat_map = {"movie": "movies", "tv": "tv", "music": "music", "doc": "docs"}
             handle_results_pager(
                 client, results, cat_map.get(choice), time.time() - start
             )
 
 
 def handle_searches_menu(client):
-    defaults = {"movie": "tt0133093", "tv": "tt0944947", "doc": "PC Gamer UK"}
+    defaults = {
+        "movie": "tt0133093",
+        "tv": "tt0944947",
+        "music": "Taylor Swift",
+        "doc": "PC Gamer UK",
+    }
     while True:
         clear_screen()
         choice = MenuSelector(
@@ -976,6 +1000,7 @@ def handle_searches_menu(client):
             [
                 ("🎬 Movie (IMDb)", "movie"),
                 ("📺 TV (IMDb)", "tv"),
+                ("🎵 Music (Query)", "music"),
                 ("📄 Doc (Query)", "doc"),
             ],
         ).run()
@@ -1016,6 +1041,17 @@ def handle_searches_menu(client):
                         clear_screen()
                         if res is not None:
                             handle_results_pager(client, res, "tv", time.time() - start)
+        elif choice == "music":
+            q = TextInput("Music: Query", default=defaults["music"]).run()
+            if q:
+                clear_screen()
+                start = time.time()
+                res = LoadingScreen(
+                    f"Searching Music: {q}", client.search_music, q
+                ).run()
+                clear_screen()
+                if res is not None:
+                    handle_results_pager(client, res, "music", time.time() - start)
         elif choice == "doc":
             q = TextInput("Doc: Query", default=defaults["doc"]).run()
             if q:
@@ -1035,7 +1071,7 @@ def handle_hostname_test(client, interactive=True):
     console.print("[dim]Keys: [Ctrl+C] Cancel Operation[/dim]")
     console.print("")
 
-    feeds = [("movie", "movies"), ("tv", "tv"), ("doc", "docs")]
+    feeds = [("movie", "movies"), ("tv", "tv"), ("music", "music"), ("doc", "docs")]
 
     # 1. Fetch Feeds
     console.print("[cyan]Fetching feeds...[/cyan]")
@@ -1273,6 +1309,13 @@ def handle_hostname_test(client, interactive=True):
             "del_success": 0,
             "del_fail": 0,
         },
+        "music": {
+            "results": 0,
+            "dl_success": 0,
+            "dl_fail": 0,
+            "del_success": 0,
+            "del_fail": 0,
+        },
         "doc": {
             "results": 0,
             "dl_success": 0,
@@ -1415,7 +1458,7 @@ def handle_hostname_test(client, interactive=True):
     table.add_column("Downloads (Success/Total)", justify="right")
     table.add_column("Deletions (Success/Total)", justify="right")
 
-    for feed in ["movie", "tv", "doc"]:
+    for feed in ["movie", "tv", "music", "doc"]:
         data = stats[feed]
         total_dl = data["results"]
         dl_success = data["dl_success"]
@@ -1432,16 +1475,16 @@ def handle_hostname_test(client, interactive=True):
         )
         del_style = (
             "green"
-            if del_success == total_del and total_del > 0
+            if del_success == total_del and total_dl > 0
             else "red"
-            if del_success == 0 and total_del > 0
+            if del_success == 0 and total_dl > 0
             else "yellow"
         )
 
         table.add_row(
             feed.upper(),
             f"[{dl_style}]{dl_success}/{total_dl}[/{dl_style}]",
-            f"[{del_style}]{del_success}/{total_del}[/{del_style}]",
+            f"[{del_style}]{del_success}/{total_dl}[/{del_style}]",
         )
     console.print(table)
     console.print("")
@@ -1499,13 +1542,22 @@ def run_cli():
     parser.add_argument("--key")
     parser.add_argument("--test-movie", action="store_true")
     parser.add_argument("--test-tv", action="store_true")
+    parser.add_argument("--test-music", action="store_true")
     parser.add_argument("--test-doc", action="store_true")
     parser.add_argument("--test-hostnames", action="store_true")
     args = parser.parse_args()
 
     api_key = args.key or os.environ.get("QUASARR_API_KEY")
 
-    if any([args.test_movie, args.test_tv, args.test_doc, args.test_hostnames]):
+    if any(
+        [
+            args.test_movie,
+            args.test_tv,
+            args.test_music,
+            args.test_doc,
+            args.test_hostnames,
+        ]
+    ):
         if not api_key:
             sys.exit("API Key required for tests")
         client = QuasarrClient(args.url, api_key)
@@ -1513,6 +1565,8 @@ def run_cli():
             sys.exit(0 if client.search_movie("tt0133093") else 1)
         if args.test_tv:
             sys.exit(0 if client.search_tv("tt0944947") else 1)
+        if args.test_music:
+            sys.exit(0 if client.search_music("Linkin Park") else 1)
         if args.test_doc:
             sys.exit(0 if client.search_doc("PC Gamer UK") else 1)
         if args.test_hostnames:

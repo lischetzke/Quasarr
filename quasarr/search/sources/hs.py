@@ -16,6 +16,7 @@ from quasarr.constants import (
     EPISODE_EXTRACT_REGEX,
     IMDB_REGEX,
     SEARCH_CAT_BOOKS,
+    SEARCH_CAT_MUSIC,
     SIZE_REGEX,
     TRAILING_GARBAGE_PATTERN,
 )
@@ -335,7 +336,7 @@ def hs_feed(shared_state, start_time, search_category):
     if not hs:
         return releases
 
-    if search_category == SEARCH_CAT_BOOKS:
+    if search_category in [SEARCH_CAT_BOOKS, SEARCH_CAT_MUSIC]:
         debug(
             f'<d>Skipping {search_category} feed on "{hostname.upper()}" (unsupported media type)!</d>'
         )
@@ -441,7 +442,7 @@ def hs_search(
     if not hs:
         return releases
 
-    if search_category == SEARCH_CAT_BOOKS:
+    if search_category in [SEARCH_CAT_BOOKS, SEARCH_CAT_MUSIC]:
         debug(
             f"<d>Skipping <y>{search_category}</y> on <g>{hostname.upper()}</g> (category not supported)!</d>"
         )

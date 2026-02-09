@@ -266,12 +266,13 @@ def setup_arr_routes(app):
                                   </searching>
                                   <categories>
                                     <category id="2000" name="Movies" />
+                                    <category id="3000" name="Music" />
                                     <category id="5000" name="TV" />
                                     <category id="7000" name="Books">
                                   </category>
                                   </categories>
                                 </caps>"""
-                elif mode in ["movie", "tvsearch", "book", "search"]:
+                elif mode in ["movie", "tvsearch", "book", "music", "search"]:
                     releases = []
 
                     try:
@@ -293,13 +294,22 @@ def setup_arr_routes(app):
                             # Handle comma-separated categories (e.g. "5000,5030,5040")
                             # We just take the first one or check if any match our main categories
                             cats = [int(c) for c in cat_param.split(",")]
-                            if 2000 in cats:
-                                search_category = 2000
-                            elif 5000 in cats:
-                                search_category = 5000
-                            elif 7000 in cats:
-                                search_category = 7000
-                            else:
+                            search_category = None
+                            for cat in cats:
+                                if 2000 <= cat < 3000:
+                                    search_category = 2000
+                                    break
+                                elif 3000 <= cat < 4000:
+                                    search_category = 3000
+                                    break
+                                elif 5000 <= cat < 6000:
+                                    search_category = 5000
+                                    break
+                                elif 7000 <= cat < 8000:
+                                    search_category = 7000
+                                    break
+
+                            if not search_category:
                                 # Derive cat from user agent if mismatch
                                 search_category = determine_search_category(
                                     request_from
@@ -339,7 +349,7 @@ def setup_arr_routes(app):
                             limit=limit,
                         )
 
-                    elif mode == "book":
+                    elif mode in ["book", "music"]:
                         author = getattr(request.query, "author", "")
                         title = getattr(request.query, "title", "")
                         search_phrase = " ".join(filter(None, [author, title]))
@@ -354,6 +364,16 @@ def setup_arr_routes(app):
 
                     elif mode == "search":
                         if "lazylibrarian" in request_from.lower():
+                            search_phrase = getattr(request.query, "q", "")
+                            releases = get_search_results(
+                                shared_state,
+                                request_from,
+                                search_category,
+                                search_phrase=search_phrase,
+                                offset=offset,
+                                limit=limit,
+                            )
+                        elif "lidarr" in request_from.lower():
                             search_phrase = getattr(request.query, "q", "")
                             releases = get_search_results(
                                 shared_state,

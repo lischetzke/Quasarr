@@ -16,6 +16,7 @@ from quasarr.constants import (
     RESOLUTION_REGEX,
     SEARCH_CAT_BOOKS,
     SEARCH_CAT_MOVIES,
+    SEARCH_CAT_MUSIC,
     SEARCH_CAT_SHOWS,
     XXX_REGEX,
 )
@@ -167,6 +168,8 @@ def wd_feed(shared_state, start_time, search_category):
         feed_type = "Movies"
     elif search_category == SEARCH_CAT_SHOWS:
         feed_type = "Serien"
+    elif search_category == SEARCH_CAT_MUSIC:
+        feed_type = "Music/Audio"
     else:
         warn(f"Unknown search category: {search_category}")
         return []
@@ -228,12 +231,6 @@ def wd_search(
     releases = []
     wd = shared_state.values["config"]("Hostnames").get(hostname.lower())
     password = wd
-
-    if search_category == SEARCH_CAT_BOOKS:
-        debug(
-            f"<d>Skipping <y>{search_category}</y> on <g>{hostname.upper()}</g> (category not supported)!</d>"
-        )
-        return releases
 
     imdb_id = is_imdb_id(search_string)
     if imdb_id:

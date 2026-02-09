@@ -18,6 +18,7 @@ from quasarr.providers.log import debug, error, info, warn
 from quasarr.providers.utils import (
     SEARCH_CAT_BOOKS,
     SEARCH_CAT_MOVIES,
+    SEARCH_CAT_MUSIC,
     SEARCH_CAT_SHOWS,
     convert_to_mb,
     generate_download_link,
@@ -75,6 +76,8 @@ def dt_feed(shared_state, start_time, search_category):
         feed_type = "media/videos/"
     elif search_category == SEARCH_CAT_SHOWS:
         feed_type = "media/tv-show/"
+    elif search_category == SEARCH_CAT_MUSIC:
+        feed_type = "media/music/"
     else:
         warn(f"Unknown search category: {search_category}")
         return releases
@@ -190,6 +193,8 @@ def dt_search(
         cat_id = "9"
     elif search_category == SEARCH_CAT_SHOWS:
         cat_id = "64"
+    elif search_category == SEARCH_CAT_MUSIC:
+        cat_id = "66"
     else:
         warn(f"Unknown search category: {search_category}")
         return releases

@@ -11,6 +11,7 @@ from bs4 import BeautifulSoup
 from quasarr.constants import (
     SEARCH_CAT_BOOKS,
     SEARCH_CAT_MOVIES,
+    SEARCH_CAT_MUSIC,
     SEARCH_CAT_SHOWS,
 )
 from quasarr.downloads.sources.al import (
@@ -131,7 +132,7 @@ def al_feed(shared_state, start_time, search_category):
     releases = []
     host = shared_state.values["config"]("Hostnames").get(hostname)
 
-    if search_category == SEARCH_CAT_BOOKS:
+    if search_category in [SEARCH_CAT_BOOKS, SEARCH_CAT_MUSIC]:
         debug(
             f"<d>Skipping <y>{search_category}</y> on <g>{hostname.upper()}</g> (category not supported)!</d>"
         )
@@ -283,7 +284,7 @@ def al_search(
     releases = []
     host = shared_state.values["config"]("Hostnames").get(hostname)
 
-    if search_category == SEARCH_CAT_BOOKS:
+    if search_category in [SEARCH_CAT_BOOKS, SEARCH_CAT_MUSIC]:
         debug(
             f"<d>Skipping <y>{search_category}</y> on <g>{hostname.upper()}</g> (category not supported)!</d>"
         )

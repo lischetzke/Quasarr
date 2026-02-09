@@ -10,6 +10,7 @@ import requests
 from quasarr.constants import (
     SEARCH_CAT_BOOKS,
     SEARCH_CAT_MOVIES,
+    SEARCH_CAT_MUSIC,
     SEARCH_CAT_SHOWS,
 )
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
@@ -37,6 +38,8 @@ def nx_feed(shared_state, start_time, search_category):
         stype = "movie"
     elif search_category == SEARCH_CAT_SHOWS:
         stype = "episode"
+    elif search_category == SEARCH_CAT_MUSIC:
+        stype = "audio"
     else:
         warn(f"Unknown search category: {search_category}")
         return releases
@@ -145,6 +148,8 @@ def nx_search(
         valid_type = "movie"
     elif search_category == SEARCH_CAT_SHOWS:
         valid_type = "episode"
+    elif search_category == SEARCH_CAT_MUSIC:
+        valid_type = "audio"
     else:
         warn(f"Unknown search category: {search_category}")
         return releases

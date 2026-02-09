@@ -16,6 +16,7 @@ from bs4 import BeautifulSoup
 from quasarr.constants import (
     SEARCH_CAT_BOOKS,
     SEARCH_CAT_MOVIES,
+    SEARCH_CAT_MUSIC,
     SEARCH_CAT_SHOWS,
 )
 from quasarr.providers.cloudflare import ensure_session_cf_bypassed
@@ -63,6 +64,8 @@ def sl_feed(shared_state, start_time, search_category):
         feed_type = "movies"
     elif search_category == SEARCH_CAT_SHOWS:
         feed_type = "tv-shows"
+    elif search_category == SEARCH_CAT_MUSIC:
+        feed_type = "music"
     else:
         warn(f"Unknown search category: {search_category}")
         return releases
@@ -173,6 +176,8 @@ def sl_search(
         feed_type = "movies"
     elif search_category == SEARCH_CAT_SHOWS:
         feed_type = "tv-shows"
+    elif search_category == SEARCH_CAT_MUSIC:
+        feed_type = "music"
     else:
         warn(f"Unknown search category: {search_category}")
         return releases

@@ -37,9 +37,9 @@ HOSTNAMES = [
 HOSTNAMES_REQUIRING_LOGIN = ["al", "dd", "dj", "dl", "nx", "sj"]
 
 # These hostnames support not only feed and imdb searches, but also search phrases
-HOSTNAMES_SUPPORTING_SEARCH_PHRASE = ["by", "dl", "dt", "nx", "sl"]
+HOSTNAMES_SUPPORTING_SEARCH_PHRASE = ["by", "dl", "dt", "nx", "sl", "wd"]
 
-# These hostnames have no custom download implementation / getter
+# These hostnames have custom download implementation / getter, right now only FX doesn't
 HOSTNAMES_WITH_CUSTOM_DOWNLOAD_HANDLER = [h for h in HOSTNAMES if h != "fx"]
 
 # ==============================================================================
@@ -48,18 +48,25 @@ HOSTNAMES_WITH_CUSTOM_DOWNLOAD_HANDLER = [h for h in HOSTNAMES if h != "fx"]
 
 # Numeric newznab categories supported by search
 SEARCH_CAT_MOVIES = 2000
+SEARCH_CAT_MUSIC = 3000
 SEARCH_CAT_SHOWS = 5000
 SEARCH_CAT_BOOKS = 7000
 
 SEARCH_CATEGORIES = {
     "2000": {"name": "Movies", "emoji": "🎬"},
+    "3000": {"name": "Music", "emoji": "🎵"},
     "5000": {"name": "TV", "emoji": "📺"},
     "7000": {"name": "Books", "emoji": "📚"},
 }
 
-DEFAULT_DOWNLOAD_CATEGORIES = ["movies", "tv", "docs"]
+DEFAULT_DOWNLOAD_CATEGORIES = ["movies", "music", "tv", "docs"]
 
-DEFAULT_DOWNLOAD_CATEGORY_EMOJIS = {"movies": "🎬", "tv": "📺", "docs": "📄"}
+DEFAULT_DOWNLOAD_CATEGORY_EMOJIS = {
+    "movies": "🎬",
+    "music": "🎵",
+    "tv": "📺",
+    "docs": "📄",
+}
 
 
 # ==============================================================================

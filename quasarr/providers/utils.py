@@ -24,6 +24,7 @@ from quasarr.constants import (
     MOVIE_REGEX,
     SEARCH_CAT_BOOKS,
     SEARCH_CAT_MOVIES,
+    SEARCH_CAT_MUSIC,
     SEARCH_CAT_SHOWS,
     SEASON_EP_REGEX,
 )
@@ -465,7 +466,12 @@ def determine_category(request_from, category=None):
 
     client_type = extract_client_type(request_from)
     # Default mapping
-    category_map = {"lazylibrarian": "docs", "radarr": "movies", "sonarr": "tv"}
+    category_map = {
+        "lazylibrarian": "docs",
+        "lidarr": "music",
+        "radarr": "movies",
+        "sonarr": "tv",
+    }
     return category_map.get(client_type, "tv")
 
 
@@ -478,6 +484,8 @@ def determine_search_category(request_from):
     client_type = extract_client_type(request_from)
     if client_type == "radarr":
         return SEARCH_CAT_MOVIES
+    elif client_type == "lidarr":
+        return SEARCH_CAT_MUSIC
     elif client_type == "lazylibrarian":
         return SEARCH_CAT_BOOKS
     elif client_type == "sonarr":
@@ -507,6 +515,8 @@ def extract_client_type(request_from):
         return "radarr"
     elif "sonarr" in client:
         return "sonarr"
+    elif "lidarr" in client:
+        return "lidarr"
     elif "lazylibrarian" in client:
         return "lazylibrarian"
 
@@ -691,6 +701,7 @@ def is_valid_release(
         is_movie_search = search_category == SEARCH_CAT_MOVIES
         is_tv_search = search_category == SEARCH_CAT_SHOWS
         is_docs_search = search_category == SEARCH_CAT_BOOKS
+        is_music_search = search_category == SEARCH_CAT_MUSIC
 
         # if search string is NOT an imdb id check search_string_in_sanitized_title - if not match, it is not valid
         if not is_docs_search and not is_imdb_id(search_string):
@@ -737,6 +748,18 @@ def is_valid_release(
 
         # if it's a document search, it should not contain Movie or TV show tags
         if is_docs_search:
+            # must NOT have any S/E tag present
+            if SEASON_EP_REGEX.search(title):
+                debug(
+                    "Skipping {title!r} as title matches TV show regex: {pattern!r}",
+                    title=title,
+                    pattern=SEASON_EP_REGEX.pattern,
+                )
+                return False
+            return True
+
+        # if it's a music search, it should not contain Movie or TV show tags
+        if is_music_search:
             # must NOT have any S/E tag present
             if SEASON_EP_REGEX.search(title):
                 debug(
