@@ -36,6 +36,9 @@ HOSTNAMES = [
 # These hostnames require credentials to be used
 HOSTNAMES_REQUIRING_LOGIN = ["al", "dd", "dj", "dl", "nx", "sj"]
 
+# These hostnames support not only feed and imdb searches, but also search phrases
+HOSTNAMES_SUPPORTING_SEARCH_PHRASE = ["by", "dl", "dt", "nx", "sl", "wd"]
+
 # ==============================================================================
 # SEARCH & CATEGORIES
 # ==============================================================================
