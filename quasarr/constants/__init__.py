@@ -36,12 +36,6 @@ HOSTNAMES = [
 # These hostnames require credentials to be used
 HOSTNAMES_REQUIRING_LOGIN = ["al", "dd", "dj", "dl", "nx", "sj"]
 
-# These hostnames support not only feed and imdb searches, but also search phrases
-HOSTNAMES_SUPPORTING_SEARCH_PHRASE = ["by", "dl", "dt", "nx", "sl", "wd"]
-
-# These hostnames have custom download implementation / getter, right now only FX doesn't
-HOSTNAMES_WITH_CUSTOM_DOWNLOAD_HANDLER = [h for h in HOSTNAMES if h != "fx"]
-
 # ==============================================================================
 # SEARCH & CATEGORIES
 # ==============================================================================

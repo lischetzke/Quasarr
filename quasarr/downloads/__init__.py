@@ -3,16 +3,31 @@
 # Project by https://github.com/rix1337
 
 import hashlib
-import importlib
 import json
 
 from quasarr.constants import (
     AUTO_DECRYPT_PATTERNS,
-    HOSTNAMES_WITH_CUSTOM_DOWNLOAD_HANDLER,
     PROTECTED_PATTERNS,
 )
 from quasarr.downloads.linkcrypters.hide import decrypt_links_if_hide
 from quasarr.downloads.packages import get_packages
+from quasarr.downloads.sources.al import get_al_download_links
+from quasarr.downloads.sources.by import get_by_download_links
+from quasarr.downloads.sources.dd import get_dd_download_links
+from quasarr.downloads.sources.dj import get_dj_download_links
+from quasarr.downloads.sources.dl import get_dl_download_links
+from quasarr.downloads.sources.dt import get_dt_download_links
+from quasarr.downloads.sources.dw import get_dw_download_links
+from quasarr.downloads.sources.he import get_he_download_links
+from quasarr.downloads.sources.hs import get_hs_download_links
+from quasarr.downloads.sources.mb import get_mb_download_links
+from quasarr.downloads.sources.nk import get_nk_download_links
+from quasarr.downloads.sources.nx import get_nx_download_links
+from quasarr.downloads.sources.sf import get_sf_download_links
+from quasarr.downloads.sources.sj import get_sj_download_links
+from quasarr.downloads.sources.sl import get_sl_download_links
+from quasarr.downloads.sources.wd import get_wd_download_links
+from quasarr.downloads.sources.wx import get_wx_download_links
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.log import info, warn
 from quasarr.providers.notifications import send_discord_message
@@ -28,18 +43,25 @@ from quasarr.storage.categories import (
 )
 
 # All getters have signature: (shared_state, url, mirrors, title, password)
-_SOURCE_GETTERS = {}
-
-for source in HOSTNAMES_WITH_CUSTOM_DOWNLOAD_HANDLER:
-    try:
-        module = importlib.import_module(f"quasarr.downloads.sources.{source}")
-        getter_func = getattr(module, f"get_{source}_download_links", None)
-        if getter_func:
-            _SOURCE_GETTERS[source] = getter_func
-    except ImportError:
-        warn(f"Could not import download source: {source}")
-    except Exception as e:
-        warn(f"Error loading download source {source}: {e}")
+_SOURCE_GETTERS = {
+    "al": get_al_download_links,
+    "by": get_by_download_links,
+    "dd": get_dd_download_links,
+    "dj": get_dj_download_links,
+    "dl": get_dl_download_links,
+    "dt": get_dt_download_links,
+    "dw": get_dw_download_links,
+    "he": get_he_download_links,
+    "hs": get_hs_download_links,
+    "mb": get_mb_download_links,
+    "nk": get_nk_download_links,
+    "nx": get_nx_download_links,
+    "sf": get_sf_download_links,
+    "sj": get_sj_download_links,
+    "sl": get_sl_download_links,
+    "wd": get_wd_download_links,
+    "wx": get_wx_download_links,
+}
 
 
 # =============================================================================
