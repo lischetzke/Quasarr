@@ -538,6 +538,7 @@ dependencies = [
     { name = "pycryptodomex" },
     { name = "python-dotenv" },
     { name = "requests" },
+    { name = "setuptools" },
     { name = "wcwidth" },
 ]
 
@@ -560,16 +561,17 @@ requires-dist = [
     { name = "dukpy", specifier = ">=0.5.1" },
     { name = "emoji", specifier = ">=2.15.0" },
     { name = "loguru", specifier = ">=0.7.3" },
-    { name = "pillow", specifier = ">=12.1.0" },
+    { name = "pillow", specifier = "==12.1.1" },
     { name = "pycryptodomex", specifier = ">=3.23.0" },
     { name = "python-dotenv", specifier = ">=1.2.1" },
     { name = "requests", specifier = ">=2.32.5" },
+    { name = "setuptools", specifier = "==82.0.0" },
     { name = "wcwidth", specifier = ">=0.6.0" },
 ]
 
 [package.metadata.requires-dev]
 build = [
-    { name = "pillow", specifier = ">=12.1.0" },
+    { name = "pillow", specifier = ">=12.1.1" },
     { name = "pyinstaller", specifier = ">=6.18.0" },
 ]
 dev = [
