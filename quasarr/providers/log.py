@@ -94,6 +94,7 @@ _context_replace = {
     "hide": "👻",  # /quasarr/linkcrypters/hide.py
     "packages": "📦",  # /quasarr/api/packages/*
     "providers": "🔌",  # /quasarr/providers/*
+    "html_templates": "🎨",  # /quasarr/providers/html_templates.py
     "imdb_metadata": "🎬",  # /quasarr/providers/imdb_metadata.py
     "jd_cache": "📇",  # /quasarr/providers/jd_cache.py
     "log": "📝",  # /quasarr/providers/log.py

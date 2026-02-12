@@ -3,6 +3,7 @@
 # Project by https://github.com/rix1337
 
 import json
+import time
 from functools import wraps
 
 from bottle import abort, request
@@ -10,7 +11,7 @@ from bottle import abort, request
 from quasarr.downloads import fail
 from quasarr.providers import shared_state
 from quasarr.providers.auth import require_api_key
-from quasarr.providers.log import info
+from quasarr.providers.log import info, warn
 from quasarr.providers.notifications import send_discord_message
 from quasarr.providers.statistics import StatsHelper
 from quasarr.providers.utils import download_package
@@ -24,6 +25,14 @@ from quasarr.storage.config import Config
 def require_helper_active(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
+        if shared_state.values.get("helper_active", False):
+            last_seen = shared_state.values.get("helper_last_seen", 0)
+            if last_seen > 0 and time.time() - last_seen > 300:
+                warn(
+                    "SponsorsHelper last seen more than 5 minutes ago. Deactivating..."
+                )
+                shared_state.update("helper_active", False)
+
         if not shared_state.values.get("helper_active"):
             abort(402, "Sponsors Payment Required")
         return func(*args, **kwargs)
@@ -65,8 +74,9 @@ def setup_sponsors_helper_routes(app):
 
     @app.get("/sponsors_helper/api/to_decrypt/")
     @require_api_key
-    @require_helper_active
     def to_decrypt_api():
+        shared_state.update("helper_active", True)
+        shared_state.update("helper_last_seen", int(time.time()))
         try:
             protected = shared_state.get_db("protected").retrieve_all_titles()
             if not protected:
@@ -275,6 +285,7 @@ def setup_sponsors_helper_routes(app):
             payload = json.loads(data)
             if payload["activate"]:
                 shared_state.update("helper_active", True)
+                shared_state.update("helper_last_seen", int(time.time()))
                 info("Sponsor status activated successfully")
                 return "Sponsor status activated successfully!"
         except:

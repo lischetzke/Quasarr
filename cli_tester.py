@@ -750,6 +750,7 @@ class QuasarrClient:
 
     def enable_sponsor_status(self):
         try:
+            # 1. Enable status
             resp = self.session.put(
                 f"{self.url}/sponsors_helper/api/set_sponsor_status/",
                 params={"apikey": self.api_key},
@@ -757,6 +758,13 @@ class QuasarrClient:
                 timeout=30,
             )
             resp.raise_for_status()
+
+            # 2. Call to_decrypt to set the timestamp
+            self.session.get(
+                f"{self.url}/sponsors_helper/api/to_decrypt/",
+                params={"apikey": self.api_key},
+                timeout=30,
+            )
             return True
         except Exception as e:
             if hasattr(e, "response") and e.response is not None:
