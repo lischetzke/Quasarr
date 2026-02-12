@@ -112,19 +112,26 @@ def get_search_category_sources(cat_id):
 
 def update_search_category_sources(cat_id, sources):
     """Updates the preferred search sources for a search category ID."""
-
     db = DataBase("categories_search")
-    data_str = db.retrieve(str(cat_id))
-    if not data_str:
+    cat_id_str = str(cat_id)
+    is_default = cat_id_str in SEARCH_CATEGORIES
+
+    data_str = db.retrieve(cat_id_str)
+    data = {}
+
+    if data_str:
+        try:
+            data = json.loads(data_str)
+        except json.JSONDecodeError:
+            return False, f"Database error for category id {cat_id}."
+    elif is_default:
+        # Implicitly create default category if missing
+        data = {}
+    else:
         return False, f"Search category ID {cat_id} not found."
 
-    try:
-        data = json.loads(data_str)
-    except json.JSONDecodeError:
-        return False, f"Database error for category id {cat_id}."
-
     data["search_sources"] = sources
-    db.update_store(str(cat_id), json.dumps(data))
+    db.update_store(cat_id_str, json.dumps(data))
 
     info(f"Updated search-source-whitelist for search category {cat_id} to {sources}")
     return (
@@ -259,8 +266,8 @@ def update_download_category_emoji(name, emj):
     name = name.strip().lower()
     db = DataBase("categories_download")
 
-    if not db.retrieve(name):
-        return False, f"Category '{name}' not found."
+    # Check if default
+    is_default = name in DOWNLOAD_CATEGORIES
 
     if not emj or not emoji.is_emoji(emj):
         debug(f"Invalid emoji: {emj}, falling back to default '📁'")
@@ -269,11 +276,18 @@ def update_download_category_emoji(name, emj):
     # Retrieve existing data to preserve mirrors
     data_str = db.retrieve(name)
     data = {}
+
     if data_str:
         try:
             data = json.loads(data_str)
         except json.JSONDecodeError:
             pass
+    elif is_default:
+        # Implicitly create default category if missing
+        data = {}
+    else:
+        # Custom category not found
+        return False, f"Category '{name}' not found."
 
     data["emoji"] = emj
 
@@ -287,14 +301,26 @@ def update_download_category_mirrors(name, mirrors):
     name = name.strip().lower()
     db = DataBase("categories_download")
 
-    data_str = db.retrieve(name)
-    if not data_str:
-        return False, f"Category '{name}' not found."
+    # Check if default
+    is_default = name in DOWNLOAD_CATEGORIES
 
-    try:
-        data = json.loads(data_str)
-    except json.JSONDecodeError:
-        data = {"emoji": DOWNLOAD_CATEGORIES.get(name, {}).get("emoji", "📁")}
+    data_str = db.retrieve(name)
+    data = {}
+
+    if data_str:
+        try:
+            data = json.loads(data_str)
+        except json.JSONDecodeError:
+            # If corrupted, reset but try to keep default emoji if available
+            default_emj = DOWNLOAD_CATEGORIES.get(name, {}).get("emoji", "📁")
+            data = {"emoji": default_emj}
+    elif is_default:
+        # Implicitly create default category if missing
+        # Ensure we set the default emoji so it isn't lost
+        default_emj = DOWNLOAD_CATEGORIES.get(name, {}).get("emoji", "📁")
+        data = {"emoji": default_emj}
+    else:
+        return False, f"Category '{name}' not found."
 
     data["mirrors"] = mirrors
     db.update_store(name, json.dumps(data))
