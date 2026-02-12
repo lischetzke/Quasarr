@@ -112,37 +112,19 @@ def get_search_category_sources(cat_id):
 
 def update_search_category_sources(cat_id, sources):
     """Updates the preferred search sources for a search category ID."""
-    # Check if it's a default category or a custom one
-    is_default = str(cat_id) in SEARCH_CATEGORIES
 
     db = DataBase("categories_search")
+    data_str = db.retrieve(str(cat_id))
+    if not data_str:
+        return False, f"Search category ID {cat_id} not found."
 
-    if is_default:
-        # For default categories, we just store the sources
-        # We need to preserve existing data if any (though for defaults usually there isn't much else)
-        data_str = db.retrieve(str(cat_id))
-        data = {}
-        if data_str:
-            try:
-                data = json.loads(data_str)
-            except json.JSONDecodeError:
-                pass
+    try:
+        data = json.loads(data_str)
+    except json.JSONDecodeError:
+        return False, f"Database error for category id {cat_id}."
 
-        data["search_sources"] = sources
-        db.store(str(cat_id), json.dumps(data))
-    else:
-        # For custom categories, we must ensure the category exists
-        data_str = db.retrieve(str(cat_id))
-        if not data_str:
-            return False, f"Custom search category ID {cat_id} not found."
-
-        try:
-            data = json.loads(data_str)
-        except json.JSONDecodeError:
-            return False, "Database error for custom category."
-
-        data["search_sources"] = sources
-        db.update_store(str(cat_id), json.dumps(data))
+    data["search_sources"] = sources
+    db.update_store(str(cat_id), json.dumps(data))
 
     info(f"Updated search-source-whitelist for search category {cat_id} to {sources}")
     return (
