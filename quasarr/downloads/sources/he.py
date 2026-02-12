@@ -309,6 +309,8 @@ def strategy_flaresolverr_loop(shared_state, url):
 
 def get_he_download_links(shared_state, url, mirrors, title, password):
     """
+    KEEP THE SIGNATURE EVEN IF SOME PARAMETERS ARE UNUSED!
+
     HE source handler - fetches plain download links from HE pages.
     """
     headers = {

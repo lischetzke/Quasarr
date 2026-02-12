@@ -498,4 +498,4 @@ def fail(title, package_id, shared_state, reason="Unknown error"):
         info(f'Package "{title}" marked as failed!')
     except Exception as e:
         info(f'Error marking package "{package_id}" as failed: {e}')
-    return {"success": False, "title": title}
+    return {"success": True, "title": title, "failed": True}

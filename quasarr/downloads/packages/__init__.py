@@ -55,7 +55,7 @@ def get_links_comment(package, package_links):
             if link.get("packageUUID") == package_uuid:
                 comment = link.get("comment")
                 if comment:
-                    debug(f"Found comment '{comment}' for package {package_uuid}")
+                    trace(f"Found comment '{comment}' for package {package_uuid}")
                 return comment
     return None
 
@@ -72,7 +72,7 @@ def get_links_status(package, all_links, is_archive=False):
     """
     package_uuid = package.get("uuid")
     package_name = package.get("name", "unknown")
-    debug(
+    trace(
         f"Checking package '{package_name}' ({package_uuid}), is_archive={is_archive}"
     )
 
@@ -206,7 +206,7 @@ def get_links_status(package, all_links, is_archive=False):
             # Non-archive file in non-archive package - finished when downloaded
             debug(f"Non-archive link COMPLETE: {link_name}")
 
-    debug(
+    trace(
         f"RESULT for '{package_name}': all_finished={all_finished}, "
         f"eta={eta}, error={error}, is_archive={is_archive}, has_extraction_activity={has_extraction_activity}"
     )
@@ -442,12 +442,12 @@ def get_packages(shared_state, _cache=None):
                 if bytes_total > 0 and bytes_loaded >= bytes_total and pkg_eta is None:
                     # Only mark as finished if it's not an archive
                     if not is_archive:
-                        debug(
+                        trace(
                             f"Package '{package_name}' bytes complete and not archive -> marking finished"
                         )
                         finished = True
                     else:
-                        debug(
+                        trace(
                             f"Package '{package_name}' bytes complete BUT is_archive=True -> NOT marking finished yet"
                         )
 
@@ -456,7 +456,7 @@ def get_packages(shared_state, _cache=None):
 
             location = "history" if error or finished else "queue"
 
-            debug(
+            trace(
                 f"Package '{package_name}' -> location={location}, "
                 f"finished={finished}, error={error}, is_archive={is_archive}"
             )
