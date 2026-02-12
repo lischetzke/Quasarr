@@ -392,77 +392,100 @@ def download(
         source_key: Hostname shorthand from search (e.g., "nx", "dl"). If not provided,
                     will be derived from URL matching against configured hostnames.
     """
-    if imdb_id and imdb_id.lower() == "none":
-        imdb_id = None
+    package_id = None
+    try:
+        if imdb_id and imdb_id.lower() == "none":
+            imdb_id = None
 
-    config = shared_state.values["config"]("Hostnames")
+        config = shared_state.values["config"]("Hostnames")
 
-    # Extract client type (without version) for deterministic hashing
-    client_type = extract_client_type(request_from)
+        # Extract client type (without version) for deterministic hashing
+        client_type = extract_client_type(request_from)
 
-    # Find matching source - all getters have unified signature
-    source_result = None
-    label = None
-    detected_source_key = None
+        # Find matching source - all getters have unified signature
+        source_result = None
+        label = None
+        detected_source_key = None
 
-    mirrors = get_download_category_mirrors(category, lowercase=True)
+        mirrors = get_download_category_mirrors(category, lowercase=True)
 
-    for key, getter in _SOURCE_GETTERS.items():
-        hostname = config.get(key)
-        if hostname and hostname.lower() in url.lower():
+        for key, getter in _SOURCE_GETTERS.items():
+            hostname = config.get(key)
+            if hostname and hostname.lower() in url.lower():
+                try:
+                    # Mirror is None as it is now handled by category settings
+                    source_result = getter(shared_state, url, mirrors, title, password)
+                    if source_result and source_result.get("links"):
+                        clear_hostname_issue(key)
+                except Exception as e:
+                    info(f"Error getting download links from {key.upper()}: {e}")
+                    mark_hostname_issue(key, "download", str(e))
+                    source_result = None
+                label = key.upper()
+                detected_source_key = key
+                break
+
+        # No source matched - check if URL is a known crypter directly
+        if source_result is None:
+            crypter, crypter_type = detect_crypter(url)
+            if crypter_type:
+                # For direct crypter URLs, we only know the crypter type, not the hoster inside
+                source_result = {"links": [[url, crypter]]}
+                label = crypter.upper()
+                detected_source_key = crypter
+
+        # Use provided source_key if available, otherwise use detected one
+        # This ensures we use the authoritative source from the search results
+        final_source_key = source_key if source_key else detected_source_key
+
+        # Generate DETERMINISTIC package_id
+        package_id = generate_deterministic_package_id(
+            title, final_source_key, client_type, category
+        )
+
+        # Skip Download if package_id already exists
+        if package_id_exists(shared_state, package_id):
+            warn(f"Package {package_id} already exists. Skipping download!")
+            return {"success": True, "package_id": package_id, "title": title}
+
+        if source_result is None:
+            result = fail(
+                title,
+                package_id,
+                shared_state,
+                reason=f'Could not find matching source for "{title}" - "{url}"',
+            )
+            return {"package_id": package_id, **result}
+
+        result = process_links(
+            shared_state,
+            source_result,
+            title,
+            password,
+            package_id,
+            imdb_id,
+            url,
+            size_mb,
+            label,
+        )
+        return {"package_id": package_id, **result}
+
+    except Exception as e:
+        if not package_id:
+            # Fallback generation if we crashed early
             try:
-                # Mirror is None as it is now handled by category settings
-                source_result = getter(shared_state, url, mirrors, title, password)
-                if source_result and source_result.get("links"):
-                    clear_hostname_issue(key)
-            except Exception as e:
-                info(f"Error getting download links from {key.upper()}: {e}")
-                mark_hostname_issue(key, "download", str(e))
-                source_result = None
-            label = key.upper()
-            detected_source_key = key
-            break
+                client_type = extract_client_type(request_from)
+            except Exception:
+                client_type = "unknown"
 
-    # No source matched - check if URL is a known crypter directly
-    if source_result is None:
-        crypter, crypter_type = detect_crypter(url)
-        if crypter_type:
-            # For direct crypter URLs, we only know the crypter type, not the hoster inside
-            source_result = {"links": [[url, crypter]]}
-            label = crypter.upper()
-            detected_source_key = crypter
+            final_source_key = source_key if source_key else "unknown"
 
-    # Use provided source_key if available, otherwise use detected one
-    # This ensures we use the authoritative source from the search results
-    final_source_key = source_key if source_key else detected_source_key
+            package_id = generate_deterministic_package_id(
+                title, final_source_key, client_type, category
+            )
 
-    # Generate DETERMINISTIC package_id
-    package_id = generate_deterministic_package_id(
-        title, final_source_key, client_type, category
-    )
-
-    # Skip Download if package_id already exists
-    if package_id_exists(shared_state, package_id):
-        warn(f"Package {package_id} already exists. Skipping download!")
-        return {"success": True, "package_id": package_id, "title": title}
-
-    if source_result is None:
-        info(f'Could not find matching source for "{title}" - "{url}"')
-        StatsHelper(shared_state).increment_failed_downloads()
-        return {"success": False, "package_id": package_id, "title": title}
-
-    result = process_links(
-        shared_state,
-        source_result,
-        title,
-        password,
-        package_id,
-        imdb_id,
-        url,
-        size_mb,
-        label,
-    )
-    return {"package_id": package_id, **result}
+        result = fail(title, package_id, shared_state, reason=f"Unexpected error: {e}")
+        return {"package_id": package_id, **result}
 
 
 def fail(title, package_id, shared_state, reason="Unknown error"):
@@ -475,4 +498,4 @@ def fail(title, package_id, shared_state, reason="Unknown error"):
         info(f'Package "{title}" marked as failed!')
     except Exception as e:
         info(f'Error marking package "{package_id}" as failed: {e}')
-    return {"success": False, "title": title}
+    return {"success": True, "title": title, "failed": True}

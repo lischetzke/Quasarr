@@ -2,6 +2,8 @@
 # Quasarr
 # Project by https://github.com/rix1337
 
+import urllib.parse
+
 import requests
 from bs4 import BeautifulSoup
 
@@ -215,6 +217,70 @@ def flaresolverr_get(shared_state, url, timeout=30, session_id=None):
     fs_headers = {h["name"]: h["value"] for h in solution.get("headers", [])}
 
     # Update global UA if provided
+    user_agent = solution.get("userAgent")
+    if user_agent and user_agent != shared_state.values.get("user_agent"):
+        shared_state.update("user_agent", user_agent)
+
+    return FlareSolverrResponse(
+        url=url, status_code=status_code, headers=fs_headers, text=html
+    )
+
+
+def flaresolverr_post(
+    shared_state, url, data=None, headers=None, timeout=30, session_id=None
+):
+    """
+    Core function for performing a POST request via FlareSolverr only.
+    """
+    if not is_flaresolverr_available(shared_state):
+        raise RuntimeError(
+            "FlareSolverr is not configured. Please configure it in the web UI."
+        )
+
+    flaresolverr_url = shared_state.values["config"]("FlareSolverr").get("url")
+    if not flaresolverr_url:
+        raise RuntimeError("FlareSolverr URL not configured in shared_state.")
+
+    if isinstance(data, dict):
+        post_data = urllib.parse.urlencode(data)
+    else:
+        post_data = data or ""
+
+    payload = {
+        "cmd": "request.post",
+        "url": url,
+        "postData": post_data,
+        "maxTimeout": timeout * 1000,
+    }
+    if session_id:
+        payload["session"] = session_id
+
+    if headers:
+        payload["headers"] = headers
+
+    try:
+        resp = requests.post(
+            flaresolverr_url,
+            json=payload,
+            headers={"Content-Type": "application/json"},
+            timeout=timeout + 10,
+        )
+        resp.raise_for_status()
+    except Exception as e:
+        raise RuntimeError(f"Error communicating with FlareSolverr: {e}") from e
+
+    data = resp.json()
+
+    if data.get("status") != "ok":
+        raise RuntimeError(f"FlareSolverr returned error: {data.get('message')}")
+
+    solution = data.get("solution", {})
+    html = solution.get("response", "")
+    status_code = solution.get("status", 200)
+    url = solution.get("url", url)
+
+    fs_headers = {h["name"]: h["value"] for h in solution.get("headers", [])}
+
     user_agent = solution.get("userAgent")
     if user_agent and user_agent != shared_state.values.get("user_agent"):
         shared_state.update("user_agent", user_agent)

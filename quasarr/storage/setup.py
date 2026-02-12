@@ -640,7 +640,7 @@ def hostname_form_html(shared_state, message, show_skip_management=False):
                     <h4 style="margin-top:0; font-size:1rem;">Credentials</h4>
                     ${{flaresolverrWarning}}
                     <div style="margin-bottom: 0.5rem;">
-                        <label style="display:block; font-size: 0.875rem;">Username</label>
+                        <label style="display:block; font-size: 0.875rem;">Login</label>
                         <input type="text" id="cred-user-${{id}}" value="${{user}}" style="width: 100%; padding: 0.375rem 0.75rem; border: 1px solid #ced4da; border-radius: 0.25rem;">
                     </div>
                     <div style="margin-bottom: 0.5rem;">
@@ -1232,7 +1232,7 @@ def hostname_credentials_config(shared_state, shorthand, domain):
 
         credentials_inputs = f"""
         <span>If required register account at: <a href="https://{domain}">{domain}</a>!</span><br><br>
-        <label for="user">Username</label>
+        <label for="user">Login</label>
         <input type="text" id="user" name="user" placeholder="User" autocorrect="off" {disabled_attr}><br>
 
         <label for="password">Password</label>

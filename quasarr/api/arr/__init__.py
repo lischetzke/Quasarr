@@ -89,12 +89,16 @@ def setup_arr_routes(app):
                 success = downloaded["success"]
                 package_id = downloaded["package_id"]
                 title = downloaded["title"]
+                failed = downloaded.get("failed", False)
 
-                if success:
+                if success and not failed:
                     info(f"<y>{title}</y> added successfully!")
-                    nzo_ids.append(package_id)
                 else:
-                    info(f"<y>{title}</y> added unsuccessfully! See log for details.")
+                    info(
+                        f"<y>{title}</y> added as failed package! See log for details."
+                    )
+
+                nzo_ids.append(package_id)
             except KeyError:
                 info(f"Failed to download <y>{title}</y> - no package_id returned")
 
@@ -194,19 +198,17 @@ def setup_arr_routes(app):
                         success = downloaded["success"]
                         package_id = downloaded["package_id"]
                         title = downloaded.get("title", parsed_payload["title"])
+                        failed = downloaded.get("failed", False)
 
-                        if success:
+                        if success and not failed:
                             info(f'"{title} added successfully!')
-                            nzo_ids.append(package_id)
-                            return {"status": True, "nzo_ids": nzo_ids}
                         else:
-                            info(f'"{title} added unsuccessfully! See log for details.')
-                            # SABnzbd returns status: True even if operation failed
-                            return {
-                                "status": True,
-                                "nzo_ids": [],
-                                "quasarr_error": True,
-                            }
+                            info(
+                                f'"{title} added as failed package! See log for details.'
+                            )
+
+                        nzo_ids.append(package_id)
+                        return {"status": True, "nzo_ids": nzo_ids}
                     except KeyError:
                         info(
                             f'Failed to download "{parsed_payload["title"]}" - no package_id returned'

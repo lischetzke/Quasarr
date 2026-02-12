@@ -3,7 +3,6 @@
 # Project by https://github.com/rix1337
 
 import json
-import os
 import re
 import socket
 import sys
@@ -77,7 +76,6 @@ def extract_kv_pairs(input_text, allowed_keys):
     """
     kv_pattern = re.compile(rf"^({'|'.join(map(re.escape, allowed_keys))})\s*=\s*(.*)$")
     kv_pairs = {}
-    debug = os.getenv("DEBUG")
 
     for line in input_text.splitlines():
         match = kv_pattern.match(line.strip())
@@ -87,10 +85,9 @@ def extract_kv_pairs(input_text, allowed_keys):
         elif "[Hostnames]" in line:
             pass
         else:
-            if debug:
-                print(
-                    f"Skipping line because it does not contain any supported hostname: {line}"
-                )
+            trace(
+                f"Skipping line because it does not contain any supported hostname: {line}"
+            )
 
     return kv_pairs
 
@@ -678,7 +675,7 @@ def search_string_in_sanitized_title(search_string, title):
         trace(f"Matched search string: {search_regex} with title: {sanitized_title}")
         return True
     else:
-        debug(
+        trace(
             f"Skipping {title} as it doesn't match search string: {sanitized_search_string}"
         )
         return False
@@ -764,7 +761,7 @@ def is_valid_release(
         # if search string is NOT an imdb id check search_string_in_sanitized_title - if not match, it is not valid
         if not is_docs_search and not is_imdb_id(search_string):
             if not search_string_in_sanitized_title(search_string, title):
-                debug(
+                trace(
                     "Skipping {title!r} as it doesn't match sanitized search string: {search_string!r}",
                     title=title,
                     search_string=search_string,
@@ -774,7 +771,7 @@ def is_valid_release(
         # if it's a movie search, don't allow any TV show titles (check for NO season or episode tags in the title)
         if is_movie_search:
             if not MOVIE_REGEX.match(title):
-                debug(
+                trace(
                     "Skipping {title!r} as title doesn't match movie regex: {pattern!r}",
                     title=title,
                     pattern=MOVIE_REGEX.pattern,
@@ -786,7 +783,7 @@ def is_valid_release(
         if is_tv_search:
             # must have some S/E tag present
             if not SEASON_EP_REGEX.search(title):
-                debug(
+                trace(
                     "Skipping {title!r} as title doesn't match TV show regex: {pattern!r}",
                     title=title,
                     pattern=SEASON_EP_REGEX.pattern,
@@ -795,7 +792,7 @@ def is_valid_release(
             # if caller specified a season or episode, double‑check the match
             if season is not None or episode is not None:
                 if not match_in_title(title, season, episode):
-                    debug(
+                    trace(
                         "Skipping {title!r} as it doesn't match season {season} and episode {episode}",
                         title=title,
                         season=season,
@@ -808,7 +805,7 @@ def is_valid_release(
         if is_docs_search:
             # must NOT have any S/E tag present
             if SEASON_EP_REGEX.search(title):
-                debug(
+                trace(
                     "Skipping {title!r} as title matches TV show regex: {pattern!r}",
                     title=title,
                     pattern=SEASON_EP_REGEX.pattern,
@@ -820,7 +817,7 @@ def is_valid_release(
         if is_music_search:
             # must NOT have any S/E tag present
             if SEASON_EP_REGEX.search(title):
-                debug(
+                trace(
                     "Skipping {title!r} as title matches TV show regex: {pattern!r}",
                     title=title,
                     pattern=SEASON_EP_REGEX.pattern,
