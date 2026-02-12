@@ -2,8 +2,11 @@
 # Quasarr
 # Project by https://github.com/rix1337
 
+import time
+
 import quasarr.providers.html_images as images
 from quasarr.providers import shared_state
+from quasarr.providers.log import warn
 from quasarr.providers.version import get_version
 
 
@@ -373,6 +376,12 @@ def render_centered_html(inner_content, footer_content=""):
     )
 
     # Determine SponsorsHelper status
+    if shared_state.values.get("helper_active", False):
+        last_seen = shared_state.values.get("helper_last_seen", 0)
+        if time.time() - last_seen > 300:
+            warn("SponsorsHelper last seen more than 5 minutes ago. Deactivating...")
+            shared_state.update("helper_active", False)
+
     if shared_state.values.get("helper_active", False):
         sponsors_helper_status = "SponsorsHelper active"
         sponsors_helper_emoji = "💖"
