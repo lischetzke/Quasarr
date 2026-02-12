@@ -3,6 +3,7 @@
 # Project by https://github.com/rix1337
 
 import quasarr.providers.html_images as images
+from quasarr.providers import shared_state
 from quasarr.providers.version import get_version
 
 
@@ -371,12 +372,21 @@ def render_centered_html(inner_content, footer_content=""):
     </head>"""
     )
 
-    # Build footer content
-    version_text = f"Quasarr v.{get_version()}"
-    if footer_content:
-        footer_html = f"{footer_content} · {version_text}"
+    # Determine SponsorsHelper status
+    if shared_state.values.get("helper_active", False):
+        sponsors_helper_status = "SponsorsHelper active"
+        sponsors_helper_emoji = "💖"
     else:
-        footer_html = version_text
+        sponsors_helper_status = "SponsorsHelper inactive"
+        sponsors_helper_emoji = "💔"
+
+    # Build footer content
+    footer_list = [
+        footer_content,
+        f"Quasarr v{get_version()}",
+        f'<a href="https://github.com/rix1337/Quasarr?tab=readme-ov-file#sponsorshelper" target="_blank" title="{sponsors_helper_status}">{sponsors_helper_emoji}</a>',
+    ]
+    footer_html = " · ".join(filter(None, footer_list))
 
     # Global modal script
     modal_script = """
