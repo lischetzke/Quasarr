@@ -1,0 +1,25 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Quasarr",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/Quasarr.py",
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "CLI Tester",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/cli_tester.py",
+            "console": "integratedTerminal"
+        }
+    ],
+    "compounds": [
+        {
+            "name": "Run Both",
+            "configurations": ["Quasarr", "CLI Tester"]
+        }
+    ]
+}
