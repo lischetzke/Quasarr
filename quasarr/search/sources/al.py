@@ -31,6 +31,7 @@ from quasarr.providers.utils import (
     is_imdb_id,
     sanitize_string,
 )
+from quasarr.providers.xem_metadata import get_season_name
 
 hostname = "al"
 
@@ -312,47 +313,65 @@ def al_search(
 
     search_string = unescape(search_string)
 
-    encoded_search_string = quote_plus(search_string)
+    if season:
+        season_title = f"{search_string} Staffel {season}"
+        xem_name = get_season_name(search_string, season)
 
-    try:
-        url = f"https://www.{host}/search?q={encoded_search_string}"
-        r = fetch_via_requests_session(
-            shared_state,
-            method="GET",
-            target_url=url,
-            timeout=10,
-            year=get_year(imdb_id) if imdb_id else None,
-        )
-        r.raise_for_status()
-    except Exception as e:
-        info(f"Search load error: {e}")
-        mark_hostname_issue(
-            hostname, "search", str(e) if "e" in dir() else "Error occurred"
-        )
-        invalidate_session(shared_state)
-        return releases
+    results = []
+    for variant in [
+        season_title,
+        xem_name,
+        search_string,
+    ]:
+        if results:
+            break
+        if variant is None:
+            continue
 
-    if r.history:
-        # If just one valid search result exists, AL skips the search result page
-        last_redirect = r.history[-1]
-        redirect_location = last_redirect.headers["Location"]
-        absolute_redirect_url = urljoin(
-            last_redirect.url, redirect_location
-        )  # in case of relative URL
-        debug(
-            f"{search_string} redirected to {absolute_redirect_url} instead of search results page"
-        )
+        encoded_search_string = quote_plus(variant)
+        year = None
+        if imdb_id is not None and variant == search_string:
+            year = get_year(imdb_id)
 
         try:
-            soup = BeautifulSoup(r.text, "html.parser")
-            page_title = soup.title.string
-        except:
-            page_title = ""
+            url = f"https://www.{host}/search?q={encoded_search_string}"
+            r = fetch_via_requests_session(
+                shared_state,
+                method="GET",
+                target_url=url,
+                timeout=10,
+                year=year,
+            )
+            r.raise_for_status()
+        except Exception as e:
+            info(f"Search load error: {e}")
+            mark_hostname_issue(
+                hostname, "search", str(e) if "e" in dir() else "Error occurred"
+            )
+            invalidate_session(shared_state)
+            continue
 
-        results = [{"url": absolute_redirect_url, "title": page_title}]
-    else:
+        # If just one valid search result exists, AL skips the search result page
+        if r.history:
+            last_redirect = r.history[-1]
+            redirect_location = last_redirect.headers["Location"]
+            absolute_redirect_url = urljoin(
+                last_redirect.url, redirect_location
+            )  # in case of relative URL
+            debug(
+                f"{variant} redirected to {absolute_redirect_url} instead of search results page"
+            )
+
+            try:
+                soup = BeautifulSoup(r.text, "html.parser")
+                page_title = soup.title.string
+            except:
+                page_title = ""
+
+            results.append({"url": absolute_redirect_url, "title": page_title})
+            continue
+
         soup = BeautifulSoup(r.text, "html.parser")
-        results = []
 
         for panel in soup.select("div.panel.panel-default"):
             body = panel.find("div", class_="panel-body")

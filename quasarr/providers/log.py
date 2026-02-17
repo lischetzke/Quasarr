@@ -96,6 +96,7 @@ _context_replace = {
     "providers": "🔌",  # /quasarr/providers/*
     "html_templates": "🎨",  # /quasarr/providers/html_templates.py
     "imdb_metadata": "🎬",  # /quasarr/providers/imdb_metadata.py
+    "xem_metadata": "📚",  # /quasarr/providers/xem_metadata.py
     "jd_cache": "📇",  # /quasarr/providers/jd_cache.py
     "log": "📝",  # /quasarr/providers/log.py
     "myjd_api": "🔑",  # /quasarr/providers/myjd_api.py
