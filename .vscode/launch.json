@@ -7,6 +7,10 @@
             "request": "launch",
             "program": "${workspaceFolder}/Quasarr.py",
             "console": "integratedTerminal"
+            "consoleTitle": "Quasarr",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            },
         },
         {
             "name": "CLI Tester",
@@ -14,6 +18,10 @@
             "request": "launch",
             "program": "${workspaceFolder}/cli_tester.py",
             "console": "integratedTerminal"
+            "consoleTitle": "CLI Tester",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            },
         }
     ],
     "compounds": [

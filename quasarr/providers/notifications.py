@@ -11,9 +11,9 @@ from quasarr.constants import SUPPRESS_NOTIFICATIONS
 from quasarr.providers.imdb_metadata import get_imdb_id_from_title, get_poster_link
 from quasarr.providers.log import info
 
-silent = False
-if os.getenv("SILENT"):
-    silent = True
+silent_env = os.getenv("SILENT", "")
+silent = bool(silent_env)
+silent_max = silent_env.lower() == "max"
 
 
 def send_discord_message(
@@ -33,6 +33,9 @@ def send_discord_message(
     if not shared_state.values.get("discord"):
         return False
 
+    if silent_max and case == "solved":
+        return True
+
     poster_object = None
     if case == "unprotected" or case == "captcha":
         if (
@@ -50,7 +53,27 @@ def send_discord_message(
         fields = None
     elif case == "solved":
         description = "CAPTCHA solved by SponsorsHelper!"
-        fields = None
+        if details and details.get("summary"):
+            description += f"\n{details['summary']}"
+
+        fields = []
+        if details and details.get("cost") is not None and details.get("currency"):
+            fields.append(
+                {
+                    "name": "Cost",
+                    "value": f"{details['cost']} {details['currency']}",
+                }
+            )
+        if details and details.get("balance") is not None and details.get("currency"):
+            fields.append(
+                {
+                    "name": "Remaining Balance",
+                    "value": f"{details['balance']} {details['currency']}",
+                }
+            )
+
+        if not fields:
+            fields = None
     elif case == "failed":
         description = "SponsorsHelper failed to solve the CAPTCHA! Package marked as failed for deletion."
         fields = None
