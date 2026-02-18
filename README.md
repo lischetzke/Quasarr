@@ -195,7 +195,7 @@ docker run -d \
 | `DISCORD`          | Optional. Discord webhook URL for notifications.                                                           |
 | `USER` / `PASS`    | Optional, but recommended! Username / Password to protect the web UI.                                      |
 | `AUTH`             | Authentication mode. Supported values: `form` or `basic`.                                                  |
-| `SILENT`           | Optional. If `True`, silences all Discord notifications except SponsorHelper error messages. If `MAX`, additionally blocks SponsorHelper success messages. ||
+| `SILENT`           | Optional. If `True`, silences all Discord notifications except SponsorHelper error messages. If `MAX`, blocks all Discord messages except SponsorHelper failure messages. ||
 | `TZ`               | Optional. Timezone. Incorrect values may cause HTTPS/SSL issues.                                           |
 
 # Manual setup

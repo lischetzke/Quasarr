@@ -33,7 +33,8 @@ def send_discord_message(
     if not shared_state.values.get("discord"):
         return False
 
-    if silent_max and case == "solved":
+    # SILENT=MAX blocks all Discord messages except explicit failure cases.
+    if silent_max and case not in ["failed", "disabled"]:
         return True
 
     poster_object = None
@@ -142,7 +143,7 @@ def send_discord_message(
             "url": "https://raw.githubusercontent.com/rix1337/Quasarr/main/Quasarr.png"
         }
 
-    # Apply silent mode: suppress notifications for all cases except 'deleted'
+    # Apply silent mode: suppress notifications for all non-error cases.
     if silent and case not in ["failed", "quasarr_update", "disabled"]:
         data["flags"] = SUPPRESS_NOTIFICATIONS
 
