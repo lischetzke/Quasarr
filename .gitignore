@@ -1,5 +1,7 @@
 # Project by https://github.com/rix1337
 
+.claude/*.local.json
+
 # Python
 *.pyc
 *.bak
@@ -9,6 +11,9 @@
 
 # PyCharm
 .idea
+
+# Ruff
+.ruff_cache
 
 # MacOS
 .DS_Store

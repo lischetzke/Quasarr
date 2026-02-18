@@ -1,0 +1,29 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Update venv",
+            "type": "shell",
+            "command": "uv sync --group dev",
+            "problemMatcher": []
+        },
+        {
+            "label": "Install pre-commit",
+            "type": "shell",
+            "command": "uv run pre-commit install",
+            "problemMatcher": []
+        },
+        {
+            "label": "Reset local branch to upstream",
+            "type": "shell",
+            "command": "git reset --hard @{u}",
+            "problemMatcher": []
+        },
+        {
+            "label": "Force push branch",
+            "type": "shell",
+            "command": "git push --force-with-lease",
+            "problemMatcher": []
+        }
+    ]
+}

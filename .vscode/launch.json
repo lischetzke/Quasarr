@@ -1,0 +1,33 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Quasarr",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/Quasarr.py",
+            "console": "integratedTerminal"
+            "consoleTitle": "Quasarr",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            },
+        },
+        {
+            "name": "CLI Tester",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/cli_tester.py",
+            "console": "integratedTerminal"
+            "consoleTitle": "CLI Tester",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            },
+        }
+    ],
+    "compounds": [
+        {
+            "name": "Run Both",
+            "configurations": ["Quasarr", "CLI Tester"]
+        }
+    ]
+}

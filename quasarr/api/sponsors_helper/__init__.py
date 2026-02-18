@@ -126,6 +126,10 @@ def setup_sponsors_helper_routes(app):
             package_id = data.get("package_id")
             download_links = data.get("urls")
             password = data.get("password")
+            cost = data.get("cost")
+            summary = data.get("summary")
+            balance = data.get("balance")
+            currency = data.get("currency")
 
             info(
                 f"Received <green>{len(download_links)}</green> download links for <y>{title}</y>"
@@ -141,8 +145,25 @@ def setup_sponsors_helper_routes(app):
                     )
                     StatsHelper(shared_state).increment_captcha_decryptions_automatic()
                     shared_state.get_db("protected").delete(package_id)
-                    send_discord_message(shared_state, title=title, case="solved")
-                    info(f"Download successfully started for <y>{title}</y>")
+
+                    details = {}
+                    if summary:
+                        details["summary"] = summary
+                    if cost is not None and currency:
+                        details["cost"] = cost
+                    if balance is not None and currency:
+                        details["balance"] = balance
+                        details["currency"] = currency
+
+                    send_discord_message(
+                        shared_state, title=title, case="solved", details=details
+                    )
+                    log_msg = f"Download successfully started for <y>{title}</y>"
+                    if summary:
+                        log_msg += f" | {summary}"
+                    if balance is not None and currency:
+                        log_msg += f" | Balance: {balance} {currency}"
+                    info(log_msg)
                     return (
                         f"Downloaded {len(download_links)} download links for {title}"
                     )
