@@ -383,6 +383,10 @@ def fetch_via_requests_session(
 
     if year:
         sess.cookies["filter"] = f'{{"year":{{"from":{year},"to":{year}}}}}'
+        trace(f"Added year filter cookie for year {year}")
+    elif "filter" in sess.cookies:
+        del sess.cookies["filter"]
+        trace("Removed year filter cookie")
 
     # Execute request
     if method.upper() == "GET":
