@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 
 import quasarr.providers.web_server
 from quasarr.api import get_api
-from quasarr.constants import FALLBACK_USER_AGENT, HOSTNAMES_REQUIRING_LOGIN
+from quasarr.constants import FALLBACK_USER_AGENT
 from quasarr.providers import shared_state, version
 from quasarr.providers.log import (
     crit,
@@ -31,6 +31,7 @@ from quasarr.providers.utils import (
     extract_allowed_keys,
     validate_address,
 )
+from quasarr.search.sources.helpers import get_login_required_hostnames
 from quasarr.storage.config import Config, get_clean_hostnames
 from quasarr.storage.setup import (
     flaresolverr_config,
@@ -130,7 +131,7 @@ def run():
 
         quasarr.providers.web_server.temp_server_success = False
 
-        for site in HOSTNAMES_REQUIRING_LOGIN:
+        for site in get_login_required_hostnames():
             hostname = Config("Hostnames").get(site)
             if hostname:
                 # dj and sj share the same credentials under JUNKIES

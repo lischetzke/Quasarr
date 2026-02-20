@@ -11,33 +11,6 @@ import re
 # User agent for all requests, if not overwritten by Flaresolverr
 FALLBACK_USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"
 
-# These are the supported hostnames in Quasarr
-HOSTNAMES = [
-    "al",
-    "by",
-    "dd",
-    "dj",
-    "dl",
-    "dt",
-    "dw",
-    "fx",
-    "he",
-    "hs",
-    "mb",
-    "nk",
-    "nx",
-    "sf",
-    "sj",
-    "sl",
-    "wd",
-    "wx",
-]
-
-# These hostnames require credentials to be used
-HOSTNAMES_REQUIRING_LOGIN = ["al", "dd", "dj", "dl", "nx", "sj"]
-
-# These hostnames support not only feed and imdb searches, but also search phrases
-HOSTNAMES_SUPPORTING_SEARCH_PHRASE = ["by", "dl", "dt", "nx", "sl", "wd"]
 
 # ==============================================================================
 # SEARCH & CATEGORIES
@@ -47,14 +20,18 @@ HOSTNAMES_SUPPORTING_SEARCH_PHRASE = ["by", "dl", "dt", "nx", "sl", "wd"]
 SEARCH_CAT_MOVIES = 2000
 SEARCH_CAT_MUSIC = 3000
 SEARCH_CAT_SHOWS = 5000
+SEARCH_CAT_SHOWS_ANIME = 5070
+SEARCH_CAT_XXX = 6000
 SEARCH_CAT_BOOKS = 7000
 
 # Default Set of Search Categories
 SEARCH_CATEGORIES = {
-    "2000": {"name": "Movies", "emoji": "🎬"},
-    "3000": {"name": "Music", "emoji": "🎵"},
-    "5000": {"name": "TV", "emoji": "📺"},
-    "7000": {"name": "Books", "emoji": "📚"},
+    SEARCH_CAT_MOVIES: {"name": "Movies", "emoji": "🎬"},
+    SEARCH_CAT_MUSIC: {"name": "Audio", "emoji": "🎵"},
+    SEARCH_CAT_SHOWS: {"name": "TV", "emoji": "📺"},
+    SEARCH_CAT_SHOWS_ANIME: {"name": "TV/Anime", "emoji": "📺"},
+    SEARCH_CAT_XXX: {"name": "XXX", "emoji": "🔞"},
+    SEARCH_CAT_BOOKS: {"name": "Books", "emoji": "📚"},
 }
 
 # Default SEt of Download Categories

@@ -9,16 +9,16 @@ from urllib.parse import quote_plus, urljoin
 from bs4 import BeautifulSoup
 
 from quasarr.constants import (
-    SEARCH_CAT_BOOKS,
     SEARCH_CAT_MOVIES,
-    SEARCH_CAT_MUSIC,
     SEARCH_CAT_SHOWS,
+    SEARCH_CAT_SHOWS_ANIME,
 )
 from quasarr.downloads.sources.al import (
     guess_title,
     parse_info_from_download_item,
     parse_info_from_feed_entry,
 )
+from quasarr.providers import shared_state
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.imdb_metadata import get_localized_title, get_year
 from quasarr.providers.log import debug, error, info, trace, warn
@@ -32,8 +32,425 @@ from quasarr.providers.utils import (
     sanitize_string,
 )
 from quasarr.providers.xem_metadata import get_season_name
+from quasarr.search.sources.helpers.abstract_source import AbstractSource
+from quasarr.search.sources.helpers.release import Release
 
-hostname = "al"
+
+class Source(AbstractSource):
+    initials = "al"
+    supports_imdb = True
+    supports_phrase = False
+    supported_categories = [SEARCH_CAT_MOVIES, SEARCH_CAT_SHOWS, SEARCH_CAT_SHOWS_ANIME]
+    requires_login = True
+
+    def feed(
+        self, shared_state: shared_state, start_time: float, search_category: str
+    ) -> list[Release]:
+        releases = []
+
+        host = shared_state.values["config"]("Hostnames").get(self.initials)
+
+        base_category = get_base_search_category_id(search_category)
+
+        if base_category == SEARCH_CAT_MOVIES:
+            wanted_type = "movie"
+        elif base_category == SEARCH_CAT_SHOWS:
+            wanted_type = "series"
+        else:
+            warn(f"Unknown search category: {search_category}")
+            return releases
+
+        try:
+            r = fetch_via_requests_session(
+                shared_state,
+                method="GET",
+                target_url=f"https://www.{host}/",
+                timeout=30,
+            )
+            r.raise_for_status()
+        except Exception as e:
+            error(f"Could not fetch feed: {e}")
+            mark_hostname_issue(
+                self.initials, "feed", str(e) if "e" in dir() else "Error occurred"
+            )
+            invalidate_session(shared_state)
+            return releases
+
+        soup = BeautifulSoup(r.content, "html.parser")
+
+        # 1) New “Releases”
+        release_rows = soup.select("#releases_updates_list table tbody tr")
+        # 2) New “Episodes”
+        episode_rows = soup.select("#episodes_updates_list table tbody tr")
+        # 3) “Upgrades” Releases
+        upgrade_rows = soup.select("#releases_modified_updates_list table tbody tr")
+
+        for tr in release_rows + episode_rows + upgrade_rows:
+            try:
+                p_tag = tr.find("p")
+                if not p_tag:
+                    continue
+                a_tag = p_tag.find("a", href=True)
+                if not a_tag:
+                    continue
+
+                url = a_tag["href"].strip()
+                # Prefer data-original-title, fall back to title, then to inner text
+                if a_tag.get("data-original-title"):
+                    raw_base_title = a_tag["data-original-title"]
+                elif a_tag.get("title"):
+                    raw_base_title = a_tag["title"]
+                else:
+                    raw_base_title = a_tag.get_text(strip=True)
+
+                release_type = None
+                label_div = tr.find("div", class_="label-group")
+                if label_div:
+                    for lbl in label_div.find_all("a", href=True):
+                        href = lbl["href"].rstrip("/").lower()
+                        if href.endswith("/anime-series"):
+                            release_type = "series"
+                            break
+                        elif href.endswith("/anime-movies"):
+                            release_type = "movie"
+                            break
+
+                if release_type is None or release_type != wanted_type:
+                    continue
+
+                date_converted = ""
+                small_tag = tr.find("small", class_="text-muted")
+                if small_tag:
+                    raw_date_str = small_tag.get_text(strip=True)
+                    if raw_date_str.startswith("vor"):
+                        dt = parse_relative_date(raw_date_str)
+                        if dt:
+                            date_converted = dt.strftime("%a, %d %b %Y %H:%M:%S +0000")
+                    else:
+                        try:
+                            date_converted = convert_to_rss_date(raw_date_str)
+                        except Exception as e:
+                            debug(f"Could not parse date '{raw_date_str}': {e}")
+
+                # Each of these signifies an individual release block
+                mt_blocks = tr.find_all("div", class_="mt10")
+                for block in mt_blocks:
+                    release_id = get_release_id(block)
+                    release_info = parse_info_from_feed_entry(
+                        block, raw_base_title, release_type
+                    )
+                    final_title = guess_title(
+                        shared_state, raw_base_title, release_info
+                    )
+
+                    # Build payload using final_title
+                    mb = 0  # size not available in feed
+                    link = generate_download_link(
+                        shared_state,
+                        final_title,
+                        url,
+                        mb,
+                        release_id,
+                        None,
+                        self.initials,
+                    )
+
+                    # Append only unique releases
+                    if final_title not in [r["details"]["title"] for r in releases]:
+                        releases.append(
+                            {
+                                "details": {
+                                    "title": final_title,
+                                    "hostname": self.initials,
+                                    "imdb_id": None,
+                                    "link": link,
+                                    "size": mb * 1024 * 1024,
+                                    "date": date_converted,
+                                    "source": url,
+                                },
+                                "type": "protected",
+                            }
+                        )
+
+            except Exception as e:
+                info(f"Error parsing feed item: {e}")
+                mark_hostname_issue(
+                    self.initials, "feed", str(e) if "e" in dir() else "Error occurred"
+                )
+
+        elapsed = time.time() - start_time
+        debug(f"Time taken: {elapsed:.2f}s")
+
+        if releases:
+            clear_hostname_issue(self.initials)
+        return releases
+
+    def search(
+        self,
+        shared_state: shared_state,
+        start_time: float,
+        search_category: str,
+        search_string: str = "",
+        season: int = None,
+        episode: int = None,
+    ) -> list[Release]:
+        releases = []
+
+        host = shared_state.values["config"]("Hostnames").get(self.initials)
+
+        base_category = get_base_search_category_id(search_category)
+
+        if base_category == SEARCH_CAT_MOVIES:
+            valid_type = "movie"
+        elif base_category == SEARCH_CAT_SHOWS:
+            valid_type = "series"
+        else:
+            warn(f"Unknown search category: {search_category}")
+            return releases
+
+        imdb_id = is_imdb_id(search_string)
+        if imdb_id:
+            title = get_localized_title(shared_state, imdb_id, "de")
+            if not title:
+                info(f"No title for IMDb {imdb_id}")
+                return releases
+            search_string = title
+
+        search_string = unescape(search_string)
+
+        season_title = None
+        xem_name = None
+        if season:
+            season_title = f"{search_string} Staffel {season}"
+            xem_name = get_season_name(search_string, season)
+
+        results = []
+        for variant in [
+            season_title,
+            xem_name,
+            search_string,
+        ]:
+            if results:
+                break
+            if variant is None:
+                continue
+
+            encoded_search_string = quote_plus(variant)
+            year = None
+            if imdb_id is not None and variant == search_string:
+                year = get_year(imdb_id)
+
+            try:
+                url = f"https://www.{host}/search?q={encoded_search_string}"
+                r = fetch_via_requests_session(
+                    shared_state,
+                    method="GET",
+                    target_url=url,
+                    timeout=10,
+                    year=year,
+                )
+                r.raise_for_status()
+            except Exception as e:
+                info(f"Search load error: {e}")
+                mark_hostname_issue(
+                    self.initials,
+                    "search",
+                    str(e) if "e" in dir() else "Error occurred",
+                )
+                invalidate_session(shared_state)
+                continue
+
+            # If just one valid search result exists, AL skips the search result page
+            if r.history:
+                last_redirect = r.history[-1]
+                redirect_location = last_redirect.headers["Location"]
+                absolute_redirect_url = urljoin(
+                    last_redirect.url, redirect_location
+                )  # in case of relative URL
+                debug(
+                    f"{variant} redirected to {absolute_redirect_url} instead of search results page"
+                )
+
+                try:
+                    soup = BeautifulSoup(r.text, "html.parser")
+                    page_title = soup.title.string
+                except:
+                    page_title = ""
+
+                results.append({"url": absolute_redirect_url, "title": page_title})
+                continue
+
+            soup = BeautifulSoup(r.text, "html.parser")
+
+            for panel in soup.select("div.panel.panel-default"):
+                body = panel.find("div", class_="panel-body")
+                if not body:
+                    continue
+
+                title_tag = body.select_one("h4.title-list a[href]")
+                if not title_tag:
+                    continue
+                url = title_tag["href"].strip()
+                name = title_tag.get_text(strip=True)
+
+                sanitized_search_string = sanitize_string(search_string)
+                sanitized_title = sanitize_string(name)
+                if not sanitized_search_string in sanitized_title:
+                    debug(f"Search string '{search_string}' doesn't match '{name}'")
+                    continue
+                trace(f"Matched search string '{search_string}' with result '{name}'")
+
+                type_label = None
+                for lbl in body.select("div.label-group a[href]"):
+                    href = lbl["href"]
+                    if "/anime-series" in href:
+                        type_label = "series"
+                        break
+                    if "/anime-movies" in href:
+                        type_label = "movie"
+                        break
+
+                if not type_label or type_label != valid_type:
+                    continue
+
+                results.append({"url": url, "title": name})
+
+        for result in results:
+            try:
+                url = result["url"]
+                title = result.get("title") or ""
+
+                context = "recents_al"
+                threshold = 60
+                recently_searched = get_recently_searched(
+                    shared_state, context, threshold
+                )
+                entry = recently_searched.get(url, {})
+                ts = entry.get("timestamp")
+                use_cache = ts and ts > datetime.now() - timedelta(seconds=threshold)
+
+                if use_cache and entry.get("html"):
+                    debug(f"Using cached content for '{url}'")
+                    data_html = entry["html"]
+                else:
+                    entry = {"timestamp": datetime.now()}
+                    data_html = fetch_via_requests_session(
+                        shared_state, method="GET", target_url=url, timeout=10
+                    ).text
+
+                entry["html"] = data_html
+                recently_searched[url] = entry
+                shared_state.update(context, recently_searched)
+
+                content = BeautifulSoup(data_html, "html.parser")
+
+                # Find each download‐table and process it
+                release_id = 0
+                download_tabs = content.select("div[id^=download_]")
+                for tab in download_tabs:
+                    release_id += 1
+
+                    release_info = parse_info_from_download_item(
+                        tab,
+                        content,
+                        page_title=title,
+                        release_type=valid_type,
+                        requested_episode=episode,
+                    )
+
+                    # Parse date
+                    date_td = tab.select_one("tr:has(th>i.fa-calendar-alt) td.modified")
+                    if date_td:
+                        raw_date = date_td.get_text(strip=True)
+                        try:
+                            dt = datetime.strptime(raw_date, "%d.%m.%Y %H:%M")
+                            date_str = dt.strftime("%a, %d %b %Y %H:%M:%S +0000")
+                        except Exception:
+                            date_str = ""
+                    else:
+                        date_str = (datetime.utcnow() - timedelta(hours=1)).strftime(
+                            "%a, %d %b %Y %H:%M:%S +0000"
+                        )
+
+                    # Parse filesize from the <tr> with <i class="fa-hdd">
+                    size_td = tab.select_one("tr:has(th>i.fa-hdd) td")
+                    mb = 0
+                    if size_td:
+                        size_text = size_td.get_text(strip=True)
+                        candidates = re.findall(r"(\d+(\.\d+)?\s*[A-Za-z]+)", size_text)
+                        if candidates:
+                            size_string = candidates[-1][0]
+                            try:
+                                size_item = extract_size(size_string)
+                                mb = convert_to_mb(size_item)
+                            except Exception as e:
+                                debug(f"Error extracting size for {title}: {e}")
+
+                    if episode:
+                        try:
+                            total_episodes = release_info.episode_max
+                            if total_episodes:
+                                if mb > 0:
+                                    mb = int(mb / total_episodes)
+                                # Overwrite values so guessing the title only applies the requested episode
+                                release_info.episode_min = int(episode)
+                                release_info.episode_max = int(episode)
+                            else:  # if no total episode count - assume the requested episode is missing in the release
+                                continue
+                        except ValueError:
+                            pass
+
+                    # If no valid title was grabbed from Release Notes, guess the title
+                    if release_info.release_title:
+                        release_title = release_info.release_title
+                    else:
+                        release_title = guess_title(shared_state, title, release_info)
+
+                    if season and release_info.season != int(season):
+                        debug(
+                            f"Excluding {release_title} due to season mismatch: {release_info.season} != {season}"
+                        )
+                        continue
+
+                    link = generate_download_link(
+                        shared_state,
+                        release_title,
+                        url,
+                        mb,
+                        release_id,
+                        imdb_id or "",
+                        self.initials,
+                    )
+
+                    releases.append(
+                        {
+                            "details": {
+                                "title": release_title,
+                                "hostname": self.initials,
+                                "imdb_id": imdb_id,
+                                "link": link,
+                                "size": mb * 1024 * 1024,
+                                "date": date_str,
+                                "source": f"{url}#download_{release_id}",
+                            },
+                            "type": "protected",
+                        }
+                    )
+
+            except Exception as e:
+                info(f"Error parsing search item: {e}")
+                mark_hostname_issue(
+                    self.initials,
+                    "search",
+                    str(e) if "e" in dir() else "Error occurred",
+                )
+
+        elapsed = time.time() - start_time
+        debug(f"Time taken: {elapsed:.2f}s")
+
+        if releases:
+            clear_hostname_issue(self.initials)
+        return releases
 
 
 import re
@@ -130,411 +547,8 @@ def get_release_id(tag):
     return 0
 
 
-def al_feed(shared_state, start_time, search_category):
-    releases = []
-    host = shared_state.values["config"]("Hostnames").get(hostname)
-
-    base_category = get_base_search_category_id(search_category)
-
-    if base_category in [SEARCH_CAT_BOOKS, SEARCH_CAT_MUSIC]:
-        debug(
-            f"<d>Skipping <y>{search_category}</y> on <g>{hostname.upper()}</g> (category not supported)!</d>"
-        )
-        return releases
-    elif base_category == SEARCH_CAT_MOVIES:
-        wanted_type = "movie"
-    elif base_category == SEARCH_CAT_SHOWS:
-        wanted_type = "series"
-    else:
-        warn(f"Unknown search category: {search_category}")
-        return releases
-
-    try:
-        r = fetch_via_requests_session(
-            shared_state, method="GET", target_url=f"https://www.{host}/", timeout=30
-        )
-        r.raise_for_status()
-    except Exception as e:
-        error(f"Could not fetch feed: {e}")
-        mark_hostname_issue(
-            hostname, "feed", str(e) if "e" in dir() else "Error occurred"
-        )
-        invalidate_session(shared_state)
-        return releases
-
-    soup = BeautifulSoup(r.content, "html.parser")
-
-    # 1) New “Releases”
-    release_rows = soup.select("#releases_updates_list table tbody tr")
-    # 2) New “Episodes”
-    episode_rows = soup.select("#episodes_updates_list table tbody tr")
-    # 3) “Upgrades” Releases
-    upgrade_rows = soup.select("#releases_modified_updates_list table tbody tr")
-
-    for tr in release_rows + episode_rows + upgrade_rows:
-        try:
-            p_tag = tr.find("p")
-            if not p_tag:
-                continue
-            a_tag = p_tag.find("a", href=True)
-            if not a_tag:
-                continue
-
-            url = a_tag["href"].strip()
-            # Prefer data-original-title, fall back to title, then to inner text
-            if a_tag.get("data-original-title"):
-                raw_base_title = a_tag["data-original-title"]
-            elif a_tag.get("title"):
-                raw_base_title = a_tag["title"]
-            else:
-                raw_base_title = a_tag.get_text(strip=True)
-
-            release_type = None
-            label_div = tr.find("div", class_="label-group")
-            if label_div:
-                for lbl in label_div.find_all("a", href=True):
-                    href = lbl["href"].rstrip("/").lower()
-                    if href.endswith("/anime-series"):
-                        release_type = "series"
-                        break
-                    elif href.endswith("/anime-movies"):
-                        release_type = "movie"
-                        break
-
-            if release_type is None or release_type != wanted_type:
-                continue
-
-            date_converted = ""
-            small_tag = tr.find("small", class_="text-muted")
-            if small_tag:
-                raw_date_str = small_tag.get_text(strip=True)
-                if raw_date_str.startswith("vor"):
-                    dt = parse_relative_date(raw_date_str)
-                    if dt:
-                        date_converted = dt.strftime("%a, %d %b %Y %H:%M:%S +0000")
-                else:
-                    try:
-                        date_converted = convert_to_rss_date(raw_date_str)
-                    except Exception as e:
-                        debug(f"Could not parse date '{raw_date_str}': {e}")
-
-            # Each of these signifies an individual release block
-            mt_blocks = tr.find_all("div", class_="mt10")
-            for block in mt_blocks:
-                release_id = get_release_id(block)
-                release_info = parse_info_from_feed_entry(
-                    block, raw_base_title, release_type
-                )
-                final_title = guess_title(shared_state, raw_base_title, release_info)
-
-                # Build payload using final_title
-                mb = 0  # size not available in feed
-                link = generate_download_link(
-                    shared_state,
-                    final_title,
-                    url,
-                    mb,
-                    release_id,
-                    None,
-                    hostname,
-                )
-
-                # Append only unique releases
-                if final_title not in [r["details"]["title"] for r in releases]:
-                    releases.append(
-                        {
-                            "details": {
-                                "title": final_title,
-                                "hostname": hostname,
-                                "imdb_id": None,
-                                "link": link,
-                                "size": mb * 1024 * 1024,
-                                "date": date_converted,
-                                "source": url,
-                            },
-                            "type": "protected",
-                        }
-                    )
-
-        except Exception as e:
-            info(f"Error parsing feed item: {e}")
-            mark_hostname_issue(
-                hostname, "feed", str(e) if "e" in dir() else "Error occurred"
-            )
-
-    elapsed = time.time() - start_time
-    debug(f"Time taken: {elapsed:.2f}s")
-
-    if releases:
-        clear_hostname_issue(hostname)
-    return releases
-
-
 def extract_season(title: str) -> int | None:
     match = re.search(r"(?i)(?:^|[^a-zA-Z0-9])S(\d{1,4})(?!\d)", title)
     if match:
         return int(match.group(1))
     return None
-
-
-def al_search(
-    shared_state,
-    start_time,
-    search_category,
-    search_string,
-    season=None,
-    episode=None,
-):
-    releases = []
-    host = shared_state.values["config"]("Hostnames").get(hostname)
-
-    base_category = get_base_search_category_id(search_category)
-
-    if base_category in [SEARCH_CAT_BOOKS, SEARCH_CAT_MUSIC]:
-        debug(
-            f"<d>Skipping <y>{search_category}</y> on <g>{hostname.upper()}</g> (category not supported)!</d>"
-        )
-        return releases
-    elif base_category == SEARCH_CAT_MOVIES:
-        valid_type = "movie"
-    elif base_category == SEARCH_CAT_SHOWS:
-        valid_type = "series"
-    else:
-        warn(f"Unknown search category: {search_category}")
-        return releases
-
-    imdb_id = is_imdb_id(search_string)
-    if imdb_id:
-        title = get_localized_title(shared_state, imdb_id, "de")
-        if not title:
-            info(f"No title for IMDb {imdb_id}")
-            return releases
-        search_string = title
-
-    search_string = unescape(search_string)
-
-    if season:
-        season_title = f"{search_string} Staffel {season}"
-        xem_name = get_season_name(search_string, season)
-
-    results = []
-    for variant in [
-        season_title,
-        xem_name,
-        search_string,
-    ]:
-        if results:
-            break
-        if variant is None:
-            continue
-
-        encoded_search_string = quote_plus(variant)
-        year = None
-        if imdb_id is not None and variant == search_string:
-            year = get_year(imdb_id)
-
-        try:
-            url = f"https://www.{host}/search?q={encoded_search_string}"
-            r = fetch_via_requests_session(
-                shared_state,
-                method="GET",
-                target_url=url,
-                timeout=10,
-                year=year,
-            )
-            r.raise_for_status()
-        except Exception as e:
-            info(f"Search load error: {e}")
-            mark_hostname_issue(
-                hostname, "search", str(e) if "e" in dir() else "Error occurred"
-            )
-            invalidate_session(shared_state)
-            continue
-
-        # If just one valid search result exists, AL skips the search result page
-        if r.history:
-            last_redirect = r.history[-1]
-            redirect_location = last_redirect.headers["Location"]
-            absolute_redirect_url = urljoin(
-                last_redirect.url, redirect_location
-            )  # in case of relative URL
-            debug(
-                f"{variant} redirected to {absolute_redirect_url} instead of search results page"
-            )
-
-            try:
-                soup = BeautifulSoup(r.text, "html.parser")
-                page_title = soup.title.string
-            except:
-                page_title = ""
-
-            results.append({"url": absolute_redirect_url, "title": page_title})
-            continue
-
-        soup = BeautifulSoup(r.text, "html.parser")
-
-        for panel in soup.select("div.panel.panel-default"):
-            body = panel.find("div", class_="panel-body")
-            if not body:
-                continue
-
-            title_tag = body.select_one("h4.title-list a[href]")
-            if not title_tag:
-                continue
-            url = title_tag["href"].strip()
-            name = title_tag.get_text(strip=True)
-
-            sanitized_search_string = sanitize_string(search_string)
-            sanitized_title = sanitize_string(name)
-            if not sanitized_search_string in sanitized_title:
-                debug(f"Search string '{search_string}' doesn't match '{name}'")
-                continue
-            trace(f"Matched search string '{search_string}' with result '{name}'")
-
-            type_label = None
-            for lbl in body.select("div.label-group a[href]"):
-                href = lbl["href"]
-                if "/anime-series" in href:
-                    type_label = "series"
-                    break
-                if "/anime-movies" in href:
-                    type_label = "movie"
-                    break
-
-            if not type_label or type_label != valid_type:
-                continue
-
-            results.append({"url": url, "title": name})
-
-    for result in results:
-        try:
-            url = result["url"]
-            title = result.get("title") or ""
-
-            context = "recents_al"
-            threshold = 60
-            recently_searched = get_recently_searched(shared_state, context, threshold)
-            entry = recently_searched.get(url, {})
-            ts = entry.get("timestamp")
-            use_cache = ts and ts > datetime.now() - timedelta(seconds=threshold)
-
-            if use_cache and entry.get("html"):
-                debug(f"Using cached content for '{url}'")
-                data_html = entry["html"]
-            else:
-                entry = {"timestamp": datetime.now()}
-                data_html = fetch_via_requests_session(
-                    shared_state, method="GET", target_url=url, timeout=10
-                ).text
-
-            entry["html"] = data_html
-            recently_searched[url] = entry
-            shared_state.update(context, recently_searched)
-
-            content = BeautifulSoup(data_html, "html.parser")
-
-            # Find each download‐table and process it
-            release_id = 0
-            download_tabs = content.select("div[id^=download_]")
-            for tab in download_tabs:
-                release_id += 1
-
-                release_info = parse_info_from_download_item(
-                    tab,
-                    content,
-                    page_title=title,
-                    release_type=valid_type,
-                    requested_episode=episode,
-                )
-
-                # Parse date
-                date_td = tab.select_one("tr:has(th>i.fa-calendar-alt) td.modified")
-                if date_td:
-                    raw_date = date_td.get_text(strip=True)
-                    try:
-                        dt = datetime.strptime(raw_date, "%d.%m.%Y %H:%M")
-                        date_str = dt.strftime("%a, %d %b %Y %H:%M:%S +0000")
-                    except Exception:
-                        date_str = ""
-                else:
-                    date_str = (datetime.utcnow() - timedelta(hours=1)).strftime(
-                        "%a, %d %b %Y %H:%M:%S +0000"
-                    )
-
-                # Parse filesize from the <tr> with <i class="fa-hdd">
-                size_td = tab.select_one("tr:has(th>i.fa-hdd) td")
-                mb = 0
-                if size_td:
-                    size_text = size_td.get_text(strip=True)
-                    candidates = re.findall(r"(\d+(\.\d+)?\s*[A-Za-z]+)", size_text)
-                    if candidates:
-                        size_string = candidates[-1][0]
-                        try:
-                            size_item = extract_size(size_string)
-                            mb = convert_to_mb(size_item)
-                        except Exception as e:
-                            debug(f"Error extracting size for {title}: {e}")
-
-                if episode:
-                    try:
-                        total_episodes = release_info.episode_max
-                        if total_episodes:
-                            if mb > 0:
-                                mb = int(mb / total_episodes)
-                            # Overwrite values so guessing the title only applies the requested episode
-                            release_info.episode_min = int(episode)
-                            release_info.episode_max = int(episode)
-                        else:  # if no total episode count - assume the requested episode is missing in the release
-                            continue
-                    except ValueError:
-                        pass
-
-                # If no valid title was grabbed from Release Notes, guess the title
-                if release_info.release_title:
-                    release_title = release_info.release_title
-                else:
-                    release_title = guess_title(shared_state, title, release_info)
-
-                if season and release_info.season != int(season):
-                    debug(
-                        f"Excluding {release_title} due to season mismatch: {release_info.season} != {season}"
-                    )
-                    continue
-
-                link = generate_download_link(
-                    shared_state,
-                    release_title,
-                    url,
-                    mb,
-                    release_id,
-                    imdb_id or "",
-                    hostname,
-                )
-
-                releases.append(
-                    {
-                        "details": {
-                            "title": release_title,
-                            "hostname": hostname,
-                            "imdb_id": imdb_id,
-                            "link": link,
-                            "size": mb * 1024 * 1024,
-                            "date": date_str,
-                            "source": f"{url}#download_{release_id}",
-                        },
-                        "type": "protected",
-                    }
-                )
-
-        except Exception as e:
-            info(f"Error parsing search item: {e}")
-            mark_hostname_issue(
-                hostname, "search", str(e) if "e" in dir() else "Error occurred"
-            )
-
-    elapsed = time.time() - start_time
-    debug(f"Time taken: {elapsed:.2f}s")
-
-    if releases:
-        clear_hostname_issue(hostname)
-    return releases

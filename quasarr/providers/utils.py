@@ -18,16 +18,17 @@ import requests
 from PIL import Image
 
 from quasarr.constants import (
-    HOSTNAMES_REQUIRING_LOGIN,
     MONTHS_MAP,
     MOVIE_REGEX,
     SEARCH_CAT_BOOKS,
     SEARCH_CAT_MOVIES,
     SEARCH_CAT_MUSIC,
     SEARCH_CAT_SHOWS,
+    SEARCH_CAT_XXX,
     SEASON_EP_REGEX,
 )
 from quasarr.providers.log import crit, debug, error, trace, warn
+from quasarr.search.sources.helpers import get_login_required_hostnames
 from quasarr.storage.categories import download_category_exists, search_category_exists
 
 
@@ -196,7 +197,7 @@ def is_site_usable(shared_state, shorthand):
     if not hostname:
         return False
 
-    if shorthand not in HOSTNAMES_REQUIRING_LOGIN:
+    if shorthand not in get_login_required_hostnames():
         return True  # No login needed, hostname is enough
 
     # Check if login was skipped
@@ -502,6 +503,8 @@ def get_base_search_category_id(cat_id):
         return SEARCH_CAT_MUSIC
     elif 5000 <= cat_id < 6000:
         return SEARCH_CAT_SHOWS
+    elif 6000 <= cat_id < 7000:
+        return SEARCH_CAT_XXX
     elif 7000 <= cat_id < 8000:
         return SEARCH_CAT_BOOKS
 
@@ -753,10 +756,11 @@ def is_valid_release(
     - episode: desired episode number (or None)
     """
     try:
-        is_movie_search = search_category == SEARCH_CAT_MOVIES
-        is_tv_search = search_category == SEARCH_CAT_SHOWS
-        is_docs_search = search_category == SEARCH_CAT_BOOKS
-        is_music_search = search_category == SEARCH_CAT_MUSIC
+        is_movie_search = search_category // 1000 * 1000 == SEARCH_CAT_MOVIES
+        is_tv_search = search_category // 1000 * 1000 == SEARCH_CAT_SHOWS
+        is_docs_search = search_category // 1000 * 1000 == SEARCH_CAT_BOOKS
+        is_music_search = search_category // 1000 * 1000 == SEARCH_CAT_MUSIC
+        is_xxx_search = search_category // 1000 * 1000 == SEARCH_CAT_XXX
 
         # if search string is NOT an imdb id check search_string_in_sanitized_title - if not match, it is not valid
         if not is_docs_search and not is_imdb_id(search_string):
@@ -823,6 +827,9 @@ def is_valid_release(
                     pattern=SEASON_EP_REGEX.pattern,
                 )
                 return False
+            return True
+
+        if is_xxx_search:
             return True
 
         # unknown search source — reject by default

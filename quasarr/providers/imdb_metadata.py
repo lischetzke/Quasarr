@@ -12,7 +12,6 @@ import requests
 from bs4 import BeautifulSoup
 
 from quasarr.providers.log import debug, info
-from quasarr.providers.utils import search_string_in_sanitized_title
 
 
 def _get_db(table_name):
@@ -608,6 +607,8 @@ def get_imdb_id_from_title(shared_state, title, language="de"):
 
 
 def _match_result(shared_state, title, results, ttype_api, is_api=False):
+    from quasarr.providers.utils import search_string_in_sanitized_title
+
     for result in results:
         found_title = (
             result.get("primaryTitle") if is_api else result.get("titleNameText")

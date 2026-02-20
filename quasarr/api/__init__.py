@@ -12,7 +12,6 @@ from quasarr.api.jdownloader import get_jdownloader_status
 from quasarr.api.packages import setup_packages_routes
 from quasarr.api.sponsors_helper import setup_sponsors_helper_routes
 from quasarr.api.statistics import setup_statistics
-from quasarr.constants import HOSTNAMES_REQUIRING_LOGIN
 from quasarr.providers import shared_state
 from quasarr.providers.auth import add_auth_hook, add_auth_routes, show_logout_link
 from quasarr.providers.hostname_issues import get_all_hostname_issues
@@ -22,6 +21,7 @@ from quasarr.providers.html_templates import (
     render_success,
 )
 from quasarr.providers.web_server import Server
+from quasarr.search.sources.helpers import get_login_required_hostnames
 from quasarr.storage.config import Config
 from quasarr.storage.sqlite_database import DataBase
 
@@ -74,7 +74,7 @@ def get_api(shared_state_dict, shared_state_lock):
             # Skip unset hostnames and skipped logins
             if not current_value:
                 continue
-            if shorthand in HOSTNAMES_REQUIRING_LOGIN:
+            if shorthand in get_login_required_hostnames():
                 skip_val = skip_login_db.retrieve(shorthand)
                 if skip_val and str(skip_val).lower() == "true":
                     continue

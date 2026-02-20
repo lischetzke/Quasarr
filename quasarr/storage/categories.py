@@ -9,10 +9,6 @@ import emoji
 
 from quasarr.constants import (
     DOWNLOAD_CATEGORIES,
-    SEARCH_CAT_BOOKS,
-    SEARCH_CAT_MOVIES,
-    SEARCH_CAT_MUSIC,
-    SEARCH_CAT_SHOWS,
     SEARCH_CATEGORIES,
 )
 
@@ -73,8 +69,9 @@ def get_search_categories():
 
     # Ensure default categories always exist in DB (for whitelists)
     for cat_id, cat_info in SEARCH_CATEGORIES.items():
-        if not db.retrieve(cat_id):
-            db.store(cat_id, json.dumps(cat_info))
+        cat_id = int(cat_id)
+        if not db.retrieve(str(cat_id)):
+            db.store(str(cat_id), json.dumps(cat_info))
             info(f"Restored default search category: {cat_id} ({cat_info['name']})")
 
     # Start with default categories
@@ -83,8 +80,8 @@ def get_search_categories():
     # Add custom categories from DB
     custom_cats = db.retrieve_all_titles() or []
     for cat_id_tuple in custom_cats:
-        cat_id = cat_id_tuple[0]
-        data_str = db.retrieve(cat_id)
+        cat_id = int(cat_id_tuple[0])
+        data_str = db.retrieve(str(cat_id))
         if data_str:
             try:
                 data = json.loads(data_str)
@@ -99,6 +96,9 @@ def get_search_categories():
 
 def get_search_category_sources(cat_id):
     """Returns the list of preferred search sources for a search category ID."""
+    if not cat_id:
+        return False, "Category ID is required."
+    cat_id = int(cat_id)
     db = DataBase("categories_search")
     data_str = db.retrieve(str(cat_id))
     if data_str:
@@ -110,13 +110,15 @@ def get_search_category_sources(cat_id):
     return []
 
 
-def update_search_category_sources(cat_id, sources):
+def update_search_category_sources(cat_id: int, sources):
     """Updates the preferred search sources for a search category ID."""
+    if not cat_id:
+        return False, "Category ID is required."
     db = DataBase("categories_search")
-    cat_id_str = str(cat_id)
-    is_default = cat_id_str in SEARCH_CATEGORIES
+    cat_id = int(cat_id)
+    is_default = cat_id in SEARCH_CATEGORIES
 
-    data_str = db.retrieve(cat_id_str)
+    data_str = db.retrieve(str(cat_id))
     data = {}
 
     if data_str:
@@ -131,29 +133,27 @@ def update_search_category_sources(cat_id, sources):
         return False, f"Search category ID {cat_id} not found."
 
     data["search_sources"] = sources
-    db.update_store(cat_id_str, json.dumps(data))
+    db.update_store(str(cat_id), json.dumps(data))
 
-    info(f"Updated search-source-whitelist for search category {cat_id} to {sources}")
+    info(
+        f"Updated search-source-whitelist for search category {cat_id} to {[source.upper() for source in sources]}"
+    )
     return (
         True,
         f"Search category {cat_id} search-source-whitelist updated successfully.",
     )
 
 
-def add_custom_search_category(base_type):
+def add_custom_search_category(base_cat_id: int):
     """Adds a new custom search category based on a base type."""
-    base_type_map = {
-        "movies": SEARCH_CAT_MOVIES,
-        "music": SEARCH_CAT_MUSIC,
-        "tv": SEARCH_CAT_SHOWS,
-        "books": SEARCH_CAT_BOOKS,
-    }
+    if not base_cat_id:
+        return False, "Base category ID is required."
+    base_cat_id = int(base_cat_id)
 
-    if base_type not in base_type_map:
+    if base_cat_id not in SEARCH_CATEGORIES.keys():
         return False, "Invalid base category type."
 
-    base_cat_id = base_type_map[base_type]
-    base_cat_info = SEARCH_CATEGORIES[str(base_cat_id)]
+    base_cat_info = SEARCH_CATEGORIES[base_cat_id]
 
     db = DataBase("categories_search")
     all_cats = db.retrieve_all_titles() or []
@@ -191,18 +191,24 @@ def add_custom_search_category(base_type):
     data = {
         "name": name,
         "emoji": base_cat_info["emoji"],
-        "base_type": base_type,
+        "base_type": base_cat_id,
         "search_sources": [],
     }
 
     db.store(str(next_id), json.dumps(data))
-    info(f"Added custom search category: {name} ({next_id})")
+    info(
+        f"Added custom search category: {name} ({next_id}) <d>-</d> <y>Please restart your *arr to apply changes.</y>"
+    )
     return True, f"Custom category '{name}' added successfully."
 
 
-def delete_search_category(cat_id):
+def delete_search_category(cat_id: int):
     """Deletes a custom search category."""
-    if str(cat_id) in SEARCH_CATEGORIES:
+    if not cat_id:
+        return False, "Category ID is required."
+
+    cat_id = int(cat_id)
+    if cat_id in SEARCH_CATEGORIES:
         return False, "Cannot delete default search categories."
 
     db = DataBase("categories_search")
@@ -210,21 +216,23 @@ def delete_search_category(cat_id):
         return False, f"Category {cat_id} not found."
 
     db.delete(str(cat_id))
-    info(f"Deleted search category: {cat_id}")
+    info(
+        f"Deleted search category: {cat_id} <d>-</d> <y>Please restart your *arr to apply changes.</y>"
+    )
     return True, f"Search category {cat_id} deleted successfully."
 
 
-def search_category_exists(cat_id):
+def search_category_exists(cat_id: int):
     """Checks if a search category exists."""
     if not cat_id:
         return False
 
-    cat_id = str(cat_id)
+    cat_id = int(cat_id)
     if cat_id in SEARCH_CATEGORIES:
         return True
 
     db = DataBase("categories_search")
-    return db.retrieve(cat_id) is not None
+    return db.retrieve(str(cat_id)) is not None
 
 
 def add_download_category(name, emj="📁"):
@@ -257,7 +265,9 @@ def add_download_category(name, emj="📁"):
         return False, "Limit of 10 custom categories reached."
 
     db.store(name, json.dumps({"emoji": emj}))
-    info(f"Added category: {name} with emoji {emj}")
+    info(
+        f"Added category: {name} with emoji {emj} <d>-</d> <y>Please restart your *arr to apply changes.</y>"
+    )
     return True, f"Category '{name}' added successfully."
 
 
@@ -292,7 +302,9 @@ def update_download_category_emoji(name, emj):
     data["emoji"] = emj
 
     db.update_store(name, json.dumps(data))
-    info(f"Updated emoji for category: {name} to {emj}")
+    info(
+        f"Updated emoji for category: {name} to {emj} <d>-</d> <y>Please restart your *arr to apply changes.</y>"
+    )
     return True, f"Category '{name}' emoji updated successfully."
 
 
@@ -324,7 +336,9 @@ def update_download_category_mirrors(name, mirrors):
 
     data["mirrors"] = mirrors
     db.update_store(name, json.dumps(data))
-    info(f"Updated mirror-whitelist for category: {name} to {mirrors}")
+    info(
+        f"Updated mirror-whitelist for category: {name} to {mirrors} <d>-</d> <y>Please restart your *arr to apply changes.</y>"
+    )
     return True, f"Category '{name}' mirror-whitelist updated successfully."
 
 
@@ -345,7 +359,9 @@ def delete_download_category(name):
         return False, f"Category '{name}' not found."
 
     db.delete(name)
-    info(f"Deleted category: {name}")
+    info(
+        f"Deleted category: {name} <d>-</d> <y>Please restart your *arr to apply changes.</y>"
+    )
     return True, f"Category '{name}' deleted successfully."
 
 
