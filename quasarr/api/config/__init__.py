@@ -17,6 +17,7 @@ from quasarr.constants import (
 )
 from quasarr.providers.html_templates import render_button, render_form
 from quasarr.providers.log import info
+from quasarr.providers.utils import has_source_capability_for_category
 from quasarr.search.sources import get_sources
 from quasarr.search.sources.helpers import get_hostnames
 from quasarr.storage.categories import (
@@ -190,7 +191,7 @@ def setup_config(app, shared_state):
         sorted_search_cats = [
             (cat_id, details)
             for cat_id, details in sorted_search_cats
-            if int(cat_id) in supported_categories_union or int(cat_id) >= 100000
+            if has_source_capability_for_category(cat_id, supported_categories_union)
         ]
 
         base_category_options = ""

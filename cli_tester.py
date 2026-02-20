@@ -604,28 +604,44 @@ def validate_imdb(text):
     return bool(re.match(r"^tt\d+$", text))
 
 
+def is_main_search_category_id(cat_id):
+    try:
+        cat_id = int(cat_id)
+    except (TypeError, ValueError):
+        return False
+    return cat_id > 0 and cat_id % 1000 == 0
+
+
+def is_anime_search_category(category):
+    if not isinstance(category, dict):
+        return False
+
+    category_name = (category.get("category_name") or "").strip().lower()
+    category_key = (category.get("key") or "").strip().lower()
+    return "anime" in category_name or "anime" in category_key
+
+
+def is_main_priority_search_category(category):
+    return is_main_search_category_id(
+        category.get("category_id")
+    ) or is_anime_search_category(category)
+
+
 def get_base_search_category_id(cat_id):
     try:
         cat_id = int(cat_id)
     except (TypeError, ValueError):
         return None
 
-    if cat_id >= 100000:
-        base = (cat_id - 100000) // 1000 * 1000
-        if base in BASE_SEARCH_CATEGORY_CONFIG:
-            return base
+    if cat_id <= 0:
         return None
 
-    if 2000 <= cat_id < 3000:
-        return 2000
-    if 3000 <= cat_id < 4000:
-        return 3000
-    if 5000 <= cat_id < 6000:
-        return 5000
-    if 7000 <= cat_id < 8000:
-        return 7000
+    normalized_id = cat_id - 100000 if cat_id >= 100000 else cat_id
+    if normalized_id <= 0:
+        return None
 
-    return None
+    base = (normalized_id // 1000) * 1000
+    return base if base > 0 else None
 
 
 # --- API Client ---
@@ -1364,15 +1380,32 @@ def handle_hostname_test(client, interactive=True):
     console.print("")
 
     available_categories = client.get_available_categories()
+    categories_by_key = {category["key"]: category for category in available_categories}
     feed_names = {
         category["key"]: f"{category['category_name']} ({category['category_id']})"
         for category in available_categories
     }
     feed_keys = [category["key"] for category in available_categories]
-    feeds = [
+    sorted_categories_for_fetch = sorted(
+        available_categories,
+        key=lambda category: (
+            0 if is_main_priority_search_category(category) else 1,
+            get_base_search_category_id(category.get("category_id")) or 0,
+            category.get("category_id") or 0,
+            category.get("key") or "",
+        ),
+    )
+    main_priority_feeds = [
         (category["key"], category["download_category"])
-        for category in available_categories
+        for category in sorted_categories_for_fetch
+        if is_main_priority_search_category(category)
     ]
+    subcategory_feeds = [
+        (category["key"], category["download_category"])
+        for category in sorted_categories_for_fetch
+        if not is_main_priority_search_category(category)
+    ]
+    feeds = main_priority_feeds + subcategory_feeds
     if not feeds:
         console.print(
             "[bold red]Error: No feed categories are currently exposed by /api?t=caps.[/bold red]"
@@ -1391,42 +1424,74 @@ def handle_hostname_test(client, interactive=True):
             TextColumn("[progress.description]{task.description}"),
             transient=True,
         ) as progress:
-            # Create a task for each feed
-            tasks = {}
+            main_priority_feed_keys = {feed_key for feed_key, _ in main_priority_feeds}
+            task_ids = {}
+
+            # Render all categories up front (including pending subcategories)
+            # and fetch in two phases so subcategories still benefit from cache.
             for feed_type, _ in feeds:
-                tasks[feed_type] = progress.add_task(
-                    f"Fetching {feed_names.get(feed_type, feed_type)} feed...",
-                    total=None,
-                )
+                category = categories_by_key.get(feed_type, {})
+                is_main_priority = is_main_priority_search_category(category)
+                prefix = "" if is_main_priority else "  "
+                if feed_type in main_priority_feed_keys:
+                    description = f"{prefix}Fetching {feed_names.get(feed_type, feed_type)} feed..."
+                else:
+                    description = f"{prefix}[dim]Pending {feed_names.get(feed_type, feed_type)} feed...[/dim]"
+                task_ids[feed_type] = progress.add_task(description, total=None)
 
-            with concurrent.futures.ThreadPoolExecutor(
-                max_workers=max(1, min(3, len(feeds)))
-            ) as executor:
-                future_to_feed = {
-                    executor.submit(client.get_feed, feed_type): (feed_type, category)
-                    for feed_type, category in feeds
-                }
+            for feed_batch in (main_priority_feeds, subcategory_feeds):
+                if not feed_batch:
+                    continue
 
-                for future in concurrent.futures.as_completed(future_to_feed):
-                    feed_type, category = future_to_feed[future]
-                    try:
-                        feed_items = future.result()
-                        progress.update(
-                            tasks[feed_type],
-                            completed=1,
-                            total=1,
-                            description=f"[green]Fetched {feed_names.get(feed_type, feed_type)} feed[/green]",
+                for feed_type, _ in feed_batch:
+                    category = categories_by_key.get(feed_type, {})
+                    is_main_priority = is_main_priority_search_category(category)
+                    prefix = "" if is_main_priority else "  "
+                    progress.update(
+                        task_ids[feed_type],
+                        description=(
+                            f"{prefix}Fetching {feed_names.get(feed_type, feed_type)} feed..."
+                        ),
+                        completed=0,
+                        total=None,
+                    )
+
+                with concurrent.futures.ThreadPoolExecutor(
+                    max_workers=max(1, min(3, len(feed_batch)))
+                ) as executor:
+                    future_to_feed = {
+                        executor.submit(client.get_feed, feed_type): (
+                            feed_type,
+                            download_category,
                         )
-                        if feed_items:
-                            for item in feed_items:
-                                all_feed_items.append((feed_type, category, item))
-                    except Exception:
-                        progress.update(
-                            tasks[feed_type],
-                            completed=1,
-                            total=1,
-                            description=f"[red]Failed {feed_names.get(feed_type, feed_type)} feed[/red]",
-                        )
+                        for feed_type, download_category in feed_batch
+                    }
+
+                    for future in concurrent.futures.as_completed(future_to_feed):
+                        feed_type, download_category = future_to_feed[future]
+                        category = categories_by_key.get(feed_type, {})
+                        is_main_priority = is_main_priority_search_category(category)
+                        prefix = "" if is_main_priority else "  "
+                        try:
+                            feed_items = future.result()
+                            progress.update(
+                                task_ids[feed_type],
+                                completed=1,
+                                total=1,
+                                description=f"{prefix}[green]Fetched {feed_names.get(feed_type, feed_type)} feed[/green]",
+                            )
+                            if feed_items:
+                                for item in feed_items:
+                                    all_feed_items.append(
+                                        (feed_type, download_category, item)
+                                    )
+                        except Exception:
+                            progress.update(
+                                task_ids[feed_type],
+                                completed=1,
+                                total=1,
+                                description=f"{prefix}[red]Failed {feed_names.get(feed_type, feed_type)} feed[/red]",
+                            )
     except KeyboardInterrupt:
         console.print("[red]Cancelled fetching feeds.[/red]")
         return False
@@ -1525,7 +1590,7 @@ def handle_hostname_test(client, interactive=True):
         category = categories_by_key.get(feed_key, {})
         category_id = category.get("category_id", 0)
         base_category_id = category.get("base_category_id", category_id)
-        is_base_category = 1 if category_id == base_category_id else 0
+        is_base_category = 1 if is_main_search_category_id(category_id) else 0
         return (base_category_id, is_base_category, category_id, feed_key)
 
     ordered_feed_keys = sorted(feed_keys, key=feed_sort_key)
@@ -1778,7 +1843,9 @@ def handle_hostname_test(client, interactive=True):
                     "Deleting downloads...", total=len(nzo_ids_to_delete)
                 )
 
-                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                with concurrent.futures.ThreadPoolExecutor(
+                    max_workers=max(1, min(10, len(nzo_ids_to_delete)))
+                ) as executor:
                     future_to_id = {
                         executor.submit(
                             client.delete_download, nzo_id, nzo_id_to_title.get(nzo_id)

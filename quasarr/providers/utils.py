@@ -2,6 +2,7 @@
 # Quasarr
 # Project by https://github.com/rix1337
 
+import html
 import json
 import re
 import socket
@@ -22,8 +23,14 @@ from quasarr.constants import (
     MOVIE_REGEX,
     SEARCH_CAT_BOOKS,
     SEARCH_CAT_MOVIES,
+    SEARCH_CAT_MOVIES_4K,
+    SEARCH_CAT_MOVIES_HD,
     SEARCH_CAT_MUSIC,
+    SEARCH_CAT_MUSIC_FLAC,
+    SEARCH_CAT_MUSIC_MP3,
     SEARCH_CAT_SHOWS,
+    SEARCH_CAT_SHOWS_4K,
+    SEARCH_CAT_SHOWS_HD,
     SEARCH_CAT_XXX,
     SEARCH_CATEGORIES,
     SEASON_EP_REGEX,
@@ -541,6 +548,99 @@ def get_base_search_category_id(cat_id):
         return base_type
 
     return None
+
+
+SEARCH_SUBCATEGORY_CAPABILITY_BASE = {
+    SEARCH_CAT_MOVIES_HD: SEARCH_CAT_MOVIES,
+    SEARCH_CAT_MOVIES_4K: SEARCH_CAT_MOVIES,
+    SEARCH_CAT_SHOWS_HD: SEARCH_CAT_SHOWS,
+    SEARCH_CAT_SHOWS_4K: SEARCH_CAT_SHOWS,
+    SEARCH_CAT_MUSIC_MP3: SEARCH_CAT_MUSIC,
+    SEARCH_CAT_MUSIC_FLAC: SEARCH_CAT_MUSIC,
+}
+
+
+_HD_RESOLUTION_PATTERN = re.compile(r"\b(?:720p|720i|1080p|1080i|fullhd|fhd)\b", re.I)
+_STRONG_4K_PATTERN = re.compile(r"\b(?:2160p|2160i|4k)\b", re.I)
+_UHD_PATTERN = re.compile(r"\buhd\b", re.I)
+
+
+_SEARCH_SUBCATEGORY_TITLE_FILTERS = {
+    SEARCH_CAT_MOVIES_HD: _HD_RESOLUTION_PATTERN,
+    SEARCH_CAT_SHOWS_HD: _HD_RESOLUTION_PATTERN,
+    SEARCH_CAT_MUSIC_MP3: re.compile(r"\bmp3\b", re.I),
+    SEARCH_CAT_MUSIC_FLAC: re.compile(r"\b(?:flac|lossless)\b", re.I),
+}
+
+
+def get_search_capability_category(cat_id):
+    """
+    Resolve the category used for source capability checks.
+
+    - Base categories keep their own ID.
+    - Quality/format subcategories map to their base category capability.
+    - Custom categories map to their resolved base category.
+    """
+    try:
+        cat_id = int(cat_id)
+    except (TypeError, ValueError):
+        return None
+
+    if cat_id >= 100000:
+        return get_base_search_category_id(cat_id)
+
+    return SEARCH_SUBCATEGORY_CAPABILITY_BASE.get(cat_id, cat_id)
+
+
+def has_source_capability_for_category(cat_id, supported_categories):
+    """Check whether at least one source capability can serve the given category."""
+    try:
+        cat_id = int(cat_id)
+    except (TypeError, ValueError):
+        return False
+
+    # Keep legacy behavior: always expose custom categories.
+    if cat_id >= 100000:
+        return True
+
+    capability_category = get_search_capability_category(cat_id)
+    if capability_category is None:
+        return False
+    return capability_category in supported_categories
+
+
+def _normalize_release_title_for_category_match(title):
+    title = html.unescape(str(title or ""))
+    title = re.sub(r"[._-]+", " ", title)
+    title = re.sub(r"\s+", " ", title)
+    return title.strip()
+
+
+def release_matches_search_category(search_category, release_title):
+    """
+    Return True when a release title matches the requested subcategory rules.
+    Categories without title filters are accepted as-is.
+    """
+    try:
+        search_category = int(search_category)
+    except (TypeError, ValueError):
+        return True
+
+    normalized_title = _normalize_release_title_for_category_match(release_title)
+
+    # 4K categories: require explicit 4K signal (2160/4k), or UHD without lower-res tags.
+    # This prevents false positives like "1080p ... UHD ...".
+    if search_category in (SEARCH_CAT_MOVIES_4K, SEARCH_CAT_SHOWS_4K):
+        if _STRONG_4K_PATTERN.search(normalized_title):
+            return True
+        if not _UHD_PATTERN.search(normalized_title):
+            return False
+        return not bool(_HD_RESOLUTION_PATTERN.search(normalized_title))
+
+    pattern = _SEARCH_SUBCATEGORY_TITLE_FILTERS.get(search_category)
+    if not pattern:
+        return True
+    return bool(pattern.search(normalized_title))
 
 
 def determine_search_category(request_from, cat_param=None):

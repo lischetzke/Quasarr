@@ -153,7 +153,21 @@ def add_custom_search_category(base_cat_id: int):
         return False, "Base category ID is required."
     base_cat_id = int(base_cat_id)
 
-    if base_cat_id not in SEARCH_CATEGORIES.keys():
+    # Normalize subcategories to their canonical base type.
+    if 2000 <= base_cat_id < 3000:
+        base_cat_id = 2000
+    elif 3000 <= base_cat_id < 4000:
+        base_cat_id = 3000
+    elif 5000 <= base_cat_id < 6000:
+        base_cat_id = 5000
+    elif 6000 <= base_cat_id < 7000:
+        base_cat_id = 6000
+    elif 7000 <= base_cat_id < 8000:
+        base_cat_id = 7000
+    else:
+        return False, "Invalid base category type."
+
+    if base_cat_id not in SEARCH_CATEGORIES:
         return False, "Invalid base category type."
 
     base_cat_info = SEARCH_CATEGORIES[base_cat_id]

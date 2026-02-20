@@ -34,6 +34,8 @@ def get_search_results(
     from quasarr.providers.utils import (
         determine_search_category,
         get_base_search_category_id,
+        get_search_capability_category,
+        release_matches_search_category,
     )
 
     sources = get_sources()
@@ -48,15 +50,9 @@ def get_search_results(
     if not search_category:
         search_category = determine_search_category(request_from)
 
-    # Resolve base category for logic (Movies, TV, etc.) and capability checks.
+    # Resolve base category for logic (Movies, TV, etc.).
     base_category = get_base_search_category_id(search_category) or search_category
-    capability_categories = {search_category}
-    try:
-        is_custom_category = int(search_category) >= 100000
-    except (TypeError, ValueError):
-        is_custom_category = False
-    if is_custom_category:
-        capability_categories.add(base_category)
+    capability_category = get_search_capability_category(search_category)
 
     # Filter out sources that are not in the search category's whitelist
     # We use the original search_category ID here to get the specific whitelist
@@ -86,18 +82,19 @@ def get_search_results(
                 if (
                     url
                     and source.supports_imdb
-                    and (
-                        any(
-                            category in source.supported_categories
-                            for category in capability_categories
-                        )
-                    )
+                    and capability_category in source.supported_categories
                     and (
                         not whitelisted_sources
                         or source.initials in whitelisted_sources
                     )
                 ):
-                    search_executor.add(source, args, kwargs, use_cache=True)
+                    search_executor.add(
+                        source,
+                        args,
+                        kwargs,
+                        use_cache=True,
+                        cache_category=capability_category,
+                    )
         else:
             warn(
                 f"{stype} is not supported for {request_from}, category: {search_category} (Base: {base_category})"
@@ -113,18 +110,19 @@ def get_search_results(
                 if (
                     url
                     and source.supports_phrase
-                    and (
-                        any(
-                            category in source.supported_categories
-                            for category in capability_categories
-                        )
-                    )
+                    and capability_category in source.supported_categories
                     and (
                         not whitelisted_sources
                         or source.initials in whitelisted_sources
                     )
                 ):
-                    search_executor.add(source, args, kwargs, use_cache=True)
+                    search_executor.add(
+                        source,
+                        args,
+                        kwargs,
+                        use_cache=True,
+                        cache_category=capability_category,
+                    )
         else:
             warn(
                 f"{stype} is not supported for {request_from}, category: {search_category} (Base: {base_category})"
@@ -139,12 +137,7 @@ def get_search_results(
             url = config.get(source.initials)
             if (
                 url
-                and (
-                    any(
-                        category in source.supported_categories
-                        for category in capability_categories
-                    )
-                )
+                and capability_category in source.supported_categories
                 and (not whitelisted_sources or source.initials in whitelisted_sources)
             ):
                 search_executor.add(
@@ -154,6 +147,7 @@ def get_search_results(
                     use_cache=True,
                     ttl=60,
                     action="feed",
+                    cache_category=capability_category,
                 )
 
     debug(f"Starting <g>{len(search_executor.searches)}</g> searches for {stype}...")
@@ -174,6 +168,21 @@ def get_search_results(
             return parsedate_to_datetime("Thu, 01 Jan 1970 00:00:00 +0000")
 
     results.sort(key=get_date, reverse=True)
+
+    filtered_results = [
+        release
+        for release in results
+        if release_matches_search_category(
+            search_category,
+            release.get("details", {}).get("title", ""),
+        )
+    ]
+    filtered_out_count = len(results) - len(filtered_results)
+    if filtered_out_count > 0:
+        debug(
+            f"Filtered out <r>{filtered_out_count}</r> releases by title rules for category <g>{search_category}</g>"
+        )
+    results = filtered_results
 
     # Calculate pagination for logging and return
     total_count = len(results)
@@ -220,9 +229,12 @@ class SearchExecutor:
         use_cache=False,
         ttl=300,
         action="search",
+        cache_category=None,
     ):
         key_args = list(args)
         key_args[1] = None
+        if cache_category is not None and len(key_args) >= 3:
+            key_args[2] = cache_category
         key_args = tuple(key_args)
         key = hash((source.initials, action, key_args, frozenset(kwargs.items())))
         self.searches.append(

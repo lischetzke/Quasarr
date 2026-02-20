@@ -19,6 +19,7 @@ from quasarr.providers.log import debug, error, info, warn
 from quasarr.providers.utils import (
     determine_category,
     determine_search_category,
+    has_source_capability_for_category,
     parse_payload,
 )
 from quasarr.providers.version import get_version
@@ -278,9 +279,8 @@ def setup_arr_routes(app):
                         supported_categories_union.update(source.supported_categories)
 
                     for cat_id, details in sorted_cats:
-                        if (
-                            int(cat_id) in supported_categories_union
-                            or int(cat_id) >= 100000
+                        if has_source_capability_for_category(
+                            cat_id, supported_categories_union
                         ):
                             cat_name = sax_utils.escape(
                                 str(details.get("name", cat_id))

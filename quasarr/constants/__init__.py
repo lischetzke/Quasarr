@@ -18,8 +18,14 @@ FALLBACK_USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML
 
 # Numeric newznab categories supported by search
 SEARCH_CAT_MOVIES = 2000
+SEARCH_CAT_MOVIES_HD = 2040
+SEARCH_CAT_MOVIES_4K = 2045
 SEARCH_CAT_MUSIC = 3000
+SEARCH_CAT_MUSIC_MP3 = 3010
+SEARCH_CAT_MUSIC_FLAC = 3040
 SEARCH_CAT_SHOWS = 5000
+SEARCH_CAT_SHOWS_HD = 5040
+SEARCH_CAT_SHOWS_4K = 5045
 SEARCH_CAT_SHOWS_ANIME = 5070
 SEARCH_CAT_XXX = 6000
 SEARCH_CAT_BOOKS = 7000
@@ -27,8 +33,14 @@ SEARCH_CAT_BOOKS = 7000
 # Default Set of Search Categories
 SEARCH_CATEGORIES = {
     SEARCH_CAT_MOVIES: {"name": "Movies", "emoji": "🎬"},
+    SEARCH_CAT_MOVIES_HD: {"name": "Movies/HD", "emoji": "🎬"},
+    SEARCH_CAT_MOVIES_4K: {"name": "Movies/4K", "emoji": "🎬"},
     SEARCH_CAT_MUSIC: {"name": "Audio", "emoji": "🎵"},
+    SEARCH_CAT_MUSIC_MP3: {"name": "Audio/MP3", "emoji": "🎵"},
+    SEARCH_CAT_MUSIC_FLAC: {"name": "Audio/FLAC", "emoji": "🎵"},
     SEARCH_CAT_SHOWS: {"name": "TV", "emoji": "📺"},
+    SEARCH_CAT_SHOWS_HD: {"name": "TV/HD", "emoji": "📺"},
+    SEARCH_CAT_SHOWS_4K: {"name": "TV/4K", "emoji": "📺"},
     SEARCH_CAT_SHOWS_ANIME: {"name": "TV/Anime", "emoji": "📺"},
     SEARCH_CAT_XXX: {"name": "XXX", "emoji": "🔞"},
     SEARCH_CAT_BOOKS: {"name": "Books", "emoji": "📚"},
