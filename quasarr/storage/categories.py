@@ -113,51 +113,6 @@ def get_search_category_sources(cat_id):
     return []
 
 
-def get_search_category_base_type(cat_id):
-    """Returns the base category ID for a search category (default or custom)."""
-    if cat_id is None or cat_id == "":
-        return None
-
-    try:
-        cat_id = int(cat_id)
-    except (ValueError, TypeError):
-        return None
-
-    if cat_id in SEARCH_CATEGORIES:
-        return cat_id
-
-    db = DataBase("categories_search")
-    data_str = db.retrieve(str(cat_id))
-    if not data_str:
-        return None
-
-    try:
-        data = json.loads(data_str)
-    except json.JSONDecodeError:
-        return None
-
-    base_type = data.get("base_type")
-    legacy_base_type_map = {
-        "movies": 2000,
-        "music": 3000,
-        "tv": 5000,
-        "books": 7000,
-    }
-
-    if isinstance(base_type, str):
-        if base_type in legacy_base_type_map:
-            return legacy_base_type_map[base_type]
-        try:
-            base_type = int(base_type)
-        except ValueError:
-            return None
-
-    if isinstance(base_type, int) and base_type in SEARCH_CATEGORIES:
-        return base_type
-
-    return None
-
-
 def update_search_category_sources(cat_id: int, sources):
     """Updates the preferred search sources for a search category ID."""
     if not cat_id:

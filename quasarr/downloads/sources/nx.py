@@ -7,11 +7,19 @@ from urllib.parse import urlparse
 
 import requests
 
+from quasarr.downloads.sources.helpers.abstract_source import AbstractSource
 from quasarr.providers.hostname_issues import mark_hostname_issue
 from quasarr.providers.log import info
 from quasarr.providers.sessions.nx import retrieve_and_validate_session
 
 hostname = "nx"
+
+
+class Source(AbstractSource):
+    initials = hostname
+
+    def get_download_links(self, shared_state, url, mirrors, title, password):
+        return _get_nx_download_links(shared_state, url, mirrors, title, password)
 
 
 def derive_mirror_from_url(url):
@@ -59,7 +67,7 @@ def get_filer_folder_links_via_api(shared_state, url):
         return url
 
 
-def get_nx_download_links(shared_state, url, mirrors, title, password):
+def _get_nx_download_links(shared_state, url, mirrors, title, password):
     """
     KEEP THE SIGNATURE EVEN IF SOME PARAMETERS ARE UNUSED!
 

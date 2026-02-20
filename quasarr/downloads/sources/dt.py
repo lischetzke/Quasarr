@@ -8,10 +8,18 @@ from urllib.parse import urlparse
 import requests
 from bs4 import BeautifulSoup
 
+from quasarr.downloads.sources.helpers.abstract_source import AbstractSource
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.log import info
 
 hostname = "dt"
+
+
+class Source(AbstractSource):
+    initials = hostname
+
+    def get_download_links(self, shared_state, url, mirrors, title, password):
+        return _get_dt_download_links(shared_state, url, mirrors, title, password)
 
 
 def derive_mirror_from_url(url):
@@ -28,7 +36,7 @@ def derive_mirror_from_url(url):
         return "unknown"
 
 
-def get_dt_download_links(shared_state, url, mirrors, title, password):
+def _get_dt_download_links(shared_state, url, mirrors, title, password):
     """
     KEEP THE SIGNATURE EVEN IF SOME PARAMETERS ARE UNUSED!
 

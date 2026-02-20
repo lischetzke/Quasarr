@@ -8,6 +8,7 @@ import quasarr.providers.html_images as images
 from quasarr.api.jdownloader import get_jdownloader_disconnected_page
 from quasarr.downloads.packages import delete_package, get_packages
 from quasarr.providers import shared_state
+from quasarr.providers.auth import require_api_key, require_browser_auth
 from quasarr.providers.html_templates import render_button, render_centered_html
 from quasarr.storage.categories import get_download_category_emoji
 
@@ -327,6 +328,7 @@ def setup_packages_routes(app):
             redirect("/packages?deleted=0")
 
     @app.get("/api/packages/content")
+    @require_browser_auth
     def packages_content_api():
         """AJAX endpoint - returns just the packages content HTML for background refresh."""
         try:
@@ -344,6 +346,32 @@ def setup_packages_routes(app):
             """
 
         return _render_packages_content()
+
+    @app.get("/api/packages/status")
+    @require_api_key
+    def packages_status_api():
+        try:
+            device = shared_state.values["device"]
+        except KeyError:
+            device = None
+
+        if not device:
+            return {
+                "connected": False,
+                "linkgrabber": {"is_collecting": False, "is_stopped": True},
+                "queue_count": 0,
+                "history_count": 0,
+            }
+
+        downloads = get_packages(shared_state)
+        return {
+            "connected": True,
+            "linkgrabber": downloads.get(
+                "linkgrabber", {"is_collecting": False, "is_stopped": True}
+            ),
+            "queue_count": len(downloads.get("queue", [])),
+            "history_count": len(downloads.get("history", [])),
+        }
 
     @app.get("/packages")
     def packages_status():

@@ -54,6 +54,56 @@ USER_AGENT_SONARR = "Sonarr/3.0.0.0 (Mock Client for Testing)"
 USER_AGENT_LIDARR = "Lidarr/3.0.0.0 (Mock Client for Testing)"
 USER_AGENT_LL = "LazyLibrarian/1.7.0 (Mock Client for Testing)"
 
+BASE_SEARCH_CATEGORY_CONFIG = {
+    2000: {
+        "mode": "movie",
+        "user_agent": USER_AGENT_RADARR,
+        "download_category": "movies",
+        "query_param": "imdbid",
+        "query_validator": "imdb",
+        "default_query": "tt0133093",
+        "supports_season_episode": False,
+        "search_capability": "movie",
+    },
+    3000: {
+        "mode": "music",
+        "user_agent": USER_AGENT_LIDARR,
+        "download_category": "music",
+        "query_param": "title",
+        "query_validator": None,
+        "default_query": "Taylor Swift",
+        "supports_season_episode": False,
+        "search_capability": "generic",
+    },
+    5000: {
+        "mode": "tvsearch",
+        "user_agent": USER_AGENT_SONARR,
+        "download_category": "tv",
+        "query_param": "imdbid",
+        "query_validator": "imdb",
+        "default_query": "tt0944947",
+        "supports_season_episode": True,
+        "search_capability": "tv",
+    },
+    7000: {
+        "mode": "book",
+        "user_agent": USER_AGENT_LL,
+        "download_category": "docs",
+        "query_param": "title",
+        "query_validator": None,
+        "default_query": "PC Gamer UK",
+        "supports_season_episode": False,
+        "search_capability": "generic",
+    },
+}
+
+BASE_CATEGORY_ICONS = {
+    2000: "🎬",
+    3000: "🎵",
+    5000: "📺",
+    7000: "📚",
+}
+
 console = Console()
 IS_TTY = sys.stdin.isatty()
 
@@ -554,12 +604,37 @@ def validate_imdb(text):
     return bool(re.match(r"^tt\d+$", text))
 
 
+def get_base_search_category_id(cat_id):
+    try:
+        cat_id = int(cat_id)
+    except (TypeError, ValueError):
+        return None
+
+    if cat_id >= 100000:
+        base = (cat_id - 100000) // 1000 * 1000
+        if base in BASE_SEARCH_CATEGORY_CONFIG:
+            return base
+        return None
+
+    if 2000 <= cat_id < 3000:
+        return 2000
+    if 3000 <= cat_id < 4000:
+        return 3000
+    if 5000 <= cat_id < 6000:
+        return 5000
+    if 7000 <= cat_id < 8000:
+        return 7000
+
+    return None
+
+
 # --- API Client ---
 class QuasarrClient:
     def __init__(self, url, api_key):
         self.url = url.rstrip("/")
         self.api_key = api_key
         self.session = requests.Session()
+        self._search_caps = None
 
     def _get(self, params, user_agent):
         request_params = params.copy()
@@ -578,59 +653,230 @@ class QuasarrClient:
         q_resp = self._get({"mode": "queue"}, USER_AGENT_RADARR)
         h_resp = self._get({"mode": "history"}, USER_AGENT_RADARR)
         queue, history = [], []
+        linkgrabber_state = {"is_collecting": False, "is_stopped": True}
         if q_resp:
             try:
-                queue = q_resp.json().get("queue", {}).get("slots", [])
+                queue_data = q_resp.json().get("queue", {})
+                queue = queue_data.get("slots", [])
+                if isinstance(queue_data.get("linkgrabber"), dict):
+                    linkgrabber_state = queue_data.get("linkgrabber")
             except:
                 pass
         if h_resp:
             try:
-                history = h_resp.json().get("history", {}).get("slots", [])
+                history_data = h_resp.json().get("history", {})
+                history = history_data.get("slots", [])
+                if linkgrabber_state.get("is_collecting") is False and isinstance(
+                    history_data.get("linkgrabber"), dict
+                ):
+                    linkgrabber_state = history_data.get("linkgrabber")
             except:
                 pass
-        return queue, history
+        return queue, history, linkgrabber_state
 
-    def get_feed(self, feed_type):
-        if feed_type == "movie":
-            return self._parse_xml(
-                self._get({"t": "movie", "cat": "2000"}, USER_AGENT_RADARR)
+    def wait_for_linkgrabber_idle(self, timeout=120, poll_interval=2):
+        end_time = time.time() + timeout
+        while time.time() < end_time:
+            _, _, state = self.get_downloads()
+            if state.get("is_stopped") or not state.get("is_collecting"):
+                return True
+            time.sleep(poll_interval)
+        return False
+
+    def _parse_indexer_capabilities(self, response):
+        caps = {"categories": {}}
+
+        if not response:
+            return caps
+
+        def parse_available_tag(searching_node, tag_name):
+            if searching_node is None:
+                return None
+            node = searching_node.find(tag_name)
+            if node is None:
+                return None
+            available_attr = (node.attrib.get("available") or "").strip().lower()
+            if available_attr == "yes":
+                return True
+            if available_attr == "no":
+                return False
+            return None
+
+        try:
+            root = ET.fromstring(response.content)
+        except Exception:
+            return caps
+
+        searching = root.find(".//searching")
+        supports_movie = parse_available_tag(searching, "movie-search")
+        supports_tv = parse_available_tag(searching, "tv-search")
+        supports_generic = parse_available_tag(searching, "search")
+
+        for category in root.findall(".//categories/category"):
+            cat_id_raw = category.attrib.get("id")
+            cat_name = (category.attrib.get("name") or "").strip()
+            if not cat_name:
+                cat_name = str(cat_id_raw or "")
+            if not cat_name:
+                continue
+
+            try:
+                cat_id = int(cat_id_raw)
+            except (TypeError, ValueError):
+                continue
+
+            base_cat_id = get_base_search_category_id(cat_id_raw)
+            base_config = BASE_SEARCH_CATEGORY_CONFIG.get(base_cat_id)
+            if not base_config:
+                continue
+
+            capability = base_config["search_capability"]
+            if capability == "movie":
+                enabled = supports_movie is not False
+            elif capability == "tv":
+                enabled = supports_tv is not False
+            else:
+                enabled = supports_generic is not False
+
+            icon = BASE_CATEGORY_ICONS.get(base_cat_id, "📁")
+            query_prompt = (
+                f"{cat_name}: IMDb ID"
+                if base_config["query_validator"] == "imdb"
+                else f"{cat_name}: Query"
             )
-        elif feed_type == "tv":
-            return self._parse_xml(
-                self._get({"t": "tvsearch", "cat": "5000"}, USER_AGENT_SONARR)
+            search_suffix = (
+                "(IMDb)" if base_config["query_validator"] == "imdb" else "(Query)"
             )
-        elif feed_type == "music":
-            return self._parse_xml(
-                self._get({"t": "music", "cat": "3000"}, USER_AGENT_LIDARR)
+            category_key = f"cat_{cat_id}"
+
+            caps["categories"][category_key] = {
+                "key": category_key,
+                "category_id": cat_id,
+                "category_name": cat_name,
+                "base_category_id": base_cat_id,
+                "enabled": enabled,
+                "mode": base_config["mode"],
+                "user_agent": base_config["user_agent"],
+                "download_category": base_config["download_category"],
+                "query_param": base_config["query_param"],
+                "query_validator": base_config["query_validator"],
+                "default_query": base_config["default_query"],
+                "query_prompt": query_prompt,
+                "supports_season_episode": base_config["supports_season_episode"],
+                "feed_label": f"{icon} {cat_name} ({cat_id})",
+                "search_label": f"{icon} {cat_name} ({cat_id}) {search_suffix}",
+            }
+
+        caps["categories"] = dict(
+            sorted(
+                caps["categories"].items(),
+                key=lambda item: item[1]["category_id"],
             )
-        elif feed_type == "doc":
-            return self._parse_xml(
-                self._get({"t": "book", "cat": "7000"}, USER_AGENT_LL)
-            )
-        return []
+        )
+
+        return caps
+
+    def get_indexer_capabilities(self, refresh=False):
+        if self._search_caps is not None and not refresh:
+            return self._search_caps
+
+        response = self._get({"t": "caps"}, USER_AGENT_RADARR)
+        caps = self._parse_indexer_capabilities(response)
+
+        # Do not cache an empty/failed caps response - retry should be possible
+        # without restarting the CLI session.
+        if caps.get("categories"):
+            self._search_caps = caps
+
+        return caps
+
+    def get_available_search_types(self, refresh=False):
+        return [cat["key"] for cat in self.get_available_categories(refresh=refresh)]
+
+    def get_available_categories(self, refresh=False):
+        caps = self.get_indexer_capabilities(refresh=refresh)
+        return [
+            cat
+            for cat in caps.get("categories", {}).values()
+            if cat.get("category_id") is not None and cat.get("enabled") is not False
+        ]
+
+    def get_category(self, category_key, refresh=False):
+        caps = self.get_indexer_capabilities(refresh=refresh)
+        return caps.get("categories", {}).get(category_key)
+
+    def _build_search_request(self, category_key, query=None, season=None, ep=None):
+        category = self.get_category(category_key)
+        if not category:
+            return None, None
+
+        if category.get("enabled") is False:
+            return None, None
+
+        params = {"t": category["mode"], "cat": str(category["category_id"])}
+        if query is not None:
+            query_param = category.get("query_param")
+            if query_param:
+                params[query_param] = query
+
+        if category.get("supports_season_episode"):
+            if season:
+                params["season"] = season
+            if ep:
+                params["ep"] = ep
+
+        return params, category["user_agent"]
+
+    def get_feed(self, category_key):
+        params, user_agent = self._build_search_request(category_key)
+        if not params:
+            return []
+        return self._parse_xml(self._get(params, user_agent))
+
+    def search(self, category_key, query, season=None, ep=None):
+        params, user_agent = self._build_search_request(category_key, query, season, ep)
+        if not params:
+            return []
+        return self._fetch_all_results(params, user_agent)
+
+    def _get_default_category_key_by_base(self, base_category_id):
+        categories = self.get_available_categories()
+        if not categories:
+            return None
+
+        for category in categories:
+            if category["category_id"] == base_category_id:
+                return category["key"]
+
+        for category in categories:
+            if category["base_category_id"] == base_category_id:
+                return category["key"]
+
+        return None
 
     def search_movie(self, imdb_id):
-        return self._fetch_all_results(
-            {"t": "movie", "imdbid": imdb_id, "cat": "2000"}, USER_AGENT_RADARR
-        )
+        category_key = self._get_default_category_key_by_base(2000)
+        if not category_key:
+            return []
+        return self.search(category_key, imdb_id)
 
     def search_tv(self, imdb_id, season=None, ep=None):
-        params = {"t": "tvsearch", "imdbid": imdb_id, "cat": "5000"}
-        if season:
-            params["season"] = season
-        if ep:
-            params["ep"] = ep
-        return self._fetch_all_results(params, USER_AGENT_SONARR)
+        category_key = self._get_default_category_key_by_base(5000)
+        if not category_key:
+            return []
+        return self.search(category_key, imdb_id, season, ep)
 
     def search_music(self, query):
-        return self._fetch_all_results(
-            {"t": "music", "title": query, "cat": "3000"}, USER_AGENT_LIDARR
-        )
+        category_key = self._get_default_category_key_by_base(3000)
+        if not category_key:
+            return []
+        return self.search(category_key, query)
 
     def search_doc(self, query):
-        return self._fetch_all_results(
-            {"t": "book", "title": query, "cat": "7000"}, USER_AGENT_LL
-        )
+        category_key = self._get_default_category_key_by_base(7000)
+        if not category_key:
+            return []
+        return self.search(category_key, query)
 
     def _fetch_all_results(self, base_params, user_agent):
         all_items = []
@@ -710,10 +956,12 @@ class QuasarrClient:
             return data.get("nzo_ids"), None
         return None, "Unknown error"
 
-    def delete_download(self, nzo_id):
-        resp = self._get(
-            {"mode": "queue", "name": "delete", "value": nzo_id}, USER_AGENT_RADARR
-        )
+    def delete_download(self, nzo_id, title=None):
+        params = {"mode": "queue", "name": "delete", "value": nzo_id}
+        if title:
+            params["title"] = title
+
+        resp = self._get(params, USER_AGENT_RADARR)
         if not resp:
             return False, "Request failed"
 
@@ -723,7 +971,10 @@ class QuasarrClient:
             return False, "Invalid JSON response"
 
         if data.get("quasarr_error"):
-            return False, data.get("quasarr_error")
+            error = data.get("quasarr_error")
+            if isinstance(error, str):
+                return False, error
+            return False, "Delete request rejected"
 
         if data.get("status", False):
             return True, None
@@ -807,7 +1058,15 @@ def show_downloads(client):
         if results is None:
             return
 
-        queue, history = results
+        if isinstance(results, tuple):
+            if len(results) == 3:
+                queue, history, _ = results
+            elif len(results) == 2:
+                queue, history = results
+            else:
+                queue, history = [], []
+        else:
+            queue, history = [], []
         all_items = []
         for item in queue:
             item["type"] = "queue"
@@ -967,108 +1226,133 @@ def handle_results_pager(client, results, category=None, duration=None):
 def handle_feeds_menu(client):
     while True:
         clear_screen()
+        available_categories = client.get_available_categories()
+        choices = [
+            (category["feed_label"], category["key"])
+            for category in available_categories
+        ]
+        if not choices:
+            console.print(
+                Panel(
+                    "[yellow]No feed categories are currently exposed by /api?t=caps.[/yellow]",
+                    border_style="yellow",
+                )
+            )
+            press_any_key()
+            return
+
         choice = MenuSelector(
             "Select Feed",
-            [
-                ("🎬 Movie (Radarr)", "movie"),
-                ("📺 TV (Sonarr)", "tv"),
-                ("🎵 Music (Lidarr)", "music"),
-                ("📄 Doc (LazyLib)", "doc"),
-            ],
+            choices,
         ).run()
         clear_screen()
 
         if not choice:
             break
 
+        selected_category = client.get_category(choice)
+        if not selected_category:
+            continue
+
         start = time.time()
         results = LoadingScreen(
-            f"Fetching {choice} Feed", client.get_feed, choice
+            f"Fetching {selected_category['category_name']} Feed",
+            client.get_feed,
+            choice,
         ).run()
         clear_screen()
 
         if results is not None:
-            cat_map = {"movie": "movies", "tv": "tv", "music": "music", "doc": "docs"}
             handle_results_pager(
-                client, results, cat_map.get(choice), time.time() - start
+                client,
+                results,
+                selected_category["download_category"],
+                time.time() - start,
             )
 
 
 def handle_searches_menu(client):
-    defaults = {
-        "movie": "tt0133093",
-        "tv": "tt0944947",
-        "music": "Taylor Swift",
-        "doc": "PC Gamer UK",
-    }
     while True:
         clear_screen()
+        available_categories = client.get_available_categories()
+        choices = [
+            (category["search_label"], category["key"])
+            for category in available_categories
+        ]
+        if not choices:
+            console.print(
+                Panel(
+                    "[yellow]No search categories are currently exposed by /api?t=caps.[/yellow]",
+                    border_style="yellow",
+                )
+            )
+            press_any_key()
+            return
+
         choice = MenuSelector(
             "Select Search Type",
-            [
-                ("🎬 Movie (IMDb)", "movie"),
-                ("📺 TV (IMDb)", "tv"),
-                ("🎵 Music (Query)", "music"),
-                ("📄 Doc (Query)", "doc"),
-            ],
+            choices,
         ).run()
         clear_screen()
 
         if not choice:
             break
 
-        if choice == "movie":
-            q = TextInput(
-                "Movie: IMDb ID", default=defaults["movie"], validator=validate_imdb
+        selected_category = client.get_category(choice)
+        if not selected_category:
+            continue
+
+        validator = (
+            validate_imdb if selected_category["query_validator"] == "imdb" else None
+        )
+        q = TextInput(
+            selected_category["query_prompt"],
+            default=selected_category["default_query"],
+            validator=validator,
+        ).run()
+        if not q:
+            continue
+
+        clear_screen()
+        start = time.time()
+
+        if selected_category["supports_season_episode"]:
+            s = TextInput(
+                f"{selected_category['category_name']}: {q}\nSeason", default="1"
             ).run()
-            if q:
-                clear_screen()
-                start = time.time()
-                res = LoadingScreen(
-                    f"Searching Movie: {q}", client.search_movie, q
-                ).run()
-                clear_screen()
-                if res is not None:
-                    handle_results_pager(client, res, "movies", time.time() - start)
-        elif choice == "tv":
-            q = TextInput(
-                "TV: IMDb ID", default=defaults["tv"], validator=validate_imdb
+            if s is None:
+                continue
+            clear_screen()
+            e = TextInput(
+                f"{selected_category['category_name']}: {q} S{s}\nEpisode", default="1"
             ).run()
-            if q:
-                clear_screen()
-                s = TextInput(f"TV: {q}\nSeason", default="1").run()
-                if s is not None:
-                    clear_screen()
-                    e = TextInput(f"TV: {q} S{s}\nEpisode", default="1").run()
-                    if e is not None:
-                        clear_screen()
-                        start = time.time()
-                        res = LoadingScreen(
-                            f"Searching TV: {q}", client.search_tv, q, s, e
-                        ).run()
-                        clear_screen()
-                        if res is not None:
-                            handle_results_pager(client, res, "tv", time.time() - start)
-        elif choice == "music":
-            q = TextInput("Music: Query", default=defaults["music"]).run()
-            if q:
-                clear_screen()
-                start = time.time()
-                res = LoadingScreen(
-                    f"Searching Music: {q}", client.search_music, q
-                ).run()
-                clear_screen()
-                if res is not None:
-                    handle_results_pager(client, res, "music", time.time() - start)
-        elif choice == "doc":
-            q = TextInput("Doc: Query", default=defaults["doc"]).run()
-            if q:
-                clear_screen()
-                start = time.time()
-                res = LoadingScreen(f"Searching Doc: {q}", client.search_doc, q).run()
-                clear_screen()
-                if res is not None:
-                    handle_results_pager(client, res, "docs", time.time() - start)
+            if e is None:
+                continue
+            clear_screen()
+            res = LoadingScreen(
+                f"Searching {selected_category['category_name']}: {q}",
+                client.search,
+                choice,
+                q,
+                s,
+                e,
+            ).run()
+        else:
+            res = LoadingScreen(
+                f"Searching {selected_category['category_name']}: {q}",
+                client.search,
+                choice,
+                q,
+            ).run()
+
+        clear_screen()
+        if res is not None:
+            handle_results_pager(
+                client,
+                res,
+                selected_category["download_category"],
+                time.time() - start,
+            )
 
 
 def handle_hostname_test(client, interactive=True):
@@ -1079,7 +1363,23 @@ def handle_hostname_test(client, interactive=True):
     console.print("[dim]Keys: [Ctrl+C] Cancel Operation[/dim]")
     console.print("")
 
-    feeds = [("movie", "movies"), ("tv", "tv"), ("music", "music"), ("doc", "docs")]
+    available_categories = client.get_available_categories()
+    feed_names = {
+        category["key"]: f"{category['category_name']} ({category['category_id']})"
+        for category in available_categories
+    }
+    feed_keys = [category["key"] for category in available_categories]
+    feeds = [
+        (category["key"], category["download_category"])
+        for category in available_categories
+    ]
+    if not feeds:
+        console.print(
+            "[bold red]Error: No feed categories are currently exposed by /api?t=caps.[/bold red]"
+        )
+        if interactive:
+            press_any_key()
+        return False
 
     # 1. Fetch Feeds
     console.print("[cyan]Fetching feeds...[/cyan]")
@@ -1095,10 +1395,13 @@ def handle_hostname_test(client, interactive=True):
             tasks = {}
             for feed_type, _ in feeds:
                 tasks[feed_type] = progress.add_task(
-                    f"Fetching {feed_type} feed...", total=None
+                    f"Fetching {feed_names.get(feed_type, feed_type)} feed...",
+                    total=None,
                 )
 
-            with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+            with concurrent.futures.ThreadPoolExecutor(
+                max_workers=max(1, min(3, len(feeds)))
+            ) as executor:
                 future_to_feed = {
                     executor.submit(client.get_feed, feed_type): (feed_type, category)
                     for feed_type, category in feeds
@@ -1112,7 +1415,7 @@ def handle_hostname_test(client, interactive=True):
                             tasks[feed_type],
                             completed=1,
                             total=1,
-                            description=f"[green]Fetched {feed_type} feed[/green]",
+                            description=f"[green]Fetched {feed_names.get(feed_type, feed_type)} feed[/green]",
                         )
                         if feed_items:
                             for item in feed_items:
@@ -1122,7 +1425,7 @@ def handle_hostname_test(client, interactive=True):
                             tasks[feed_type],
                             completed=1,
                             total=1,
-                            description=f"[red]Failed {feed_type} feed[/red]",
+                            description=f"[red]Failed {feed_names.get(feed_type, feed_type)} feed[/red]",
                         )
     except KeyboardInterrupt:
         console.print("[red]Cancelled fetching feeds.[/red]")
@@ -1136,6 +1439,7 @@ def handle_hostname_test(client, interactive=True):
 
     # Process items to find candidates (group by host, pick oldest)
     items_by_feed_host = {}
+    seen_release_keys = set()
 
     for feed_type, category, item in all_feed_items:
         title = item.get("title") or ""
@@ -1191,6 +1495,17 @@ def handle_hostname_test(client, interactive=True):
         if not host:
             continue
 
+        dedupe_source = (payload_info.get("source") or host or "").strip().lower()
+        dedupe_title = re.sub(r"\s+", " ", (title or "")).strip().lower()
+        dedupe_fallback = re.sub(r"\s+", " ", (link or "")).strip().lower()
+        # De-duplicate only within the same feed/category at this stage.
+        # Cross-category dedupe is handled during add attempts.
+        dedupe_key = (feed_type, dedupe_source, dedupe_title or dedupe_fallback)
+
+        if dedupe_key[1] and dedupe_key in seen_release_keys:
+            continue
+        seen_release_keys.add(dedupe_key)
+
         _key = (feed_type, host)
         if _key not in items_by_feed_host:
             items_by_feed_host[_key] = []
@@ -1199,13 +1514,31 @@ def handle_hostname_test(client, interactive=True):
             {"feed": feed_type, "category": category, "host": host, "item": item}
         )
 
-    # Prepare tasks: Group by host/feed, candidates reversed (Oldest -> Newest)
+    # Prepare tasks: one download attempt per hostname per feed.
+    # Keep oldest-first ordering with retry candidates from the same source.
+    # Process subcategories (e.g. 5070 anime) before their base categories (e.g. 5000 TV)
+    # so cross-category dedupe does not starve subcategory coverage.
     tasks_to_process = []
-    for _key, items in items_by_feed_host.items():
-        candidates = list(reversed(items))
-        tasks_to_process.append(
-            {"feed": _key[0], "host": _key[1], "candidates": candidates}
+    categories_by_key = {category["key"]: category for category in available_categories}
+
+    def feed_sort_key(feed_key):
+        category = categories_by_key.get(feed_key, {})
+        category_id = category.get("category_id", 0)
+        base_category_id = category.get("base_category_id", category_id)
+        is_base_category = 1 if category_id == base_category_id else 0
+        return (base_category_id, is_base_category, category_id, feed_key)
+
+    ordered_feed_keys = sorted(feed_keys, key=feed_sort_key)
+
+    for feed in ordered_feed_keys:
+        feed_hosts = sorted(
+            [host for (feed_key, host) in items_by_feed_host.keys() if feed_key == feed]
         )
+        for host in feed_hosts:
+            candidates = list(reversed(items_by_feed_host[(feed, host)]))
+            tasks_to_process.append(
+                {"feed": feed, "host": host, "candidates": candidates}
+            )
 
     if interactive:
         clear_screen()
@@ -1222,6 +1555,8 @@ def handle_hostname_test(client, interactive=True):
     # 2. Download items
     results = []
     attempted_titles = set()
+    attempted_release_keys = set()
+    attempted_release_lock = threading.Lock()
     console.print(
         f"[cyan]Attempting to add {len(tasks_to_process)} downloads (with retries)...[/cyan]"
     )
@@ -1231,18 +1566,36 @@ def handle_hostname_test(client, interactive=True):
         host = task["host"]
         candidates = task["candidates"]
 
-        # Try up to 3 candidates
-        limit = min(3, len(candidates))
+        # Try up to 3 real add attempts.
+        # Duplicate candidates do not count against this budget.
+        max_add_attempts = 3
+        add_attempts = 0
         last_error = "No candidates"
         last_title = "Unknown"
 
-        for i in range(limit):
-            candidate = candidates[i]
+        for candidate in candidates:
             title = candidate["item"]["title"]
             link = candidate["item"]["link"]
             category = candidate["category"]
+            candidate_host = candidate.get("host") or host
             last_title = title
 
+            release_key_source = (candidate_host or "").strip().lower()
+            release_key_title = re.sub(r"\s+", " ", (title or "")).strip().lower()
+            release_key_fallback = re.sub(r"\s+", " ", (link or "")).strip().lower()
+            release_key = (
+                release_key_source,
+                release_key_title or release_key_fallback,
+            )
+
+            if release_key[1]:
+                with attempted_release_lock:
+                    if release_key in attempted_release_keys:
+                        last_error = "Duplicate across categories"
+                        continue
+                    attempted_release_keys.add(release_key)
+
+            add_attempts += 1
             nzo_ids, error = client.add_download(title, link, category=category)
             if nzo_ids:
                 return {
@@ -1254,6 +1607,11 @@ def handle_hostname_test(client, interactive=True):
                     "error": None,
                 }
             last_error = error
+            if add_attempts >= max_add_attempts:
+                break
+
+        if add_attempts == 0 and candidates:
+            last_error = "All candidates were duplicates across categories"
 
         return {
             "feed": feed,
@@ -1303,34 +1661,14 @@ def handle_hostname_test(client, interactive=True):
 
     # Stats for summary
     stats = {
-        "movie": {
+        feed_type: {
             "results": 0,
             "dl_success": 0,
             "dl_fail": 0,
             "del_success": 0,
             "del_fail": 0,
-        },
-        "tv": {
-            "results": 0,
-            "dl_success": 0,
-            "dl_fail": 0,
-            "del_success": 0,
-            "del_fail": 0,
-        },
-        "music": {
-            "results": 0,
-            "dl_success": 0,
-            "dl_fail": 0,
-            "del_success": 0,
-            "del_fail": 0,
-        },
-        "doc": {
-            "results": 0,
-            "dl_success": 0,
-            "dl_fail": 0,
-            "del_success": 0,
-            "del_fail": 0,
-        },
+        }
+        for feed_type in feed_keys
     }
 
     # Group results by feed type
@@ -1350,7 +1688,7 @@ def handle_hostname_test(client, interactive=True):
 
     for feed, res_list in grouped_results.items():
         console.print(
-            f"[bold underline]{feed.upper()}[/bold underline] ({len(res_list)} items)"
+            f"[bold underline]{feed_names.get(feed, feed)}[/bold underline] ({len(res_list)} items)"
         )
         for res in res_list:
             color = "green" if res["success"] else "red"
@@ -1375,18 +1713,28 @@ def handle_hostname_test(client, interactive=True):
 
     console.print("[cyan]Cleaning up...[/cyan]")
 
+    if not client.wait_for_linkgrabber_idle(timeout=120, poll_interval=2):
+        console.print(
+            "[bold red]Error: Linkgrabber is still active after waiting. Skipping delete cleanup.[/bold red]"
+        )
+        if interactive:
+            press_any_key()
+        return False
+
     # Collect nzo_ids from results
     nzo_ids_to_delete = set()
     nzo_id_to_feed = {}
+    nzo_id_to_title = {}
     for res in results:
         if res.get("nzo_ids"):
             for nid in res["nzo_ids"]:
                 nzo_ids_to_delete.add(nid)
                 nzo_id_to_feed[nid] = res["feed"]
+                nzo_id_to_title[nid] = res.get("title")
 
     # Also fetch current queue/history to find items by name (for failed adds that might be stuck)
     try:
-        queue, history = client.get_downloads()
+        queue, history, _ = client.get_downloads()
         all_downloads = queue + history
 
         for item in all_downloads:
@@ -1406,6 +1754,8 @@ def handle_hostname_test(client, interactive=True):
             for title in attempted_titles:
                 if title and (title == name or title in name or name in title):
                     nzo_ids_to_delete.add(nzo_id)
+                    if name:
+                        nzo_id_to_title[nzo_id] = name
                     break
     except Exception:
         pass
@@ -1428,16 +1778,18 @@ def handle_hostname_test(client, interactive=True):
                     "Deleting downloads...", total=len(nzo_ids_to_delete)
                 )
 
-                with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
                     future_to_id = {
-                        executor.submit(client.delete_download, nzo_id): nzo_id
+                        executor.submit(
+                            client.delete_download, nzo_id, nzo_id_to_title.get(nzo_id)
+                        ): nzo_id
                         for nzo_id in nzo_ids_to_delete
                     }
 
                     for future in concurrent.futures.as_completed(future_to_id):
+                        nzo_id = future_to_id[future]
+                        feed = nzo_id_to_feed.get(nzo_id)
                         try:
-                            nzo_id = future_to_id[future]
-                            feed = nzo_id_to_feed.get(nzo_id)
                             success, error = future.result()
                             if success:
                                 deleted_count += 1
@@ -1466,7 +1818,7 @@ def handle_hostname_test(client, interactive=True):
     table.add_column("Downloads (Success/Total)", justify="right")
     table.add_column("Deletions (Success/Total)", justify="right")
 
-    for feed in ["movie", "tv", "music", "doc"]:
+    for feed in feed_keys:
         data = stats[feed]
         total_dl = data["results"]
         dl_success = data["dl_success"]
@@ -1490,7 +1842,7 @@ def handle_hostname_test(client, interactive=True):
         )
 
         table.add_row(
-            feed.upper(),
+            feed_names.get(feed, feed),
             f"[{dl_style}]{dl_success}/{total_dl}[/{dl_style}]",
             f"[{del_style}]{del_success}/{total_dl}[/{del_style}]",
         )
@@ -1505,7 +1857,7 @@ def handle_hostname_test(client, interactive=True):
             console.print("[red]Downloads:[/red]")
             for f in failures:
                 console.print(
-                    f"  - {f['feed'].upper()} / {f['host'].upper()}: {f['error']} ({f['title']})"
+                    f"  - {feed_names.get(f['feed'], f['feed'])} / {f['host'].upper()}: {f['error']} ({f['title']})"
                 )
 
         if deletion_errors:

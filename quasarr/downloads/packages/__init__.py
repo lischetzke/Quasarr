@@ -48,15 +48,26 @@ def is_quasarr_package(package_id):
 
 
 def get_links_comment(package, package_links):
-    """Get comment from the first link matching the package UUID."""
+    """Get the first non-empty comment from links matching the package UUID."""
     package_uuid = package.get("uuid")
+    fallback_comment = None
     if package_uuid and package_links:
         for link in package_links:
-            if link.get("packageUUID") == package_uuid:
-                comment = link.get("comment")
-                if comment:
-                    trace(f"Found comment '{comment}' for package {package_uuid}")
+            if link.get("packageUUID") != package_uuid:
+                continue
+            comment = link.get("comment")
+            if not comment:
+                continue
+            if is_quasarr_package(comment):
+                trace(f"Found comment '{comment}' for package {package_uuid}")
                 return comment
+            if fallback_comment is None:
+                fallback_comment = comment
+    if fallback_comment:
+        trace(
+            f"Using non-Quasarr fallback comment '{fallback_comment}' for package {package_uuid}"
+        )
+        return fallback_comment
     return None
 
 
@@ -257,13 +268,14 @@ def format_eta(seconds):
 # =============================================================================
 
 
-def get_packages(shared_state, _cache=None):
+def get_packages(shared_state, _cache=None, auto_start=True):
     """
     Get all packages from protected DB, failed DB, linkgrabber, and downloader.
 
     Args:
         shared_state: The shared state object
         _cache: INTERNAL USE ONLY. Used by delete_package() to share cached data
+        auto_start: Whether to auto-start Quasarr packages from linkgrabber
                 within a single request. External callers should never pass this.
     """
     trace("Starting package retrieval")
@@ -353,7 +365,9 @@ def get_packages(shared_state, _cache=None):
             package_name = package.get("name", "unknown")
             package_uuid = package.get("uuid")
 
-            comment = get_links_comment(package, linkgrabber_links)
+            comment = package.get("comment")
+            if not is_quasarr_package(comment):
+                comment = get_links_comment(package, linkgrabber_links)
             # Validate comment is a real ID - if not, ignore it
             if not is_quasarr_package(comment):
                 comment = None
@@ -415,7 +429,9 @@ def get_packages(shared_state, _cache=None):
             package_name = package.get("name", "unknown")
             package_uuid = package.get("uuid")
 
-            comment = get_links_comment(package, downloader_links)
+            comment = package.get("comment")
+            if not is_quasarr_package(comment):
+                comment = get_links_comment(package, downloader_links)
             # Validate comment is a real ID - if not, ignore it
             if not is_quasarr_package(comment):
                 comment = None
@@ -475,7 +491,15 @@ def get_packages(shared_state, _cache=None):
             )
 
     # === BUILD RESPONSE ===
-    downloads = {"queue": [], "history": []}
+    linkgrabber_collecting = bool(cache.is_collecting)
+    downloads = {
+        "queue": [],
+        "history": [],
+        "linkgrabber": {
+            "is_collecting": linkgrabber_collecting,
+            "is_stopped": not linkgrabber_collecting,
+        },
+    }
 
     queue_index = 0
     history_index = 0
@@ -625,7 +649,7 @@ def get_packages(shared_state, _cache=None):
             info(f"Invalid package location {package['location']}")
 
     # === AUTO-START QUASARR PACKAGES ===
-    if not cache.is_collecting:
+    if auto_start and not linkgrabber_collecting:
         debug("Linkgrabber not collecting, checking for packages to auto-start")
 
         packages_to_start = []
@@ -667,7 +691,7 @@ def get_packages(shared_state, _cache=None):
                 )
             except Exception as e:
                 debug(f"Failed to move packages to download list: {e}")
-    else:
+    elif auto_start:
         debug("Linkgrabber is collecting, skipping auto-start")
 
     trace(
@@ -738,13 +762,17 @@ def delete_package(shared_state, package_id, package_title=None):
         # Safe to reuse within this request since we fetch->find->delete atomically
         cache = JDPackageCache(shared_state.get_device())
 
-        packages = get_packages(shared_state, _cache=cache)
+        packages = get_packages(shared_state, _cache=cache, auto_start=False)
+        package_lists = {
+            "queue": packages.get("queue", []),
+            "history": packages.get("history", []),
+        }
 
         matches = []
 
         # 1. Try to find by ID
-        for package_location in packages:
-            for package in packages[package_location]:
+        for _package_location, package_collection in package_lists.items():
+            for package in package_collection:
                 if str(package.get("nzo_id", "")) == str(package_id):
                     matches.append(package)
 
@@ -753,8 +781,8 @@ def delete_package(shared_state, package_id, package_title=None):
             debug(
                 f"delete_package: ID '{package_id}' not found, trying title '{package_title}'"
             )
-            for package_location in packages:
-                for package in packages[package_location]:
+            for package_location, package_collection in package_lists.items():
+                for package in package_collection:
                     # Queue items use 'filename', History items use 'name'
                     name = (
                         package.get("filename")
@@ -773,8 +801,15 @@ def delete_package(shared_state, package_id, package_title=None):
                         ]:
                             name = name.replace(prefix, "")
 
-                    if name and name == package_title:
-                        matches.append(package)
+                    if name and package_title:
+                        normalized_name = " ".join(str(name).split()).lower()
+                        normalized_title = " ".join(str(package_title).split()).lower()
+                        if (
+                            normalized_name == normalized_title
+                            or normalized_name in normalized_title
+                            or normalized_title in normalized_name
+                        ):
+                            matches.append(package)
 
         if not matches:
             info(f"Failed to delete package {package_id} - not found by ID or Title")
@@ -841,34 +876,49 @@ def delete_package(shared_state, package_id, package_title=None):
                 except Exception as e:
                     debug(f"delete_package: Downloads cleanup failed: {e}")
 
-                # 3. Verify deletion from BOTH
-                time.sleep(1.0)
+                # 3. Verify deletion from BOTH with polling.
+                # JDownloader cleanup is asynchronous and may need a few seconds.
+                lg_gone = False
+                dl_gone = False
+                verification_deadline = time.time() + 15
 
-                lg_gone = True
-                try:
-                    current_lg_packages = (
-                        shared_state.get_device().linkgrabber.query_packages()
-                    )
-                    if any(p.get("uuid") == package_uuid for p in current_lg_packages):
-                        info(
-                            f"Verification failed: Package {deleted_title} still exists in linkgrabber"
+                while time.time() < verification_deadline:
+                    lg_gone = False
+                    dl_gone = False
+
+                    try:
+                        current_lg_packages = (
+                            shared_state.get_device().linkgrabber.query_packages()
                         )
+                        lg_gone = not any(
+                            p.get("uuid") == package_uuid for p in current_lg_packages
+                        )
+                    except Exception:
                         lg_gone = False
-                except Exception:
-                    pass
 
-                dl_gone = True
-                try:
-                    current_dl_packages = (
-                        shared_state.get_device().downloads.query_packages()
-                    )
-                    if any(p.get("uuid") == package_uuid for p in current_dl_packages):
-                        info(
-                            f"Verification failed: Package {deleted_title} still exists in downloader"
+                    try:
+                        current_dl_packages = (
+                            shared_state.get_device().downloads.query_packages()
                         )
+                        dl_gone = not any(
+                            p.get("uuid") == package_uuid for p in current_dl_packages
+                        )
+                    except Exception:
                         dl_gone = False
-                except Exception:
-                    pass
+
+                    if lg_gone and dl_gone:
+                        break
+
+                    time.sleep(0.5)
+
+                if not lg_gone:
+                    info(
+                        f"Verification failed: Package {deleted_title} still exists in linkgrabber"
+                    )
+                if not dl_gone:
+                    info(
+                        f"Verification failed: Package {deleted_title} still exists in downloader"
+                    )
 
                 if lg_gone and dl_gone:
                     info(f"Deleted package <y>{deleted_title}</y> from JDownloader")

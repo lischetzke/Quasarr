@@ -7,6 +7,7 @@ import re
 from bs4 import BeautifulSoup, NavigableString
 
 from quasarr.constants import COMMON_TLDS, SHARE_HOSTERS_LOWERCASE
+from quasarr.downloads.sources.helpers.abstract_source import AbstractSource
 from quasarr.providers.hostname_issues import mark_hostname_issue
 from quasarr.providers.log import debug, info
 from quasarr.providers.sessions.dl import (
@@ -17,6 +18,13 @@ from quasarr.providers.sessions.dl import (
 from quasarr.providers.utils import check_links_online_status, generate_status_url
 
 hostname = "dl"
+
+
+class Source(AbstractSource):
+    initials = hostname
+
+    def get_download_links(self, shared_state, url, mirrors, title, password):
+        return _get_dl_download_links(shared_state, url, mirrors, title, password)
 
 
 def normalize_mirror_name(name):
@@ -339,7 +347,7 @@ def extract_links_and_password_from_post(post_content, host):
     return links, password
 
 
-def get_dl_download_links(shared_state, url, mirrors, title, password):
+def _get_dl_download_links(shared_state, url, mirrors, title, password):
     """
     KEEP THE SIGNATURE EVEN IF SOME PARAMETERS ARE UNUSED!
 

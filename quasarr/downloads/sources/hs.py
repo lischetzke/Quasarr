@@ -6,10 +6,18 @@ import requests
 from bs4 import BeautifulSoup
 
 from quasarr.constants import AFFILIATE_REGEX, FILECRYPT_REGEX
+from quasarr.downloads.sources.helpers.abstract_source import AbstractSource
 from quasarr.providers.hostname_issues import mark_hostname_issue
 from quasarr.providers.log import debug, info
 
 hostname = "hs"
+
+
+class Source(AbstractSource):
+    initials = hostname
+
+    def get_download_links(self, shared_state, url, mirrors, title, password):
+        return _get_hs_download_links(shared_state, url, mirrors, title, password)
 
 
 def normalize_mirror_name(name):
@@ -26,7 +34,7 @@ def normalize_mirror_name(name):
     return name_lower
 
 
-def get_hs_download_links(shared_state, url, mirrors, title, password):
+def _get_hs_download_links(shared_state, url, mirrors, title, password):
     """
     KEEP THE SIGNATURE EVEN IF SOME PARAMETERS ARE UNUSED!
 

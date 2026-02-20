@@ -10,13 +10,21 @@ from urllib.parse import urlparse
 import requests
 from bs4 import BeautifulSoup
 
+from quasarr.downloads.sources.helpers.abstract_source import AbstractSource
 from quasarr.providers.hostname_issues import mark_hostname_issue
 from quasarr.providers.log import debug, info
 
 hostname = "by"
 
 
-def get_by_download_links(shared_state, url, mirrors, title, password):
+class Source(AbstractSource):
+    initials = hostname
+
+    def get_download_links(self, shared_state, url, mirrors, title, password):
+        return _get_by_download_links(shared_state, url, mirrors, title, password)
+
+
+def _get_by_download_links(shared_state, url, mirrors, title, password):
     """
     KEEP THE SIGNATURE EVEN IF SOME PARAMETERS ARE UNUSED!
 

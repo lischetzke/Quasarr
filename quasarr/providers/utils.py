@@ -25,11 +25,13 @@ from quasarr.constants import (
     SEARCH_CAT_MUSIC,
     SEARCH_CAT_SHOWS,
     SEARCH_CAT_XXX,
+    SEARCH_CATEGORIES,
     SEASON_EP_REGEX,
 )
 from quasarr.providers.log import crit, debug, error, trace, warn
 from quasarr.search.sources.helpers import get_login_required_hostnames
 from quasarr.storage.categories import download_category_exists, search_category_exists
+from quasarr.storage.sqlite_database import DataBase
 
 
 class Unbuffered(object):
@@ -475,8 +477,8 @@ def determine_category(request_from, category=None):
 
 def get_base_search_category_id(cat_id):
     """
-    Reverse-parses a custom or default category ID to its base type ID.
-    E.g., 102010 -> 2000 (Movies), 5040 -> 5000 (TV)
+    Resolves a category ID (default, subcategory, or custom) to its base type ID.
+    Supports legacy custom category IDs by falling back to stored base_type metadata.
     """
     try:
         cat_id = int(cat_id)
@@ -507,6 +509,36 @@ def get_base_search_category_id(cat_id):
         return SEARCH_CAT_XXX
     elif 7000 <= cat_id < 8000:
         return SEARCH_CAT_BOOKS
+
+    # Legacy fallback: custom category IDs may not always be reversible from ID math.
+    db = DataBase("categories_search")
+    data_str = db.retrieve(str(cat_id))
+    if not data_str:
+        return None
+
+    try:
+        data = json.loads(data_str)
+    except json.JSONDecodeError:
+        return None
+
+    base_type = data.get("base_type")
+    legacy_base_type_map = {
+        "movies": SEARCH_CAT_MOVIES,
+        "music": SEARCH_CAT_MUSIC,
+        "tv": SEARCH_CAT_SHOWS,
+        "books": SEARCH_CAT_BOOKS,
+    }
+
+    if isinstance(base_type, str):
+        if base_type in legacy_base_type_map:
+            return legacy_base_type_map[base_type]
+        try:
+            base_type = int(base_type)
+        except ValueError:
+            return None
+
+    if isinstance(base_type, int) and base_type in SEARCH_CATEGORIES:
+        return base_type
 
     return None
 

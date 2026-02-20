@@ -219,7 +219,10 @@ def setup_arr_routes(app):
                 elif mode == "queue" or mode == "history":
                     if request.query.name and request.query.name == "delete":
                         package_id = request.query.value
-                        deleted = delete_package(shared_state, package_id)
+                        package_title = getattr(request.query, "title", None)
+                        deleted = delete_package(
+                            shared_state, package_id, package_title=package_title
+                        )
                         response = {"status": deleted, "nzo_ids": [package_id]}
                         if not deleted:
                             response["quasarr_error"] = True
@@ -231,6 +234,10 @@ def setup_arr_routes(app):
                             "queue": {
                                 "paused": False,
                                 "slots": packages.get("queue", []),
+                                "linkgrabber": packages.get(
+                                    "linkgrabber",
+                                    {"is_collecting": False, "is_stopped": True},
+                                ),
                             }
                         }
                     elif mode == "history":
@@ -238,6 +245,10 @@ def setup_arr_routes(app):
                             "history": {
                                 "paused": False,
                                 "slots": packages.get("history", []),
+                                "linkgrabber": packages.get(
+                                    "linkgrabber",
+                                    {"is_collecting": False, "is_stopped": True},
+                                ),
                             }
                         }
             except Exception as e:
@@ -271,8 +282,11 @@ def setup_arr_routes(app):
                             int(cat_id) in supported_categories_union
                             or int(cat_id) >= 100000
                         ):
+                            cat_name = sax_utils.escape(
+                                str(details.get("name", cat_id))
+                            )
                             categories_xml += (
-                                f'<category id="{cat_id}" name="{details["name"]}" />\n'
+                                f'<category id="{cat_id}" name="{cat_name}" />\n'
                             )
 
                     return f"""<?xml version="1.0" encoding="UTF-8"?>

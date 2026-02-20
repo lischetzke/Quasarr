@@ -8,11 +8,21 @@ from urllib.parse import urlparse
 import requests
 from bs4 import BeautifulSoup
 
+from quasarr.downloads.sources.helpers.abstract_source import AbstractSource
 from quasarr.providers.cloudflare import ensure_session_cf_bypassed
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.log import debug, info
 
 hostname = "sl"
+
+
+class Source(AbstractSource):
+    initials = hostname
+
+    def get_download_links(self, shared_state, url, mirrors, title, password):
+        return _get_sl_download_links(shared_state, url, mirrors, title, password)
+
+
 supported_mirrors = ["nitroflare", "ddownload"]
 
 
@@ -24,7 +34,7 @@ def derive_mirror_from_host(host):
     return host.split(".")[0] if host else "unknown"
 
 
-def get_sl_download_links(shared_state, url, mirrors, title, password):
+def _get_sl_download_links(shared_state, url, mirrors, title, password):
     """
     KEEP THE SIGNATURE EVEN IF SOME PARAMETERS ARE UNUSED!
 

@@ -17,10 +17,7 @@ from quasarr.providers.imdb_metadata import get_imdb_metadata
 from quasarr.providers.log import debug, get_logger, info, trace, warn
 from quasarr.search.sources import get_sources
 from quasarr.search.sources.helpers.abstract_source import AbstractSource
-from quasarr.storage.categories import (
-    get_search_category_base_type,
-    get_search_category_sources,
-)
+from quasarr.storage.categories import get_search_category_sources
 
 
 def get_search_results(
@@ -51,17 +48,15 @@ def get_search_results(
     if not search_category:
         search_category = determine_search_category(request_from)
 
-    # Resolve base category for logic (Movies, TV, etc.)
-    base_category = get_base_search_category_id(search_category)
-    if not base_category:
-        # Fallback if somehow invalid
-        base_category = search_category
-
-    # Resolve exact base category for source capability checks.
-    # For custom categories, this uses stored metadata (base_type) instead of ID math.
-    capability_category = (
-        get_search_category_base_type(search_category) or base_category
-    )
+    # Resolve base category for logic (Movies, TV, etc.) and capability checks.
+    base_category = get_base_search_category_id(search_category) or search_category
+    capability_categories = {search_category}
+    try:
+        is_custom_category = int(search_category) >= 100000
+    except (TypeError, ValueError):
+        is_custom_category = False
+    if is_custom_category:
+        capability_categories.add(base_category)
 
     # Filter out sources that are not in the search category's whitelist
     # We use the original search_category ID here to get the specific whitelist
@@ -92,8 +87,10 @@ def get_search_results(
                     url
                     and source.supports_imdb
                     and (
-                        search_category in source.supported_categories
-                        or capability_category in source.supported_categories
+                        any(
+                            category in source.supported_categories
+                            for category in capability_categories
+                        )
                     )
                     and (
                         not whitelisted_sources
@@ -117,8 +114,10 @@ def get_search_results(
                     url
                     and source.supports_phrase
                     and (
-                        search_category in source.supported_categories
-                        or capability_category in source.supported_categories
+                        any(
+                            category in source.supported_categories
+                            for category in capability_categories
+                        )
                     )
                     and (
                         not whitelisted_sources
@@ -141,8 +140,10 @@ def get_search_results(
             if (
                 url
                 and (
-                    search_category in source.supported_categories
-                    or capability_category in source.supported_categories
+                    any(
+                        category in source.supported_categories
+                        for category in capability_categories
+                    )
                 )
                 and (not whitelisted_sources or source.initials in whitelisted_sources)
             ):

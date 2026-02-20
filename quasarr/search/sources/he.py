@@ -13,6 +13,7 @@ from bs4 import BeautifulSoup
 from quasarr.constants import (
     SEARCH_CAT_MOVIES,
     SEARCH_CAT_SHOWS,
+    SEARCH_CAT_SHOWS_ANIME,
 )
 from quasarr.providers import shared_state
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
@@ -33,7 +34,7 @@ class Source(AbstractSource):
     initials = "he"
     supports_imdb = True
     supports_phrase = False
-    supported_categories = [SEARCH_CAT_MOVIES, SEARCH_CAT_SHOWS]
+    supported_categories = [SEARCH_CAT_MOVIES, SEARCH_CAT_SHOWS, SEARCH_CAT_SHOWS_ANIME]
 
     def feed(
         self, shared_state: shared_state, start_time: float, search_category: str

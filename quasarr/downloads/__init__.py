@@ -11,7 +11,7 @@ from quasarr.constants import (
 )
 from quasarr.downloads.linkcrypters.hide import decrypt_links_if_hide
 from quasarr.downloads.packages import get_packages
-from quasarr.downloads.sources import get_download_source_getters
+from quasarr.downloads.sources import get_sources as get_download_sources
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.log import info, warn
 from quasarr.providers.notifications import send_discord_message
@@ -363,24 +363,24 @@ def download(
         detected_source_key = None
 
         mirrors = get_download_category_mirrors(category, lowercase=True)
-        source_getters = get_download_source_getters()
+        download_sources = get_download_sources()
 
         normalized_source_key = None
         if source_key and isinstance(source_key, str):
             normalized_source_key = source_key.lower().strip()
 
         source_candidates = []
-        if normalized_source_key and normalized_source_key in source_getters:
+        if normalized_source_key and normalized_source_key in download_sources:
             source_candidates.append(
-                (normalized_source_key, source_getters[normalized_source_key], True)
+                (normalized_source_key, download_sources[normalized_source_key], True)
             )
 
-        for key, getter in source_getters.items():
+        for key, source in download_sources.items():
             if normalized_source_key and key == normalized_source_key:
                 continue
-            source_candidates.append((key, getter, False))
+            source_candidates.append((key, source, False))
 
-        for key, getter, from_source_key in source_candidates:
+        for key, source, from_source_key in source_candidates:
             hostname = config.get(key)
             if not from_source_key and not (
                 hostname and hostname.lower() in url.lower()
@@ -389,7 +389,9 @@ def download(
 
             try:
                 # Mirrors are category-driven and passed to each source getter.
-                candidate_result = getter(shared_state, url, mirrors, title, password)
+                candidate_result = source.get_download_links(
+                    shared_state, url, mirrors, title, password
+                )
                 if candidate_result and candidate_result.get("links"):
                     clear_hostname_issue(key)
                     source_result = candidate_result

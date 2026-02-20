@@ -18,6 +18,7 @@ from quasarr.constants import (
     SEARCH_CAT_MOVIES,
     SEARCH_CAT_MUSIC,
     SEARCH_CAT_SHOWS,
+    SEARCH_CAT_SHOWS_ANIME,
 )
 from quasarr.providers import shared_state
 from quasarr.providers.cloudflare import ensure_session_cf_bypassed
@@ -44,6 +45,7 @@ class Source(AbstractSource):
         SEARCH_CAT_BOOKS,
         SEARCH_CAT_MOVIES,
         SEARCH_CAT_SHOWS,
+        SEARCH_CAT_SHOWS_ANIME,
         SEARCH_CAT_MUSIC,
     ]
 

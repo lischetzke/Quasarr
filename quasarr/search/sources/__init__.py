@@ -35,7 +35,7 @@ def get_sources() -> dict[str, AbstractSource]:
             try:
                 mod = importlib.import_module(f"{__name__}.{module_name}")
             except Exception as e:
-                error(f"Error importing {module_name}: {e}")
+                error(f"Error importing {module_name.upper()}: {e}")
                 continue
 
             if hasattr(mod, "Source"):
@@ -45,7 +45,7 @@ def get_sources() -> dict[str, AbstractSource]:
                     try:
                         _sources[module_name] = mod.Source()
                     except Exception as e:
-                        error(f"Error instantiating {module_name}: {e}")
+                        error(f"Error instantiating {module_name.upper()}: {e}")
                 else:
                     error(
                         f"Source '{module_name.upper()}.Source' does not implement AbstractSource"

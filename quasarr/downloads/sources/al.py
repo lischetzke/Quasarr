@@ -13,6 +13,7 @@ from urllib.parse import urlparse
 from bs4 import BeautifulSoup
 
 from quasarr.downloads.linkcrypters.al import decrypt_content, solve_captcha
+from quasarr.downloads.sources.helpers.abstract_source import AbstractSource
 from quasarr.providers.hostname_issues import mark_hostname_issue
 from quasarr.providers.log import debug, info
 from quasarr.providers.sessions.al import (
@@ -26,6 +27,13 @@ from quasarr.providers.statistics import StatsHelper
 from quasarr.providers.utils import is_flaresolverr_available, sanitize_title
 
 hostname = "al"
+
+
+class Source(AbstractSource):
+    initials = hostname
+
+    def get_download_links(self, shared_state, url, mirrors, title, password):
+        return _get_al_download_links(shared_state, url, mirrors, title, password)
 
 
 @dataclass
@@ -604,7 +612,7 @@ def extract_episode(title: str) -> int | None:
     return None
 
 
-def get_al_download_links(shared_state, url, mirrors, title, password):
+def _get_al_download_links(shared_state, url, mirrors, title, password):
     """
     KEEP THE SIGNATURE EVEN IF SOME PARAMETERS ARE UNUSED!
 

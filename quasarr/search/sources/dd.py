@@ -6,7 +6,11 @@ import html
 import time
 from datetime import datetime, timezone
 
-from quasarr.constants import SEARCH_CAT_MOVIES, SEARCH_CAT_SHOWS
+from quasarr.constants import (
+    SEARCH_CAT_MOVIES,
+    SEARCH_CAT_SHOWS,
+    SEARCH_CAT_SHOWS_ANIME,
+)
 from quasarr.providers import shared_state
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.imdb_metadata import get_localized_title, get_year
@@ -29,7 +33,7 @@ class Source(AbstractSource):
     initials = "dd"
     supports_imdb = True
     supports_phrase = False
-    supported_categories = [SEARCH_CAT_MOVIES, SEARCH_CAT_SHOWS]
+    supported_categories = [SEARCH_CAT_MOVIES, SEARCH_CAT_SHOWS, SEARCH_CAT_SHOWS_ANIME]
     requires_login = True
 
     def feed(
