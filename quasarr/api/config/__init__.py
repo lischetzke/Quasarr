@@ -12,12 +12,13 @@ from bottle import request, response
 
 from quasarr.constants import (
     DOWNLOAD_CATEGORIES,
-    HOSTNAMES,
     RECOMMENDED_HOSTERS,
     SHARE_HOSTERS,
 )
 from quasarr.providers.html_templates import render_button, render_form
 from quasarr.providers.log import info
+from quasarr.search.sources import get_sources
+from quasarr.search.sources.helpers import get_hostnames
 from quasarr.storage.categories import (
     add_custom_search_category,
     add_download_category,
@@ -181,7 +182,21 @@ def setup_config(app, shared_state):
             all_search_categories.items(), key=lambda x: int(x[0])
         )
 
+        supported_categories_union = set()
+        for source in get_sources().values():
+            supported_categories_union.update(source.supported_categories)
+
+        # filter search categories so that any categories without any supporting sources are removed
+        sorted_search_cats = [
+            (cat_id, details)
+            for cat_id, details in sorted_search_cats
+            if int(cat_id) in supported_categories_union or int(cat_id) >= 100000
+        ]
+
+        base_category_options = ""
+
         for cat_id, details in sorted_search_cats:
+            cat_id = int(cat_id)
             name = details["name"]
             emoji = details["emoji"]
             search_sources = get_search_category_sources(cat_id)
@@ -194,13 +209,17 @@ def setup_config(app, shared_state):
 
             delete_btn = ""
             # Allow deleting custom categories (ID >= 100000)
-            if int(cat_id) >= 100000:
+            if cat_id >= 100000:
                 delete_btn = f"""
                 <button class="btn-danger" onclick="deleteSearchCategory('{cat_id}')">Delete</button>
                 """
+            else:
+                base_category_options += (
+                    f'<option value="{cat_id}">{name} ({cat_id})</option>'
+                )
 
             edit_btn = f"""
-            <button class="btn-primary" onclick='editSearchCategory("{cat_id}", "{name}", {search_sources_json})'>Edit</button>
+            <button class="btn-primary" onclick='editSearchCategory({cat_id}, "{name}", {search_sources_json})'>Edit</button>
             """
 
             search_list_items += f"""
@@ -220,7 +239,11 @@ def setup_config(app, shared_state):
         # Prepare hosters list for JS
         hosters_js = json.dumps(SHARE_HOSTERS)
         recommended_js = json.dumps(RECOMMENDED_HOSTERS)
-        search_sources_js = json.dumps(HOSTNAMES)
+        search_sources_js = json.dumps(get_hostnames())
+        supported_categories_per_source = {
+            source.initials: source.supported_categories
+            for source in get_sources().values()
+        }
 
         form_html = f"""
         <style>
@@ -371,10 +394,7 @@ def setup_config(app, shared_state):
             <div class="category-item">
                 <select id="newSearchCategoryBase" style="flex: 1;">
                     <option value="" disabled selected>Select Base Category Type</option>
-                    <option value="movies">Movies (2000)</option>
-                    <option value="tv">TV (5000)</option>
-                    <option value="music">Music (3000)</option>
-                    <option value="books">Books (7000)</option>
+                    {base_category_options}
                 </select>
                 <button class="btn-primary" onclick="addSearchCategory()">Add Custom Category</button>
             </div>
@@ -386,6 +406,7 @@ def setup_config(app, shared_state):
         const ALL_HOSTERS = {hosters_js};
         const TIER1_HOSTERS = {recommended_js};
         const HOSTNAMES = {search_sources_js};
+        const SUPPORTED_CATEGORIES_PER_SOURCE = JSON.parse('{json.dumps(supported_categories_per_source)}');
 
         function addCategory() {{
             const nameInput = document.getElementById('newCategoryName');
@@ -476,6 +497,12 @@ def setup_config(app, shared_state):
         function editSearchCategory(catId, name, currentSearchSources) {{
             let searchPills = '';
             HOSTNAMES.forEach(source => {{
+                if (SUPPORTED_CATEGORIES_PER_SOURCE[source]) {{
+                    supported_cat_id = catId > 100000 ? catId - 100000 : catId;
+                    const supportsCategory = SUPPORTED_CATEGORIES_PER_SOURCE[source].includes(supported_cat_id);
+                    if (!supportsCategory) return; // Skip sources that don't support this category
+                }}
+
                 const isChecked = currentSearchSources.includes(source);
                 const selectedClass = isChecked ? 'selected' : '';
                 

@@ -23,6 +23,7 @@ from quasarr.providers.utils import (
 )
 from quasarr.providers.version import get_version
 from quasarr.search import get_search_results
+from quasarr.search.sources import get_sources
 from quasarr.storage.categories import get_download_categories, get_search_categories
 
 
@@ -261,10 +262,18 @@ def setup_arr_routes(app):
                         all_categories.items(), key=lambda x: int(x[0])
                     )
 
+                    supported_categories_union = set()
+                    for source in get_sources().values():
+                        supported_categories_union.update(source.supported_categories)
+
                     for cat_id, details in sorted_cats:
-                        categories_xml += (
-                            f'<category id="{cat_id}" name="{details["name"]}" />\n'
-                        )
+                        if (
+                            int(cat_id) in supported_categories_union
+                            or int(cat_id) >= 100000
+                        ):
+                            categories_xml += (
+                                f'<category id="{cat_id}" name="{details["name"]}" />\n'
+                            )
 
                     return f"""<?xml version="1.0" encoding="UTF-8"?>
                                 <caps>

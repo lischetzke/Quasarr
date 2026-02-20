@@ -11,19 +11,205 @@ from urllib.parse import urljoin
 import requests
 from bs4 import BeautifulSoup
 
-from quasarr.constants import SEARCH_CAT_BOOKS, SEARCH_CAT_MUSIC
+from quasarr.constants import (
+    SEARCH_CAT_MOVIES,
+    SEARCH_CAT_SHOWS,
+)
+from quasarr.providers import shared_state
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.imdb_metadata import get_localized_title, get_year
 from quasarr.providers.log import debug, info, trace
 from quasarr.providers.utils import (
     convert_to_mb,
     generate_download_link,
-    get_base_search_category_id,
     is_imdb_id,
     is_valid_release,
 )
+from quasarr.search.sources.helpers.abstract_source import AbstractSource
+from quasarr.search.sources.helpers.release import Release
 
-hostname = "nk"
+
+class Source(AbstractSource):
+    initials = "nk"
+    supports_imdb = True
+    supports_phrase = False
+    supported_categories = [SEARCH_CAT_MOVIES, SEARCH_CAT_SHOWS]
+
+    def feed(
+        self, shared_state: shared_state, start_time: float, search_category: str
+    ) -> list[Release]:
+        return self.search(shared_state, start_time, search_category)
+
+    def search(
+        self,
+        shared_state: shared_state,
+        start_time: float,
+        search_category: str,
+        search_string: str = "",
+        season: int = None,
+        episode: int = None,
+    ) -> list[Release]:
+        releases = []
+        host = shared_state.values["config"]("Hostnames").get(self.initials)
+
+        source_search = ""
+        if search_string != "":
+            imdb_id = is_imdb_id(search_string)
+            if imdb_id:
+                local_title = get_localized_title(shared_state, imdb_id, "de")
+                if not local_title:
+                    info(f"No title for IMDb {imdb_id}")
+                    return releases
+                if not season:
+                    year = get_year(imdb_id)
+                    if year:
+                        local_title += f" {year}"
+                source_search = local_title
+            else:
+                return releases
+            source_search = unescape(source_search)
+        else:
+            imdb_id = None
+
+        if not source_search:
+            search_type = "feed"
+            timeout = 30
+        else:
+            search_type = "search"
+            timeout = 10
+
+        if season:
+            source_search += f" S{int(season):02d}"
+
+            if episode:
+                source_search += f"E{int(episode):02d}"
+
+        url = f"https://{host}/search"
+        headers = {"User-Agent": shared_state.values["user_agent"]}
+        data = {"search": source_search}
+
+        try:
+            r = requests.post(url, headers=headers, data=data, timeout=timeout)
+            r.raise_for_status()
+            soup = BeautifulSoup(r.content, "html.parser")
+            results = soup.find_all("div", class_="article-right")
+        except Exception as e:
+            info(f"{search_type} load error: {e}")
+            mark_hostname_issue(
+                self.initials, search_type, str(e) if "e" in dir() else "Error occurred"
+            )
+            return releases
+
+        if not results:
+            return releases
+
+        for result in results:
+            try:
+                a = result.find("a", class_="release-details", href=True)
+                if not a:
+                    continue
+
+                sub_title = result.find("span", class_="subtitle")
+                if sub_title:
+                    title = sub_title.get_text(strip=True)
+                else:
+                    continue
+
+                imdb_a = result.select_one("a.imdb")
+                if imdb_a and imdb_a.get("href"):
+                    try:
+                        release_imdb_id = re.search(r"tt\d+", imdb_a["href"]).group()
+                        if imdb_id and release_imdb_id and release_imdb_id != imdb_id:
+                            trace(
+                                f"IMDb ID mismatch: expected {imdb_id}, found {release_imdb_id}"
+                            )
+                            continue
+                    except Exception:
+                        debug(f"failed to determine imdb_id for {title}")
+                else:
+                    trace(f"imdb link not found for {title}")
+
+                if release_imdb_id is None:
+                    release_imdb_id = imdb_id
+
+                if not is_valid_release(
+                    title, search_category, search_string, season, episode
+                ):
+                    continue
+
+                source = urljoin(f"https://{host}", a["href"])
+
+                mb = 0
+                size_text = get_release_field(result, "Größe")
+                if size_text:
+                    size_item = extract_size(size_text)
+                    mb = convert_to_mb(size_item)
+
+                if season != "" and episode == "":
+                    mb = 0  # Size unknown for season packs
+
+                size = mb * 1024 * 1024
+
+                password = ""
+                mirrors_p = result.find("p", class_="mirrors")
+                if mirrors_p:
+                    strong = mirrors_p.find("strong")
+                    if strong and strong.get_text(strip=True).lower().startswith(
+                        "passwort"
+                    ):
+                        nxt = strong.next_sibling
+                        if nxt:
+                            val = str(nxt).strip()
+                            if val:
+                                password = val.split()[0]
+
+                date_text = ""
+                p_meta = result.find("p", class_="meta")
+                if p_meta:
+                    spans = p_meta.find_all("span")
+                    if len(spans) >= 2:
+                        date_part = spans[0].get_text(strip=True)
+                        time_part = (
+                            spans[1].get_text(strip=True).replace("Uhr", "").strip()
+                        )
+                        date_text = f"{date_part} / {time_part}"
+
+                published = convert_to_rss_date(date_text) if date_text else ""
+
+                link = generate_download_link(
+                    shared_state,
+                    title,
+                    source,
+                    mb,
+                    password,
+                    release_imdb_id,
+                    self.initials,
+                )
+
+                releases.append(
+                    {
+                        "details": {
+                            "title": title,
+                            "hostname": self.initials,
+                            "imdb_id": release_imdb_id,
+                            "link": link,
+                            "size": size,
+                            "date": published,
+                            "source": source,
+                        },
+                        "type": "protected",
+                    }
+                )
+            except Exception as e:
+                info(e)
+                debug(f"error parsing search result: {e}")
+                continue
+
+        elapsed = time.time() - start_time
+        debug(f"Time taken: {elapsed:.2f}s")
+        if releases:
+            clear_hostname_issue(self.initials)
+        return releases
 
 
 def convert_to_rss_date(date_str: str) -> str:
@@ -60,184 +246,3 @@ def get_release_field(res, label):
             txt = li.get_text(" ", strip=True)
             return txt[len(sp.get_text(strip=True)) :].strip()
     return ""
-
-
-def nk_feed(*args, **kwargs):
-    return nk_search(*args, **kwargs)
-
-
-def nk_search(
-    shared_state,
-    start_time,
-    search_category,
-    search_string="",
-    season=None,
-    episode=None,
-):
-    releases = []
-    host = shared_state.values["config"]("Hostnames").get(hostname)
-
-    base_category = get_base_search_category_id(search_category)
-
-    if base_category in [SEARCH_CAT_BOOKS, SEARCH_CAT_MUSIC]:
-        debug(
-            f"<d>Skipping <y>{search_category}</y> on <g>{hostname.upper()}</g> (category not supported)!</d>"
-        )
-        return releases
-
-    source_search = ""
-    if search_string != "":
-        imdb_id = is_imdb_id(search_string)
-        if imdb_id:
-            local_title = get_localized_title(shared_state, imdb_id, "de")
-            if not local_title:
-                info(f"No title for IMDb {imdb_id}")
-                return releases
-            if not season:
-                year = get_year(imdb_id)
-                if year:
-                    local_title += f" {year}"
-            source_search = local_title
-        else:
-            return releases
-        source_search = unescape(source_search)
-    else:
-        imdb_id = None
-
-    if not source_search:
-        search_type = "feed"
-        timeout = 30
-    else:
-        search_type = "search"
-        timeout = 10
-
-    if season:
-        source_search += f" S{int(season):02d}"
-
-        if episode:
-            source_search += f"E{int(episode):02d}"
-
-    url = f"https://{host}/search"
-    headers = {"User-Agent": shared_state.values["user_agent"]}
-    data = {"search": source_search}
-
-    try:
-        r = requests.post(url, headers=headers, data=data, timeout=timeout)
-        r.raise_for_status()
-        soup = BeautifulSoup(r.content, "html.parser")
-        results = soup.find_all("div", class_="article-right")
-    except Exception as e:
-        info(f"{search_type} load error: {e}")
-        mark_hostname_issue(
-            hostname, search_type, str(e) if "e" in dir() else "Error occurred"
-        )
-        return releases
-
-    if not results:
-        return releases
-
-    for result in results:
-        try:
-            a = result.find("a", class_="release-details", href=True)
-            if not a:
-                continue
-
-            sub_title = result.find("span", class_="subtitle")
-            if sub_title:
-                title = sub_title.get_text(strip=True)
-            else:
-                continue
-
-            imdb_a = result.select_one("a.imdb")
-            if imdb_a and imdb_a.get("href"):
-                try:
-                    release_imdb_id = re.search(r"tt\d+", imdb_a["href"]).group()
-                    if imdb_id and release_imdb_id and release_imdb_id != imdb_id:
-                        trace(
-                            f"IMDb ID mismatch: expected {imdb_id}, found {release_imdb_id}"
-                        )
-                        continue
-                except Exception:
-                    debug(f"failed to determine imdb_id for {title}")
-            else:
-                trace(f"imdb link not found for {title}")
-
-            if release_imdb_id is None:
-                release_imdb_id = imdb_id
-
-            if not is_valid_release(
-                title, base_category, search_string, season, episode
-            ):
-                continue
-
-            source = urljoin(f"https://{host}", a["href"])
-
-            mb = 0
-            size_text = get_release_field(result, "Größe")
-            if size_text:
-                size_item = extract_size(size_text)
-                mb = convert_to_mb(size_item)
-
-            if season != "" and episode == "":
-                mb = 0  # Size unknown for season packs
-
-            size = mb * 1024 * 1024
-
-            password = ""
-            mirrors_p = result.find("p", class_="mirrors")
-            if mirrors_p:
-                strong = mirrors_p.find("strong")
-                if strong and strong.get_text(strip=True).lower().startswith(
-                    "passwort"
-                ):
-                    nxt = strong.next_sibling
-                    if nxt:
-                        val = str(nxt).strip()
-                        if val:
-                            password = val.split()[0]
-
-            date_text = ""
-            p_meta = result.find("p", class_="meta")
-            if p_meta:
-                spans = p_meta.find_all("span")
-                if len(spans) >= 2:
-                    date_part = spans[0].get_text(strip=True)
-                    time_part = spans[1].get_text(strip=True).replace("Uhr", "").strip()
-                    date_text = f"{date_part} / {time_part}"
-
-            published = convert_to_rss_date(date_text) if date_text else ""
-
-            link = generate_download_link(
-                shared_state,
-                title,
-                source,
-                mb,
-                password,
-                release_imdb_id,
-                hostname,
-            )
-
-            releases.append(
-                {
-                    "details": {
-                        "title": title,
-                        "hostname": hostname,
-                        "imdb_id": release_imdb_id,
-                        "link": link,
-                        "size": size,
-                        "date": published,
-                        "source": source,
-                    },
-                    "type": "protected",
-                }
-            )
-        except Exception as e:
-            info(e)
-            debug(f"error parsing search result: {e}")
-            continue
-
-    elapsed = time.time() - start_time
-    debug(f"Time taken: {elapsed:.2f}s")
-    if releases:
-        clear_hostname_issue(hostname)
-    return releases

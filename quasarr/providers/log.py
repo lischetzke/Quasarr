@@ -18,40 +18,13 @@ from dotenv import load_dotenv
 
 load_dotenv(override=True)
 
+# To change the log format, modify the _format variable. It uses loguru's formatting syntax.
+_format = "<d>{time:YYYY-MM-DDTHH:mm:ss}</d> <lvl>{level:5}</lvl>{extra[context]}<b><M>{extra[source]}</M></b>{extra[padding]} {message}"
+# The _context_max_width is used to calculate the padding for extra[context] based on the max amount of context emojis.
+_context_max_width = wcswidth("⬜⬜⬜")
 
-def get_log_max_width() -> int:
-    try:
-        return int(os.getenv("LOG_MAX_WIDTH"))
-    except Exception:
-        pass
-    try:
-        return os.get_terminal_size().columns
-    except Exception:
-        return 160
-
-
-_subsequent_indent = " " * 33
-
-
-def wrapping_sink(message: Message) -> None:
-    wrapped = wrap(
-        text=message,
-        width=get_log_max_width(),
-        subsequent_indent=_subsequent_indent,
-    )
-    for w in wrapped:
-        sys.stdout.write(w + "\n")
-
-
-logger.remove(0)
-logger.add(
-    wrapping_sink,
-    format="<d>{time:YYYY-MM-DDTHH:mm:ss}</d> <lvl>{level:<5}</lvl> {extra[context]}<b><M>{extra[source]}</M></b>{extra[padding]} {message}",
-    colorize=os.getenv("LOG_COLOR", "1").lower() in ["1", "true", "yes"],
-    level=5,
-)
-logger.level(name="WARN", no=30, color="<yellow>")
-logger.level(name="CRIT", no=50, color="<red>")
+_subsequent_indent = 0
+_loggers = {}
 
 log_level_names = {
     50: "CRIT",
@@ -79,7 +52,6 @@ def _read_env_log(key, default):
 
 
 _log_level = _read_env_log("LOG", 20)
-
 
 _context_replace = {
     "quasarr": "",  # /quasarr/*
@@ -153,7 +125,7 @@ class _Logger:
         self.level = get_log_level(contexts)
         context, source = _contexts_to_str(contexts)
         width = wcswidth(context + source)
-        padding = 6 - width
+        padding = _context_max_width - width
 
         self.logger_alt = logger.bind(
             context=context,
@@ -165,6 +137,7 @@ class _Logger:
     def _log(self, level: int, msg: str, *args: Any, **kwargs: Any) -> None:
         if self.level > level:
             return
+
         try:
             try:
                 self.logger.log(log_level_names[level], msg, *args, **kwargs)
@@ -197,9 +170,6 @@ class _Logger:
 
     def trace(self, msg: str, *args: Any, **kwargs: Any) -> None:
         self._log(5, msg, *args, **kwargs)
-
-
-_loggers = {}
 
 
 def get_logger(context: str) -> _Logger:
@@ -239,3 +209,54 @@ def debug(msg: str, *args: Any, **kwargs: Any) -> None:
 
 def trace(msg: str, *args: Any, **kwargs: Any) -> None:
     _get_logger_for_module().trace(msg, *args, **kwargs)
+
+
+def get_log_max_width() -> int:
+    try:
+        return int(os.getenv("LOG_MAX_WIDTH"))
+    except Exception:
+        pass
+    try:
+        return os.get_terminal_size().columns
+    except Exception:
+        return 160
+
+
+def _wrapping_sink(message: Message) -> None:
+    wrapped = wrap(
+        text=message,
+        width=get_log_max_width(),
+        subsequent_indent=_subsequent_indent * " ",
+    )
+    for w in wrapped:
+        sys.stdout.write(w + "\n")
+
+
+def _counting_sink(message: Message) -> None:
+    message = message.strip()[:-1]
+    global _subsequent_indent
+    _subsequent_indent = message.__len__()
+
+
+def _init():
+    logger.level(name="WARN", no=30, color="<yellow>")
+    logger.level(name="CRIT", no=50, color="<red>")
+
+    logger.remove(0)
+    _c = logger.add(
+        _counting_sink,
+        format=_format,
+        level=50,
+    )
+    _Logger().crit("!")
+    logger.remove(_c)
+    logger.add(
+        _wrapping_sink,
+        format=_format,
+        colorize=os.getenv("LOG_COLOR", "1").lower() in ["1", "true", "yes"],
+        level=5,
+    )
+    trace("Initialized logger with subsequent indent of " + str(_subsequent_indent))
+
+
+_init()
