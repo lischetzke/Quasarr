@@ -88,7 +88,7 @@ class Source(AbstractSearchSource):
                                 .next.next.text.replace("|", "")
                                 .strip()
                             )
-                            size_item = extract_size(size_info)
+                            size_item = _extract_size(size_info)
                             mb = convert_to_mb(size_item)
                             size = mb * 1024 * 1024
 
@@ -245,7 +245,7 @@ class Source(AbstractSearchSource):
                                     .next.next.text.replace("|", "")
                                     .strip()
                                 )
-                                size_item = extract_size(size_info)
+                                size_item = _extract_size(size_info)
                                 mb = convert_to_mb(size_item)
                                 size = mb * 1024 * 1024
 
@@ -299,7 +299,7 @@ class Source(AbstractSearchSource):
         return releases
 
 
-def extract_size(text):
+def _extract_size(text):
     match = re.match(r"(\d+)\s*([A-Za-z]+)", text)
     if match:
         size = match.group(1)

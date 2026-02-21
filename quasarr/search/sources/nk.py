@@ -140,9 +140,9 @@ class Source(AbstractSearchSource):
                 source = urljoin(f"https://{host}", a["href"])
 
                 mb = 0
-                size_text = get_release_field(result, "Größe")
+                size_text = _get_release_field(result, "Größe")
                 if size_text:
-                    size_item = extract_size(size_text)
+                    size_item = _extract_size(size_text)
                     mb = convert_to_mb(size_item)
 
                 if season != "" and episode == "":
@@ -174,7 +174,7 @@ class Source(AbstractSearchSource):
                         )
                         date_text = f"{date_part} / {time_part}"
 
-                published = convert_to_rss_date(date_text) if date_text else ""
+                published = _convert_to_rss_date(date_text) if date_text else ""
 
                 link = generate_download_link(
                     shared_state,
@@ -212,7 +212,7 @@ class Source(AbstractSearchSource):
         return releases
 
 
-def convert_to_rss_date(date_str: str) -> str:
+def _convert_to_rss_date(date_str: str) -> str:
     date_str = date_str.strip()
     for fmt in (
         "%d. %B %Y / %H:%M",
@@ -228,7 +228,7 @@ def convert_to_rss_date(date_str: str) -> str:
     return ""
 
 
-def extract_size(text: str) -> dict:
+def _extract_size(text: str) -> dict:
     match = re.search(r"(\d+(?:[\.,]\d+)?)\s*([A-Za-z]+)", text)
     if match:
         size = match.group(1).replace(",", ".")
@@ -237,7 +237,7 @@ def extract_size(text: str) -> dict:
     return {"size": "0", "sizeunit": "MB"}
 
 
-def get_release_field(res, label):
+def _get_release_field(res, label):
     for li in res.select("ul.release-infos li"):
         sp = li.find("span")
         if not sp:

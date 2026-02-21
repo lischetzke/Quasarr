@@ -84,7 +84,7 @@ class Source(AbstractSearchSource):
 
                     published = ""
                     if pubdate_elem:
-                        published = convert_rss_pubdate(
+                        published = _convert_rss_pubdate(
                             pubdate_elem.get_text(strip=True)
                         )
 
@@ -155,7 +155,7 @@ class Source(AbstractSearchSource):
             return releases
 
         base_url = f"https://{hs}"
-        search_url = build_search_url(base_url, imdb_id)
+        search_url = _build_search_url(base_url, imdb_id)
         headers = {"User-Agent": shared_state.values["user_agent"]}
 
         try:
@@ -236,17 +236,17 @@ class Source(AbstractSearchSource):
 
                 # Extract size from article content
                 article_text = article.get_text()
-                total_mb = extract_size_from_text(article_text)
+                total_mb = _extract_size_from_text(article_text)
                 total_size_bytes = int(total_mb * 1024 * 1024) if total_mb else 0
 
                 # Calculate episode size from bitrate and duration (if available)
-                episode_mb = extract_episode_size_mb(article_text)
+                episode_mb = _extract_episode_size_mb(article_text)
                 episode_size_bytes = (
                     int(episode_mb * 1024 * 1024) if episode_mb else None
                 )
 
                 # Extract date
-                published = convert_to_rss_date(article_text)
+                published = _convert_to_rss_date(article_text)
 
                 # Extract IMDb ID if present
                 imdb_match = IMDB_REGEX.search(str(article))
@@ -351,7 +351,7 @@ class Source(AbstractSearchSource):
         return releases
 
 
-def convert_to_rss_date(date_str):
+def _convert_to_rss_date(date_str):
     """
     HS date format from search: 'dd.mm.yy, HH:MM' e.g. '05.07.25, 17:23'
     """
@@ -364,7 +364,7 @@ def convert_to_rss_date(date_str):
     return ""
 
 
-def convert_rss_pubdate(pubdate_str):
+def _convert_rss_pubdate(pubdate_str):
     """
     RSS feed pubDate format: 'Mon, 26 Jan 2026 18:53:59 +0000'
     """
@@ -376,7 +376,7 @@ def convert_rss_pubdate(pubdate_str):
         return pubdate_str
 
 
-def extract_size_from_text(text):
+def _extract_size_from_text(text):
     """Extract size in MB from text like 'Größe: 40883 MB'"""
     match = SIZE_REGEX.search(text)
     if match:
@@ -390,7 +390,7 @@ def extract_size_from_text(text):
     return 0
 
 
-def extract_episode_size_mb(text):
+def _extract_episode_size_mb(text):
     """
     Calculate episode size from average bitrate and per-episode duration.
 
@@ -444,7 +444,7 @@ def extract_episode_size_mb(text):
     return episode_size_mb
 
 
-def build_search_url(base_url, search_term):
+def _build_search_url(base_url, search_term):
     """Build the ASP search URL with all required parameters"""
     params = {
         "s": search_term,

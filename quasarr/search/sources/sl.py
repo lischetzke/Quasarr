@@ -103,12 +103,12 @@ class Source(AbstractSearchSource):
                         debug(f"Size not found in RSS item: {title}")
                         continue
                     size_info = size_match.group(1).strip()
-                    size_item = extract_size(size_info)
+                    size_item = _extract_size(size_info)
                     mb = convert_to_mb(size_item)
                     size = mb * 1024 * 1024
 
                     pubdate = item.findtext("pubDate").strip()
-                    published = parse_pubdate_to_iso(pubdate)
+                    published = _parse_pubdate_to_iso(pubdate)
 
                     m = re.search(r"https?://www\.imdb\.com/title/(tt\d+)", desc)
                     imdb_id = m.group(1) if m else None
@@ -338,7 +338,7 @@ class Source(AbstractSearchSource):
         return releases
 
 
-def extract_size(text):
+def _extract_size(text):
     match = re.match(r"([\d\.]+)\s*([KMGT]B)", text, re.IGNORECASE)
     if match:
         size = match.group(1)
@@ -348,7 +348,7 @@ def extract_size(text):
         raise ValueError(f"Invalid size format: {text}")
 
 
-def parse_pubdate_to_iso(pubdate_str):
+def _parse_pubdate_to_iso(pubdate_str):
     """
     Parse an RFC-822 pubDate from RSS into an ISO8601 string with timezone.
     """

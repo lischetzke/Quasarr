@@ -272,7 +272,7 @@ class Source(AbstractSearchSource):
                     details = item.parent.parent.parent
                     title = details.find("small").text.strip()
 
-                    mirrors = self.parse_mirrors(f"https://{sf}", details)
+                    mirrors = self._parse_mirrors(f"https://{sf}", details)
                     source = next(iter(mirrors["season"].values()), None)
                     if not source:
                         debug(f"No source mirror found for {title}")
@@ -284,7 +284,7 @@ class Source(AbstractSearchSource):
                             .text.split("|")[1]
                             .strip()
                         )
-                        size_item = extract_size(size_string)
+                        size_item = _extract_size(size_string)
                         mb = convert_to_mb(size_item)
                     except Exception as e:
                         debug(f"Error extracting size for {title}: {e}")
@@ -376,7 +376,7 @@ class Source(AbstractSearchSource):
         return releases
 
 
-def parse_mirrors(base_url, entry):
+def _parse_mirrors(base_url, entry):
     """
     entry: a BeautifulSoup Tag for <div class="entry">
     returns a dict with:
@@ -450,7 +450,7 @@ check = lambda s: s.replace(
 )
 
 
-def extract_size(text):
+def _extract_size(text):
     match = re.match(r"(\d+(\.\d+)?) ([A-Za-z]+)", text)
     if match:
         size = match.group(1)

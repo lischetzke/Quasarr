@@ -15,34 +15,66 @@ from ..providers.log import info
 from .sqlite_database import DataBase
 
 
+def _normalize_search_sources(sources):
+    if not isinstance(sources, list):
+        return []
+
+    normalized = []
+    seen = set()
+    for source in sources:
+        if not isinstance(source, str):
+            continue
+        value = source.strip().lower()
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        normalized.append(value)
+
+    return normalized
+
+
 def get_download_categories():
     """Returns a sorted list of all category names, ensuring defaults exist."""
     db = DataBase("categories_download")
 
     # Ensure default categories always exist
-    for cat, cat_info in DOWNLOAD_CATEGORIES.items():
-        if not db.retrieve(cat):
-            # Store default emoji in the value JSON
-            emj = cat_info.get("emoji", "📁")
-            db.store(cat, json.dumps({"emoji": emj}))
+    for cat in DOWNLOAD_CATEGORIES:
+        data_str = db.retrieve(cat)
+        if not data_str:
+            # Persist only mutable settings in DB (e.g. mirrors), never static emoji.
+            db.store(cat, json.dumps({}))
             info(f"Restored default category: {cat}")
+            continue
+
+        try:
+            data = json.loads(data_str)
+            if isinstance(data, dict) and "emoji" in data:
+                data.pop("emoji", None)
+                db.update_store(cat, json.dumps(data))
+        except json.JSONDecodeError:
+            db.update_store(cat, json.dumps({}))
 
     cats = db.retrieve_all_titles() or []
+    for cat_tuple in cats:
+        cat = cat_tuple[0]
+        data_str = db.retrieve(cat)
+        if not data_str:
+            continue
+        try:
+            data = json.loads(data_str)
+            if isinstance(data, dict) and "emoji" in data:
+                data.pop("emoji", None)
+                db.update_store(cat, json.dumps(data))
+        except json.JSONDecodeError:
+            if cat in DOWNLOAD_CATEGORIES:
+                db.update_store(cat, json.dumps({}))
+
     return sorted([c[0] for c in cats])
 
 
 def get_download_category_emoji(name):
     """Returns the emoji for a category."""
-    db = DataBase("categories_download")
-    data_str = db.retrieve(name)
-    if data_str:
-        try:
-            data = json.loads(data_str)
-            return data.get("emoji", "📁")
-        except json.JSONDecodeError:
-            pass
-
-    # Fallback for defaults if DB is somehow corrupted or old format
+    # Emojis are static constants and intentionally not persisted in DB.
     return DOWNLOAD_CATEGORIES.get(name, {}).get("emoji", "📁")
 
 
@@ -69,9 +101,28 @@ def get_search_categories():
     # Ensure default categories always exist in DB (for whitelists)
     for cat_id, cat_info in SEARCH_CATEGORIES.items():
         cat_id = int(cat_id)
-        if not db.retrieve(str(cat_id)):
-            db.store(str(cat_id), json.dumps(cat_info))
+        data_str = db.retrieve(str(cat_id))
+        if not data_str:
+            # Persist only mutable settings in DB (e.g. search_sources), not static metadata.
+            db.store(str(cat_id), json.dumps({}))
             info(f"Restored default search category: {cat_id} ({cat_info['name']})")
+            continue
+
+        try:
+            data = json.loads(data_str)
+            if not isinstance(data, dict):
+                db.update_store(str(cat_id), json.dumps({}))
+                continue
+
+            sanitized_data = {}
+            if "search_sources" in data:
+                sanitized_data["search_sources"] = _normalize_search_sources(
+                    data.get("search_sources", [])
+                )
+            if sanitized_data != data:
+                db.update_store(str(cat_id), json.dumps(sanitized_data))
+        except json.JSONDecodeError:
+            db.update_store(str(cat_id), json.dumps({}))
 
     # Start with default categories
     categories = SEARCH_CATEGORIES.copy()
@@ -84,9 +135,30 @@ def get_search_categories():
         if data_str:
             try:
                 data = json.loads(data_str)
-                # Only include if it has required fields
-                if "name" in data and "emoji" in data:
-                    categories[cat_id] = data
+                if "name" not in data:
+                    continue
+                if "emoji" in data:
+                    data.pop("emoji", None)
+                    db.update_store(str(cat_id), json.dumps(data))
+
+                base_type = data.get("base_type")
+                try:
+                    base_type = int(base_type)
+                except (TypeError, ValueError):
+                    if cat_id >= 100000:
+                        base_type = cat_id - 100000
+                    else:
+                        base_type = cat_id
+
+                base_cat_info = SEARCH_CATEGORIES.get(base_type, {})
+                categories[cat_id] = {
+                    "name": data["name"],
+                    "emoji": base_cat_info.get("emoji", "📁"),
+                    "base_type": base_type,
+                    "search_sources": _normalize_search_sources(
+                        data.get("search_sources", [])
+                    ),
+                }
             except json.JSONDecodeError:
                 pass
 
@@ -115,7 +187,13 @@ def get_search_category_sources(cat_id):
             continue
         try:
             data = json.loads(data_str)
-            return data.get("search_sources", [])
+            normalized_sources = _normalize_search_sources(
+                data.get("search_sources", [])
+            )
+            if normalized_sources != data.get("search_sources", []):
+                data["search_sources"] = normalized_sources
+                db.update_store(str(lookup_id), json.dumps(data))
+            return normalized_sources
         except json.JSONDecodeError:
             continue
     return []
@@ -158,6 +236,7 @@ def update_search_category_sources(cat_id: int, sources):
     db = DataBase("categories_search")
     cat_id = int(cat_id)
     owner_cat_id = get_search_category_whitelist_owner(cat_id)
+    sources = _normalize_search_sources(sources)
     is_default = owner_cat_id in SEARCH_CATEGORIES
 
     data_str = db.retrieve(str(owner_cat_id))
@@ -166,6 +245,8 @@ def update_search_category_sources(cat_id: int, sources):
     if data_str:
         try:
             data = json.loads(data_str)
+            if isinstance(data, dict):
+                data.pop("emoji", None)
         except json.JSONDecodeError:
             return False, f"Database error for category id {owner_cat_id}."
     elif is_default:
@@ -173,6 +254,13 @@ def update_search_category_sources(cat_id: int, sources):
         data = {}
     else:
         return False, f"Search category ID {owner_cat_id} not found."
+
+    if is_default:
+        data = (
+            {"search_sources": data.get("search_sources", [])}
+            if isinstance(data, dict)
+            else {}
+        )
 
     data["search_sources"] = sources
     db.update_store(str(owner_cat_id), json.dumps(data))
@@ -228,7 +316,6 @@ def add_custom_search_category(base_cat_id: int):
 
     data = {
         "name": name,
-        "emoji": base_cat_info["emoji"],
         "base_type": base_cat_id,
         "search_sources": [],
     }
@@ -273,7 +360,7 @@ def search_category_exists(cat_id: int):
     return db.retrieve(str(cat_id)) is not None
 
 
-def add_download_category(name, emj="📁"):
+def add_download_category(name):
     """Adds a new category."""
     if not name or not name.strip():
         return False, "Category name cannot be empty."
@@ -289,9 +376,6 @@ def add_download_category(name, emj="📁"):
             "Category name can only contain lowercase letters and numbers.",
         )
 
-    # Custom download categories intentionally use a single fixed emoji in UI.
-    emj = "📁"
-
     db = DataBase("categories_download")
     if db.retrieve(name):
         return False, f"Category '{name}' already exists."
@@ -301,9 +385,9 @@ def add_download_category(name, emj="📁"):
     if custom_count >= 10:
         return False, "Limit of 10 custom categories reached."
 
-    db.store(name, json.dumps({"emoji": emj}))
+    db.store(name, json.dumps({}))
     info(
-        f"Added category: {name} with emoji {emj} <d>-</d> <y>Please restart your *arr to apply changes.</y>"
+        f"Added category: {name} <d>-</d> <y>Please restart your *arr to apply changes.</y>"
     )
     return True, f"Category '{name}' added successfully."
 
@@ -322,15 +406,13 @@ def update_download_category_mirrors(name, mirrors):
     if data_str:
         try:
             data = json.loads(data_str)
+            if isinstance(data, dict):
+                data.pop("emoji", None)
         except json.JSONDecodeError:
-            # If corrupted, reset but try to keep default emoji if available
-            default_emj = DOWNLOAD_CATEGORIES.get(name, {}).get("emoji", "📁")
-            data = {"emoji": default_emj}
+            data = {}
     elif is_default:
         # Implicitly create default category if missing
-        # Ensure we set the default emoji so it isn't lost
-        default_emj = DOWNLOAD_CATEGORIES.get(name, {}).get("emoji", "📁")
-        data = {"emoji": default_emj}
+        data = {}
     else:
         return False, f"Category '{name}' not found."
 

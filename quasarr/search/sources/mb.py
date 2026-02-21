@@ -33,12 +33,12 @@ from quasarr.search.sources.helpers.search_release import SearchRelease
 from quasarr.search.sources.helpers.search_source import AbstractSearchSource
 
 
-def convert_to_rss_date(date_str):
+def _convert_to_rss_date(date_str):
     parsed = datetime.strptime(date_str, "%d.%m.%Y - %H:%M")
     return parsed.strftime("%a, %d %b %Y %H:%M:%S +0000")
 
 
-def extract_size(text):
+def _extract_size(text):
     m = re.match(r"(\d+(?:\.\d+)?)\s*([A-Za-z]+)", text)
     if not m:
         raise ValueError(f"Invalid size format: {text!r}")

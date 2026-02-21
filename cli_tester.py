@@ -103,6 +103,7 @@ BASE_CATEGORY_ICONS = {
     5000: "📺",
     7000: "📚",
 }
+ANIME_CATEGORY_ICON = "⛩️ "
 
 console = Console()
 IS_TTY = sys.stdin.isatty()
@@ -755,6 +756,13 @@ class QuasarrClient:
                 enabled = supports_generic is not False
 
             icon = BASE_CATEGORY_ICONS.get(base_cat_id, "📁")
+            if cat_id == 5070 or "anime" in cat_name.lower():
+                icon = ANIME_CATEGORY_ICON
+            default_query = base_config["default_query"]
+            if base_config["query_validator"] == "imdb" and (
+                cat_id == 5070 or "anime" in cat_name.lower()
+            ):
+                default_query = "tt0994314"
             query_prompt = (
                 f"{cat_name}: IMDb ID"
                 if base_config["query_validator"] == "imdb"
@@ -776,7 +784,7 @@ class QuasarrClient:
                 "download_category": base_config["download_category"],
                 "query_param": base_config["query_param"],
                 "query_validator": base_config["query_validator"],
-                "default_query": base_config["default_query"],
+                "default_query": default_query,
                 "query_prompt": query_prompt,
                 "supports_season_episode": base_config["supports_season_episode"],
                 "feed_label": f"{icon} {cat_name} ({cat_id})",
@@ -919,21 +927,62 @@ class QuasarrClient:
                 title_elem = item.find("title")
                 link_elem = item.find("link")
                 pubdate_elem = item.find("pubDate")
+                comments_elem = item.find("comments")
+                guid_elem = item.find("guid")
+                enclosure_elem = item.find("enclosure")
+
+                title_text = (
+                    title_elem.text
+                    if title_elem is not None and title_elem.text
+                    else ""
+                )
+                link_text = (
+                    link_elem.text if link_elem is not None and link_elem.text else ""
+                )
+                comments_text = (
+                    comments_elem.text
+                    if comments_elem is not None and comments_elem.text
+                    else ""
+                )
+                guid_text = (
+                    guid_elem.text if guid_elem is not None and guid_elem.text else ""
+                )
+                enclosure_url = (
+                    enclosure_elem.attrib.get("url", "")
+                    if enclosure_elem is not None
+                    else ""
+                )
+                enclosure_size = (
+                    enclosure_elem.attrib.get("length", "0")
+                    if enclosure_elem is not None
+                    else "0"
+                )
+
+                # Ignore API placeholder items that represent "no results".
+                # These are not real releases and can otherwise be mis-read
+                # as host candidates (e.g. github.com).
+                title_lower = title_text.strip().lower()
+                comments_lower = comments_text.strip().lower()
+                link_lower = link_text.strip().lower()
+                enclosure_url_lower = enclosure_url.strip().lower()
+                if title_lower == "no results found" and (
+                    guid_text.strip() == "0"
+                    or "no results matched your search criteria" in comments_lower
+                    or "github.com/rix1337/quasarr" in link_lower
+                    or "github.com/rix1337/quasarr" in enclosure_url_lower
+                ):
+                    continue
 
                 items.append(
                     {
-                        "title": title_elem.text
-                        if title_elem is not None and title_elem.text
-                        else "",
-                        "link": link_elem.text
-                        if link_elem is not None and link_elem.text
-                        else "",
-                        "size": item.find("enclosure").attrib.get("length", "0")
-                        if item.find("enclosure") is not None
-                        else "0",
-                        "pubdate": pubdate_elem.text
-                        if pubdate_elem is not None and pubdate_elem.text
-                        else "",
+                        "title": title_text,
+                        "link": link_text,
+                        "size": enclosure_size,
+                        "pubdate": (
+                            pubdate_elem.text
+                            if pubdate_elem is not None and pubdate_elem.text
+                            else ""
+                        ),
                     }
                 )
             return items

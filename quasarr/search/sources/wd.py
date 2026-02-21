@@ -269,11 +269,11 @@ class Source(AbstractSearchSource):
                             continue
 
                 size_txt = tr.find("span", class_="element-size").get_text(strip=True)
-                sz = extract_size(size_txt)
+                sz = _extract_size(size_txt)
                 mb = convert_to_mb(sz)
                 size_bytes = mb * 1024 * 1024
 
-                published = convert_to_rss_date(date_txt) if date_txt else one_hour_ago
+                published = _convert_to_rss_date(date_txt) if date_txt else one_hour_ago
 
                 link = generate_download_link(
                     shared_state,
@@ -305,7 +305,7 @@ class Source(AbstractSearchSource):
         return releases
 
 
-def convert_to_rss_date(date_str):
+def _convert_to_rss_date(date_str):
     """
     date_str comes in as "02.05.2025 - 09:04"
     Return RFC‑822 style date with +0000 timezone.
@@ -314,7 +314,7 @@ def convert_to_rss_date(date_str):
     return parsed.strftime("%a, %d %b %Y %H:%M:%S +0000")
 
 
-def extract_size(text):
+def _extract_size(text):
     """
     e.g. "8 GB" → {"size": "8", "sizeunit": "GB"}
     """

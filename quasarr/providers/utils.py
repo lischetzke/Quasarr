@@ -454,13 +454,23 @@ def parse_payload(payload_str):
         raise ValueError(f"expected 6 fields, got {len(parts)}")
 
     return {
-        "title": title,
+        "title": normalize_download_title(title),
         "url": url,
         "size_mb": size_mb,
         "password": password if password else None,
         "imdb_id": imdb_id if imdb_id else None,
         "source_key": source_key if source_key else None,
     }
+
+
+def normalize_download_title(title):
+    """
+    Normalize download titles at handoff time.
+    Removes trailing marker suffixes like "*mirror*" and trims whitespace.
+    """
+    normalized = str(title or "").rstrip()
+    normalized = re.sub(r"\s*\*mirror\*\s*$", "", normalized, flags=re.IGNORECASE)
+    return normalized.rstrip()
 
 
 def determine_category(request_from, category=None):

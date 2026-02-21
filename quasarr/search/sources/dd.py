@@ -137,9 +137,9 @@ class Source(AbstractSearchSource):
                             continue
 
                         source = f"https://{dd}/"
-                        size_item = extract_size(release.get("size"))
+                        size_item = _extract_size(release.get("size"))
                         mb = convert_to_mb(size_item) * 1024 * 1024
-                        published = convert_to_rss_date(release.get("when"))
+                        published = _convert_to_rss_date(release.get("when"))
 
                         link = generate_download_link(
                             shared_state,
@@ -188,12 +188,12 @@ class Source(AbstractSearchSource):
         return releases
 
 
-def convert_to_rss_date(unix_timestamp):
+def _convert_to_rss_date(unix_timestamp):
     parsed_date = datetime.fromtimestamp(unix_timestamp, tz=timezone.utc)
     rss_date = parsed_date.strftime("%a, %d %b %Y %H:%M:%S %z")
 
     return rss_date
 
 
-def extract_size(size_in_bytes):
+def _extract_size(size_in_bytes):
     return {"size": size_in_bytes, "sizeunit": "B"}

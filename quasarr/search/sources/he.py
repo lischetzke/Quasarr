@@ -143,7 +143,7 @@ class Source(AbstractSearchSource):
                 ):
                     continue
 
-                size_item = extract_size(head_split[1].strip())
+                size_item = _extract_size(head_split[1].strip())
                 mb = convert_to_mb(size_item)
 
                 size = mb * 1024 * 1024
@@ -159,7 +159,7 @@ class Source(AbstractSearchSource):
                             break
 
                     if posted_span:
-                        published = parse_posted_ago(posted_span)
+                        published = _parse_posted_ago(posted_span)
 
                 if published is None:
                     continue
@@ -231,7 +231,7 @@ class Source(AbstractSearchSource):
         return releases
 
 
-def parse_posted_ago(txt):
+def _parse_posted_ago(txt):
     try:
         m = re.search(
             r"(\d+)\s*(sec|min|hour|day|week|month|year)s?", txt, re.IGNORECASE
@@ -259,7 +259,7 @@ def parse_posted_ago(txt):
         return ""
 
 
-def extract_size(text: str) -> dict:
+def _extract_size(text: str) -> dict:
     match = re.search(r"(\d+(?:[\.,]\d+)?)\s*([A-Za-z]+)", text)
     if match:
         size = match.group(1).replace(",", ".")

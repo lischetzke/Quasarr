@@ -3,10 +3,11 @@
 # Project by https://github.com/rix1337
 
 import re
+from urllib.parse import urlparse
 
 from bs4 import BeautifulSoup, NavigableString
 
-from quasarr.constants import COMMON_TLDS, SHARE_HOSTERS_LOWERCASE
+from quasarr.constants import SHARE_HOSTERS_LOWERCASE
 from quasarr.downloads.sources.helpers.abstract_source import AbstractDownloadSource
 from quasarr.providers.hostname_issues import mark_hostname_issue
 from quasarr.providers.log import debug, info
@@ -22,21 +23,137 @@ class Source(AbstractDownloadSource):
     initials = "dl"
 
     def get_download_links(self, shared_state, url, mirrors, title, password):
-        return _get_dl_download_links(shared_state, url, title)
+        """
+        DL source handler - extracts links and password from forum thread.
+        Iterates through posts to find one with online links.
+        """
+        requested_mirrors = {
+            _normalize_mirror_name(mirror) for mirror in (mirrors or []) if mirror
+        }
+
+        host = shared_state.values["config"]("Hostnames").get(Source.initials)
+
+        sess = retrieve_and_validate_session(shared_state)
+        if not sess:
+            info(f"Could not retrieve valid session for {host}")
+            mark_hostname_issue(Source.initials, "download", "Session error")
+            return {"links": [], "password": ""}
+
+        try:
+            response = fetch_via_requests_session(
+                shared_state, method="GET", target_url=url, timeout=30
+            )
+
+            if response.status_code != 200:
+                info(
+                    f"Failed to load thread page: {url} (Status: {response.status_code})"
+                )
+                return {"links": [], "password": ""}
+
+            soup = BeautifulSoup(response.text, "html.parser")
+
+            # Get all posts in thread
+            posts = soup.select("article.message--post")
+            if not posts:
+                info(f"Could not find any posts in thread: {url}")
+                return {"links": [], "password": ""}
+
+            # Track first post with unverifiable links as fallback
+            fallback_links = None
+            fallback_password = ""
+
+            # Iterate through posts to find one with verified online links
+            for post_index, post in enumerate(posts):
+                post_content = post.select_one("div.bbWrapper")
+                if not post_content:
+                    continue
+
+                links_with_status, extracted_password = (
+                    _extract_links_and_password_from_post(
+                        str(post_content), host, requested_mirrors
+                    )
+                )
+
+                if not links_with_status:
+                    continue
+
+                # Check if any links have status URLs we can verify
+                has_verifiable_links = any(link[2] for link in links_with_status)
+
+                if not has_verifiable_links:
+                    # No way to check online status - save as fallback and continue looking
+                    if fallback_links is None:
+                        fallback_links = [
+                            [link[0], link[1]] for link in links_with_status
+                        ]
+                        fallback_password = extracted_password
+                        debug(
+                            f"Post #{post_index + 1} has links but no status URLs, saving as fallback..."
+                        )
+                    continue
+
+                # Check which links are online
+                online_links = check_links_online_status(
+                    links_with_status, shared_state
+                )
+
+                if online_links:
+                    post_info = (
+                        "first post" if post_index == 0 else f"post #{post_index + 1}"
+                    )
+                    debug(
+                        f"Found {len(online_links)} verified online link(s) in {post_info} for: {title}"
+                    )
+                    return {"links": online_links, "password": extracted_password}
+                else:
+                    debug(
+                        f"All links in post #{post_index + 1} are offline, checking next post..."
+                    )
+
+            # No verified online links found - return fallback if available
+            if fallback_links:
+                debug(
+                    f"No verified online links found, returning unverified fallback links for: {title}"
+                )
+                return {"links": fallback_links, "password": fallback_password}
+
+            info(f"No online download links found in any post: {url}")
+            return {"links": [], "password": ""}
+
+        except Exception as e:
+            info(f"Error extracting download links from {url}: {e}")
+            mark_hostname_issue(
+                Source.initials,
+                "download",
+                str(e) if "e" in dir() else "Download error",
+            )
+            invalidate_session(shared_state)
+            return {"links": [], "password": ""}
 
 
-def normalize_mirror_name(name):
+def _normalize_mirror_name(name):
     """
-    Normalize mirror name for comparison by lowercasing and removing TLDs.
-    e.g., "DDownload.com" -> "ddownload", "Rapidgator.net" -> "rapidgator"
+    Normalize mirror/provider names to a provider root token.
+    Works with plain names, hostnames, and URLs regardless of TLD.
     """
     if not name:
         return ""
-    normalized = name.lower().strip()
-    for tld in COMMON_TLDS:
-        if normalized.endswith(tld):
-            normalized = normalized[: -len(tld)]
-            break
+
+    normalized = str(name).lower().strip()
+
+    if "://" in normalized:
+        parsed = urlparse(normalized)
+        normalized = parsed.netloc or parsed.path
+
+    if normalized.startswith("www."):
+        normalized = normalized[4:]
+
+    normalized = normalized.split("/", 1)[0]
+    normalized = normalized.split(":", 1)[0]
+    if " " in normalized:
+        normalized = normalized.split()[-1]
+    if "." in normalized:
+        normalized = normalized.split(".", 1)[0]
 
     # Handle alternative spellings/shorthands
     if normalized in ["rg"]:
@@ -47,7 +164,7 @@ def normalize_mirror_name(name):
     return normalized
 
 
-def extract_password_from_post(soup, host):
+def _extract_password_from_post(soup, host):
     """
     Extract password from forum post using multiple strategies.
     Returns empty string if no password found or if explicitly marked as 'no password'.
@@ -83,7 +200,7 @@ def extract_password_from_post(soup, host):
     return default_password
 
 
-def extract_mirror_name_from_link(link_element):
+def _extract_mirror_name_from_link(link_element):
     """
     Extract the mirror/hoster name from the link text or nearby text.
     """
@@ -114,7 +231,7 @@ def extract_mirror_name_from_link(link_element):
         if cleaned and cleaned not in common_non_hosters:
             main_part = cleaned.split()[0] if " " in cleaned else cleaned
             if 2 < len(main_part) < 30:
-                return normalize_mirror_name(main_part)
+                return _normalize_mirror_name(main_part)
 
     # Check previous siblings including text nodes
     for sibling in link_element.previous_siblings:
@@ -131,7 +248,7 @@ def extract_mirror_name_from_link(link_element):
                     if parts:
                         mirror = parts[-1]
                         if 2 < len(mirror) < 30:
-                            return normalize_mirror_name(mirror)
+                            return _normalize_mirror_name(mirror)
             continue
 
         # Skip non-Tag elements
@@ -165,12 +282,12 @@ def extract_mirror_name_from_link(link_element):
             cleaned = re.sub(r"[^\w\s-]", "", sibling_text).strip()
             if cleaned and 2 < len(cleaned) < 30:
                 mirror = cleaned.split()[0] if " " in cleaned else cleaned
-                return normalize_mirror_name(mirror)
+                return _normalize_mirror_name(mirror)
 
     return None
 
 
-def extract_status_url_from_html(link_element, crypter_type):
+def _extract_status_url_from_html(link_element, crypter_type):
     """
     Extract status image URL from HTML near the link element.
     Used primarily for FileCrypt where status URLs cannot be generated.
@@ -209,7 +326,7 @@ def extract_status_url_from_html(link_element, crypter_type):
     return None
 
 
-def build_filecrypt_status_map(soup):
+def _build_filecrypt_status_map(soup):
     """
     Build a map of mirror names to FileCrypt status URLs.
     Handles cases where status images are in a separate section from links.
@@ -265,7 +382,7 @@ def build_filecrypt_status_map(soup):
                     mirror_name = parts[-1] if len(parts[-1]) > 2 else cleaned
 
         if mirror_name:
-            mirror_normalized = normalize_mirror_name(mirror_name)
+            mirror_normalized = _normalize_mirror_name(mirror_name)
             if mirror_normalized not in status_map:
                 status_map[mirror_normalized] = status_url
                 debug(
@@ -275,7 +392,7 @@ def build_filecrypt_status_map(soup):
     return status_map
 
 
-def extract_links_and_password_from_post(post_content, host):
+def _extract_links_and_password_from_post(post_content, host, requested_mirrors=None):
     """
     Extract download links and password from a forum post.
     Returns links with status URLs for online checking.
@@ -284,7 +401,7 @@ def extract_links_and_password_from_post(post_content, host):
     soup = BeautifulSoup(post_content, "html.parser")
 
     # Build status map for FileCrypt links (handles separated status images)
-    filecrypt_status_map = build_filecrypt_status_map(soup)
+    filecrypt_status_map = _build_filecrypt_status_map(soup)
 
     for link in soup.find_all("a", href=True):
         href = link.get("href")
@@ -304,22 +421,27 @@ def extract_links_and_password_from_post(post_content, host):
             debug(f"Unsupported link crypter/hoster found: {href}")
             continue
 
-        mirror_name = extract_mirror_name_from_link(link)
-        identifier = mirror_name if mirror_name else crypter_type
+        mirror_name = _extract_mirror_name_from_link(link)
+        normalized_mirror = _normalize_mirror_name(mirror_name) if mirror_name else None
+
+        if requested_mirrors and normalized_mirror:
+            if normalized_mirror not in requested_mirrors:
+                continue
+
+        identifier = normalized_mirror if normalized_mirror else crypter_type
 
         # Get status URL - try extraction first, then status map, then generation
-        status_url = extract_status_url_from_html(link, crypter_type)
+        status_url = _extract_status_url_from_html(link, crypter_type)
 
-        if not status_url and crypter_type == "filecrypt" and mirror_name:
+        if not status_url and crypter_type == "filecrypt" and normalized_mirror:
             # Try to find in status map by mirror name (normalized, case-insensitive, TLD-stripped)
-            mirror_normalized = normalize_mirror_name(mirror_name)
             for map_key, map_url in filecrypt_status_map.items():
                 if (
-                    mirror_normalized in map_key
-                    or map_key in mirror_normalized
-                    or mirror_normalized in SHARE_HOSTERS_LOWERCASE
+                    normalized_mirror in map_key
+                    or map_key in normalized_mirror
+                    or normalized_mirror in SHARE_HOSTERS_LOWERCASE
                     and map_key in SHARE_HOSTERS_LOWERCASE
-                    and mirror_normalized == map_key
+                    and normalized_mirror == map_key
                 ):
                     status_url = map_url
                     break
@@ -340,104 +462,6 @@ def extract_links_and_password_from_post(post_content, host):
 
     password = ""
     if links:
-        password = extract_password_from_post(soup, host)
+        password = _extract_password_from_post(soup, host)
 
     return links, password
-
-
-def _get_dl_download_links(shared_state, url, title):
-    """
-
-    DL source handler - extracts links and password from forum thread.
-    Iterates through posts to find one with online links.
-
-    """
-
-    host = shared_state.values["config"]("Hostnames").get(Source.initials)
-
-    sess = retrieve_and_validate_session(shared_state)
-    if not sess:
-        info(f"Could not retrieve valid session for {host}")
-        mark_hostname_issue(Source.initials, "download", "Session error")
-        return {"links": [], "password": ""}
-
-    try:
-        response = fetch_via_requests_session(
-            shared_state, method="GET", target_url=url, timeout=30
-        )
-
-        if response.status_code != 200:
-            info(f"Failed to load thread page: {url} (Status: {response.status_code})")
-            return {"links": [], "password": ""}
-
-        soup = BeautifulSoup(response.text, "html.parser")
-
-        # Get all posts in thread
-        posts = soup.select("article.message--post")
-        if not posts:
-            info(f"Could not find any posts in thread: {url}")
-            return {"links": [], "password": ""}
-
-        # Track first post with unverifiable links as fallback
-        fallback_links = None
-        fallback_password = ""
-
-        # Iterate through posts to find one with verified online links
-        for post_index, post in enumerate(posts):
-            post_content = post.select_one("div.bbWrapper")
-            if not post_content:
-                continue
-
-            links_with_status, extracted_password = (
-                extract_links_and_password_from_post(str(post_content), host)
-            )
-
-            if not links_with_status:
-                continue
-
-            # Check if any links have status URLs we can verify
-            has_verifiable_links = any(link[2] for link in links_with_status)
-
-            if not has_verifiable_links:
-                # No way to check online status - save as fallback and continue looking
-                if fallback_links is None:
-                    fallback_links = [[link[0], link[1]] for link in links_with_status]
-                    fallback_password = extracted_password
-                    debug(
-                        f"Post #{post_index + 1} has links but no status URLs, saving as fallback..."
-                    )
-                continue
-
-            # Check which links are online
-            online_links = check_links_online_status(links_with_status, shared_state)
-
-            if online_links:
-                post_info = (
-                    "first post" if post_index == 0 else f"post #{post_index + 1}"
-                )
-                debug(
-                    f"Found {len(online_links)} verified online link(s) in {post_info} for: {title}"
-                )
-                return {"links": online_links, "password": extracted_password}
-            else:
-                debug(
-                    f"All links in post #{post_index + 1} are offline, checking next post..."
-                )
-
-        # No verified online links found - return fallback if available
-        if fallback_links:
-            debug(
-                f"No verified online links found, returning unverified fallback links for: {title}"
-            )
-            return {"links": fallback_links, "password": fallback_password}
-
-        info(f"No online download links found in any post: {url}")
-        return {"links": [], "password": ""}
-
-    except Exception as e:
-        info(f"Error extracting download links from {url}: {e}")
-        mark_hostname_issue(
-            Source.initials, "download", str(e) if "e" in dir() else "Download error"
-        )
-        invalidate_session(shared_state)
-        return {"links": [], "password": ""}

@@ -99,22 +99,6 @@ SHARE_HOSTERS = [h[0] for h in HOSTERS]
 # Recommend only these
 RECOMMENDED_HOSTERS = [h[0] for h in HOSTERS if h[1]]
 
-# Common TLDs to strip for mirror name comparison
-COMMON_TLDS = {
-    ".com",
-    ".net",
-    ".io",
-    ".cc",
-    ".to",
-    ".me",
-    ".org",
-    ".co",
-    ".de",
-    ".eu",
-    ".info",
-}
-
-
 # ==============================================================================
 # REGEX PATTERNS (CONTENT & PARSING)
 # ==============================================================================

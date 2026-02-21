@@ -110,7 +110,7 @@ class Source(AbstractSearchSource):
                         continue
 
                     title = unescape(title)
-                    title = normalize_title_for_arr(title)
+                    title = _normalize_title_for_arr(title)
 
                     # Extract thread URL
                     thread_url = title_elem.get("href")
@@ -124,7 +124,7 @@ class Source(AbstractSearchSource):
                     # Extract date and convert to RFC 2822 format
                     date_elem = item.select_one("time.u-dt")
                     iso_date = date_elem.get("datetime", "") if date_elem else ""
-                    published = convert_to_rss_date(iso_date)
+                    published = _convert_to_rss_date(iso_date)
 
                     mb = 0
                     imdb_id = None
@@ -251,7 +251,7 @@ class Source(AbstractSearchSource):
 
                     title = re.sub(r"\s+", " ", title)
                     title = unescape(title)
-                    title_normalized = normalize_title_for_arr(title)
+                    title_normalized = _normalize_title_for_arr(title)
 
                     # Filter: Skip if no resolution or codec info (unless LazyLibrarian/Lidarr)
                     if base_search_category not in [SEARCH_CAT_BOOKS, SEARCH_CAT_MUSIC]:
@@ -284,7 +284,7 @@ class Source(AbstractSearchSource):
                     # Extract date and convert to RFC 2822 format
                     date_elem = item.select_one("time.u-dt")
                     iso_date = date_elem.get("datetime", "") if date_elem else ""
-                    published = convert_to_rss_date(iso_date)
+                    published = _convert_to_rss_date(iso_date)
 
                     mb = 0
                     password = ""
@@ -432,7 +432,7 @@ class Source(AbstractSearchSource):
         return releases
 
 
-def convert_to_rss_date(iso_date_str):
+def _convert_to_rss_date(iso_date_str):
     """
     Convert ISO format datetime to RSS date format.
     DL date format: '2025-12-15T20:43:06+0100'
@@ -449,7 +449,7 @@ def convert_to_rss_date(iso_date_str):
         return datetime.now().strftime("%a, %d %b %Y %H:%M:%S +0000")
 
 
-def normalize_title_for_arr(title):
+def _normalize_title_for_arr(title):
     """
     Normalize title for *arr by replacing spaces with dots.
     """

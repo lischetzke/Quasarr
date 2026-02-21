@@ -74,13 +74,13 @@ class Source(AbstractSearchSource):
                         imdb_id = None
 
                     size_info = article.find("span").text.strip()
-                    size_item = extract_size(size_info)
+                    size_item = _extract_size(size_info)
                     mb = convert_to_mb(size_item)
                     size = mb * 1024 * 1024
                     date = article.parent.parent.find(
                         "span", {"class": "date updated"}
                     ).text.strip()
-                    published = convert_to_rss_date(date)
+                    published = _convert_to_rss_date(date)
 
                     link = generate_download_link(
                         shared_state,
@@ -195,13 +195,13 @@ class Source(AbstractSearchSource):
 
                     source = result.a["href"]
                     size_info = result.find("span").text.strip()
-                    size_item = extract_size(size_info)
+                    size_item = _extract_size(size_info)
                     mb = convert_to_mb(size_item)
                     size = mb * 1024 * 1024
                     date = result.parent.parent.find(
                         "span", {"class": "date updated"}
                     ).text.strip()
-                    published = convert_to_rss_date(date)
+                    published = _convert_to_rss_date(date)
 
                     link = generate_download_link(
                         shared_state,
@@ -244,7 +244,7 @@ class Source(AbstractSearchSource):
         return releases
 
 
-def convert_to_rss_date(date_str):
+def _convert_to_rss_date(date_str):
     for german, english in zip(GERMAN_MONTHS, ENGLISH_MONTHS, strict=False):
         if german in date_str:
             date_str = date_str.replace(german, english)
@@ -256,7 +256,7 @@ def convert_to_rss_date(date_str):
     return rss_date
 
 
-def extract_size(text):
+def _extract_size(text):
     # First try the normal pattern: number + space + unit (e.g., "1024 MB")
     match = re.match(r"(\d+)\s+([A-Za-z]+)", text)
     if match:

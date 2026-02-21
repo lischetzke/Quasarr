@@ -390,7 +390,7 @@ def hostname_form_html(shared_state, message, show_skip_management=False):
 <div class="url-import-section">
     <h3>📥 Import from URL</h3>
     <div class="url-import-row">
-        <input type="url" id="hostnamesUrl" placeholder="https://quasarr-host.name/ini?token=123..." value="{stored_url}" onfocus="onHostnameFieldFocus()">
+        <input type="url" id="hostnamesUrl" placeholder="https://quasarr-host.name/ini?token=123..." value="{stored_url}">
         <button type="button" class="btn-secondary" id="importBtn" onclick="importHostnames()">Import</button>
     </div>
     <div id="importStatus" class="import-status"></div>
@@ -429,16 +429,6 @@ def hostname_form_html(shared_state, message, show_skip_management=False):
 
     errorDiv.textContent = 'Please fill in at least one hostname!';
     return false;
-  }}
-
-  function onHostnameFieldFocus() {{
-    var urlInput = document.getElementById('hostnamesUrl');
-    if (urlInput.value.trim() === '') {{
-      window.open('https://quasarr-host.name', '_blank');
-      var statusDiv = document.getElementById('importStatus');
-      statusDiv.className = 'import-status';
-      statusDiv.textContent = 'Opened hostname helper in new tab. Paste the URL here after setup.';
-    }}
   }}
 
   function importHostnames() {{

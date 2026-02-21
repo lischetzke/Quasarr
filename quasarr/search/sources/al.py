@@ -14,9 +14,9 @@ from quasarr.constants import (
     SEARCH_CAT_SHOWS_ANIME,
 )
 from quasarr.downloads.sources.al import (
-    guess_title,
-    parse_info_from_download_item,
-    parse_info_from_feed_entry,
+    _guess_title,
+    _parse_info_from_download_item,
+    _parse_info_from_feed_entry,
 )
 from quasarr.providers import shared_state
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
@@ -123,23 +123,23 @@ class Source(AbstractSearchSource):
                 if small_tag:
                     raw_date_str = small_tag.get_text(strip=True)
                     if raw_date_str.startswith("vor"):
-                        dt = parse_relative_date(raw_date_str)
+                        dt = _parse_relative_date(raw_date_str)
                         if dt:
                             date_converted = dt.strftime("%a, %d %b %Y %H:%M:%S +0000")
                     else:
                         try:
-                            date_converted = convert_to_rss_date(raw_date_str)
+                            date_converted = _convert_to_rss_date(raw_date_str)
                         except Exception as e:
                             debug(f"Could not parse date '{raw_date_str}': {e}")
 
                 # Each of these signifies an individual release block
                 mt_blocks = tr.find_all("div", class_="mt10")
                 for block in mt_blocks:
-                    release_id = get_release_id(block)
-                    release_info = parse_info_from_feed_entry(
+                    release_id = _get_release_id(block)
+                    release_info = _parse_info_from_feed_entry(
                         block, raw_base_title, release_type
                     )
-                    final_title = guess_title(
+                    final_title = _guess_title(
                         shared_state, raw_base_title, release_info
                     )
 
@@ -350,7 +350,7 @@ class Source(AbstractSearchSource):
                 for tab in download_tabs:
                     release_id += 1
 
-                    release_info = parse_info_from_download_item(
+                    release_info = _parse_info_from_download_item(
                         tab,
                         content,
                         page_title=title,
@@ -381,7 +381,7 @@ class Source(AbstractSearchSource):
                         if candidates:
                             size_string = candidates[-1][0]
                             try:
-                                size_item = extract_size(size_string)
+                                size_item = _extract_size(size_string)
                                 mb = convert_to_mb(size_item)
                             except Exception as e:
                                 debug(f"Error extracting size for {title}: {e}")
@@ -404,7 +404,7 @@ class Source(AbstractSearchSource):
                     if release_info.release_title:
                         release_title = release_info.release_title
                     else:
-                        release_title = guess_title(shared_state, title, release_info)
+                        release_title = _guess_title(shared_state, title, release_info)
 
                     if season and release_info.season != int(season):
                         debug(
@@ -457,9 +457,9 @@ import re
 from datetime import datetime, timedelta
 
 
-def convert_to_rss_date(date_str: str) -> str:
+def _convert_to_rss_date(date_str: str) -> str:
     # First try to parse relative dates (German and English)
-    parsed_date = parse_relative_date(date_str)
+    parsed_date = _parse_relative_date(date_str)
     if parsed_date:
         return parsed_date.strftime("%a, %d %b %Y %H:%M:%S +0000")
 
@@ -472,7 +472,7 @@ def convert_to_rss_date(date_str: str) -> str:
         raise ValueError(f"Could not parse date: {date_str}") from e
 
 
-def parse_relative_date(raw: str) -> datetime | None:
+def _parse_relative_date(raw: str) -> datetime | None:
     # German pattern: "vor X Einheit(en)"
     german_match = re.match(r"vor\s+(\d+)\s+(\w+)", raw, re.IGNORECASE)
     if german_match:
@@ -530,7 +530,7 @@ def parse_relative_date(raw: str) -> datetime | None:
     return None
 
 
-def extract_size(text):
+def _extract_size(text):
     match = re.match(r"(\d+(\.\d+)?) ([A-Za-z]+)", text)
     if match:
         size = match.group(1)
@@ -540,14 +540,14 @@ def extract_size(text):
         raise ValueError(f"Invalid size format: {text}")
 
 
-def get_release_id(tag):
+def _get_release_id(tag):
     match = re.search(r"release\s+(\d+):", tag.get_text(strip=True), re.IGNORECASE)
     if match:
         return int(match.group(1))
     return 0
 
 
-def extract_season(title: str) -> int | None:
+def _extract_season(title: str) -> int | None:
     match = re.search(r"(?i)(?:^|[^a-zA-Z0-9])S(\d{1,4})(?!\d)", title)
     if match:
         return int(match.group(1))

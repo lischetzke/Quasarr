@@ -31,7 +31,226 @@ class Source(AbstractDownloadSource):
     initials = "al"
 
     def get_download_links(self, shared_state, url, mirrors, title, password):
-        return _get_al_download_links(shared_state, url, mirrors, title, password)
+        """
+        AL source handler. Returns plain download links automatically by solving CAPTCHA.
+
+        Note: The 'password' parameter is intentionally repurposed as release_id
+        to ensure we download the correct release from the search results.
+        This is set by the search module, not a user password.
+        """
+        # Check if FlareSolverr is available - AL requires it
+        if not is_flaresolverr_available(shared_state):
+            info(
+                "This source requires FlareSolverr which is not configured. "
+                "Please configure FlareSolverr in the web UI to use this site."
+            )
+            return {}
+
+        release_id = password  # password field carries release_id for AL
+
+        al = shared_state.values["config"]("Hostnames").get(Source.initials)
+
+        sess = retrieve_and_validate_session(shared_state)
+        if not sess:
+            info(f"Could not retrieve valid session for {al}")
+            mark_hostname_issue(Source.initials, "download", "Session error")
+            return {}
+
+        details_page = fetch_via_flaresolverr(shared_state, "GET", url, timeout=30)
+        details_html = details_page.get("text", "")
+        if not details_html:
+            info(f"Failed to load details page for {title} at {url}")
+            return {}
+
+        episode_in_title = _extract_episode(title)
+        if episode_in_title:
+            selection = episode_in_title - 1  # Convert to zero-based index
+        else:
+            selection = "cnl"
+
+        title, release_id = _check_release(
+            shared_state, details_html, release_id, title, episode_in_title
+        )
+        if int(release_id) == 0:
+            info(f"No valid release ID found for {title} - Download failed!")
+            return {}
+
+        anime_identifier = url.rstrip("/").split("/")[-1]
+
+        info(f'Selected "Release {release_id}" from {url}')
+
+        links = []
+        try:
+            raw_request = json.dumps(
+                ["media", anime_identifier, "downloads", release_id, selection]
+            )
+            b64 = base64.b64encode(raw_request.encode("ascii")).decode("ascii")
+
+            post_url = f"https://www.{al}/ajax/captcha"
+            payload = {"enc": b64, "response": "nocaptcha"}
+
+            result = fetch_via_flaresolverr(
+                shared_state,
+                method="POST",
+                target_url=post_url,
+                post_data=payload,
+                timeout=30,
+            )
+
+            status = result.get("status_code")
+            if not status == 200:
+                info(f"FlareSolverr returned HTTP {status} for captcha request")
+                StatsHelper(shared_state).increment_failed_decryptions_automatic()
+                return {}
+            else:
+                text = result.get("text", "")
+                try:
+                    response_json = result["json"]
+                except ValueError:
+                    info(f"Unexpected response when initiating captcha: {text}")
+                    StatsHelper(shared_state).increment_failed_decryptions_automatic()
+                    return {}
+
+                code = response_json.get("code", "")
+                message = response_json.get("message", "")
+                content_items = response_json.get("content", [])
+
+                tries = 0
+                if code == "success" and content_items:
+                    info("CAPTCHA not required")
+                elif message == "cnl_login":
+                    info("Login expired, re-creating session...")
+                    invalidate_session(shared_state)
+                else:
+                    tries = 0
+                    while tries < 3:
+                        try:
+                            tries += 1
+                            info(
+                                f"Starting attempt {tries} to solve CAPTCHA for "
+                                f"{f'episode {episode_in_title}' if selection and selection != 'cnl' else 'all links'}"
+                            )
+                            attempt = solve_captcha(
+                                Source.initials,
+                                shared_state,
+                                fetch_via_flaresolverr,
+                                fetch_via_requests_session,
+                            )
+
+                            solved = (
+                                unwrap_flaresolverr_body(attempt.get("response")) == "1"
+                            )
+                            captcha_id = attempt.get("captcha_id", None)
+
+                            if solved and captcha_id:
+                                payload = {
+                                    "enc": b64,
+                                    "response": "captcha",
+                                    "captcha-idhf": 0,
+                                    "captcha-hf": captcha_id,
+                                }
+                                check_solution = fetch_via_flaresolverr(
+                                    shared_state,
+                                    method="POST",
+                                    target_url=post_url,
+                                    post_data=payload,
+                                    timeout=30,
+                                )
+                                try:
+                                    response_json = check_solution.get("json", {})
+                                except ValueError as e:
+                                    raise RuntimeError(
+                                        f"Unexpected /ajax/captcha response: {check_solution.get('text', '')}"
+                                    ) from e
+
+                                code = response_json.get("code", "")
+                                message = response_json.get("message", "")
+                                content_items = response_json.get("content", [])
+
+                                if code == "success":
+                                    if content_items:
+                                        info(
+                                            "CAPTCHA solved successfully on attempt {}.".format(
+                                                tries
+                                            )
+                                        )
+                                        break
+                                    else:
+                                        info(
+                                            "CAPTCHA was solved, but no links are available for the selection!"
+                                        )
+                                        StatsHelper(
+                                            shared_state
+                                        ).increment_failed_decryptions_automatic()
+                                        return {}
+                                elif message == "cnl_login":
+                                    info("Login expired, re-creating session...")
+                                    invalidate_session(shared_state)
+                                else:
+                                    info(
+                                        f"CAPTCHA POST returned code={code}, message={message}. Retrying... (attempt {tries})"
+                                    )
+
+                                    if "slowndown" in str(message).lower():
+                                        wait_period = 30
+                                        info(
+                                            f"CAPTCHAs solved too quickly. Waiting {wait_period} seconds before next attempt..."
+                                        )
+                                        time.sleep(wait_period)
+                            else:
+                                info(
+                                    f"CAPTCHA solver returned invalid solution, retrying... (attempt {tries})"
+                                )
+
+                        except RuntimeError as e:
+                            info(f"Error solving CAPTCHA: {e}")
+                            mark_hostname_issue(
+                                Source.initials,
+                                "download",
+                                str(e) if "e" in dir() else "Download error",
+                            )
+                        else:
+                            info(
+                                f"CAPTCHA solver returned invalid solution, retrying... (attempt {tries})"
+                            )
+
+                if code != "success":
+                    info(
+                        f"CAPTCHA solution failed after {tries} attempts. Your IP is likely banned - "
+                        f"Code: {code}, Message: {message}"
+                    )
+                    invalidate_session(shared_state)
+                    StatsHelper(shared_state).increment_failed_decryptions_automatic()
+                    return {}
+
+                try:
+                    links = decrypt_content(content_items, mirrors)
+                    debug(f"Decrypted URLs: {links}")
+                except Exception as e:
+                    info(f"Error during decryption: {e}")
+                    mark_hostname_issue(
+                        Source.initials,
+                        "download",
+                        str(e) if "e" in dir() else "Download error",
+                    )
+        except Exception as e:
+            info(f"Error loading download: {e}")
+            mark_hostname_issue(
+                Source.initials,
+                "download",
+                str(e) if "e" in dir() else "Download error",
+            )
+            invalidate_session(shared_state)
+
+        success = bool(links)
+        if success:
+            StatsHelper(shared_state).increment_captcha_decryptions_automatic()
+        else:
+            StatsHelper(shared_state).increment_failed_decryptions_automatic()
+
+        links_with_mirrors = [[url, _derive_mirror(url)] for url in links]
+
+        return {"links": links_with_mirrors, "password": f"www.{al}", "title": title}
 
 
 @dataclass
@@ -50,7 +269,7 @@ class ReleaseInfo:
     episode_max: Optional[int]
 
 
-def roman_to_int(r: str) -> int:
+def _roman_to_int(r: str) -> int:
     roman_map = {"I": 1, "V": 5, "X": 10}
     total = 0
     prev = 0
@@ -64,7 +283,7 @@ def roman_to_int(r: str) -> int:
     return total
 
 
-def derive_mirror(url):
+def _derive_mirror(url):
     try:
         hostname = urlparse(url).netloc.lower()
         if hostname.startswith("www."):
@@ -75,7 +294,7 @@ def derive_mirror(url):
         return "unknown"
 
 
-def extract_season_from_synonyms(soup):
+def _extract_season_from_synonyms(soup):
     """
     Returns the first season found as "Season N" in the Synonym(s) <td>, or None.
     Only scans the synonyms cell—no fallback to whole document.
@@ -112,17 +331,16 @@ def extract_season_from_synonyms(soup):
             return int(dm.group(1))
         # Uppercase Roman → convert & return
         if tok.isupper() and re.fullmatch(r"[IVXLCDM]+", tok):
-            return roman_to_int(tok)
+            return _roman_to_int(tok)
 
     return None
 
 
-def find_season_in_release_notes(soup):
+def _find_season_in_release_notes(soup):
     """
     Iterates through all <tr> rows with a "Release Notes" <th> (case-insensitive).
     Returns the first season number found as an int, or None if not found.
     """
-
     patterns = [
         re.compile(r"\b(?:Season|Staffel)\s*0?(\d+)\b", re.IGNORECASE),
         re.compile(r"\b0?(\d+)(?:st|nd|rd|th)\s+Season\b", re.IGNORECASE),
@@ -154,7 +372,7 @@ def find_season_in_release_notes(soup):
             # Roman numeral detection only uppercase
             if pat.pattern.endswith("(?=\\s*$)"):
                 if token.isupper():
-                    return roman_to_int(token)
+                    return _roman_to_int(token)
                 else:
                     continue
             return int(token)
@@ -162,7 +380,7 @@ def find_season_in_release_notes(soup):
     return None
 
 
-def extract_season_number_from_title(page_title, release_type, release_title=""):
+def _extract_season_number_from_title(page_title, release_type, release_title=""):
     """
     Extracts the season number from the given page title.
 
@@ -178,7 +396,6 @@ def extract_season_number_from_title(page_title, release_type, release_title="")
     Returns:
         int: The extracted or inferred season number. Defaults to 1 if not found.
     """
-
     season_num = None
 
     if release_title:
@@ -206,7 +423,7 @@ def extract_season_number_from_title(page_title, release_type, release_title="")
             if match:
                 if match.group(1) is not None:
                     num = match.group(1)
-                    season_num = int(num) if num.isdigit() else roman_to_int(num)
+                    season_num = int(num) if num.isdigit() else _roman_to_int(num)
                 elif match.group(2) is not None:
                     season_num = int(match.group(2))
             else:
@@ -215,7 +432,7 @@ def extract_season_number_from_title(page_title, release_type, release_title="")
                 )
                 if trailing_match:
                     num = trailing_match.group(1)
-                    season_candidate = int(num) if num.isdigit() else roman_to_int(num)
+                    season_candidate = int(num) if num.isdigit() else _roman_to_int(num)
                     if season_candidate >= 2:
                         season_num = season_candidate
 
@@ -225,14 +442,14 @@ def extract_season_number_from_title(page_title, release_type, release_title="")
     return season_num
 
 
-def parse_info_from_feed_entry(block, series_page_title, release_type) -> ReleaseInfo:
+def _parse_info_from_feed_entry(block, series_page_title, release_type) -> ReleaseInfo:
     """
     Parse a BeautifulSoup block from the feed entry into ReleaseInfo.
     """
     text = block.get_text(separator=" ", strip=True)
 
     # detect season
-    season_num = extract_season_number_from_title(series_page_title, release_type)
+    season_num = _extract_season_number_from_title(series_page_title, release_type)
 
     # detect episodes
     episode_min: Optional[int] = None
@@ -303,7 +520,7 @@ def parse_info_from_feed_entry(block, series_page_title, release_type) -> Releas
     )
 
 
-def parse_info_from_download_item(
+def _parse_info_from_download_item(
     tab, content, page_title=None, release_type=None, requested_episode=None
 ) -> ReleaseInfo:
     """
@@ -402,11 +619,11 @@ def parse_info_from_download_item(
         release_group = ""
 
     # determine season
-    season_num = extract_season_from_synonyms(content)
+    season_num = _extract_season_from_synonyms(content)
     if not season_num:
-        season_num = find_season_in_release_notes(content)
+        season_num = _find_season_in_release_notes(content)
     if not season_num:
-        season_num = extract_season_number_from_title(
+        season_num = _extract_season_number_from_title(
             page_title, release_type, release_title=release_title
         )
 
@@ -418,7 +635,7 @@ def parse_info_from_download_item(
         )
         if match:
             num = match.group(1)
-            season_part = int(num) if num.isdigit() else roman_to_int(num)
+            season_part = int(num) if num.isdigit() else _roman_to_int(num)
             part_string = f"Part.{season_part}"
             if release_title and part_string not in release_title:
                 release_title = re.sub(
@@ -468,7 +685,7 @@ def parse_info_from_download_item(
     )
 
 
-def guess_title(shared_state, page_title, release_info: ReleaseInfo) -> str:
+def _guess_title(shared_state, page_title, release_info: ReleaseInfo) -> str:
     # remove labels
     clean_title = page_title.rsplit("(", 1)[0].strip()
     # Remove season/staffel info
@@ -525,7 +742,7 @@ def guess_title(shared_state, page_title, release_info: ReleaseInfo) -> str:
     return sanitize_title(title)
 
 
-def check_release(shared_state, details_html, release_id, title, episode_in_title):
+def _check_release(shared_state, details_html, release_id, title, episode_in_title):
     soup = BeautifulSoup(details_html, "html.parser")
 
     if int(release_id) == 0:
@@ -562,7 +779,7 @@ def check_release(shared_state, details_html, release_id, title, episode_in_titl
             else:
                 release_type = "movie"
 
-            release_info = parse_info_from_download_item(
+            release_info = _parse_info_from_download_item(
                 tab,
                 soup,
                 page_title=page_title,
@@ -582,7 +799,7 @@ def check_release(shared_state, details_html, release_id, title, episode_in_titl
                     release_info.episode_min = int(episode_in_title)
                     release_info.episode_max = int(episode_in_title)
 
-                guessed_title = guess_title(shared_state, page_title, release_info)
+                guessed_title = _guess_title(shared_state, page_title, release_info)
                 if guessed_title and guessed_title.lower() != title.lower():
                     info(
                         f'Adjusted guessed release title to "{guessed_title}" from details page'
@@ -599,7 +816,7 @@ def check_release(shared_state, details_html, release_id, title, episode_in_titl
     return title, release_id
 
 
-def extract_episode(title: str) -> int | None:
+def _extract_episode(title: str) -> int | None:
     match = re.search(r"\bS\d{1,4}E(\d+)\b(?![\-E\d])", title)
     if match:
         return int(match.group(1))
@@ -610,226 +827,3 @@ def extract_episode(title: str) -> int | None:
             return int(match.group(1))
 
     return None
-
-
-def _get_al_download_links(shared_state, url, mirrors, title, password):
-    """
-
-    AL source handler. Returns plain download links automatically by solving CAPTCHA.
-
-    Note: The 'password' parameter is intentionally repurposed as release_id
-    to ensure we download the correct release from the search results.
-    This is set by the search module, not a user password.
-    """
-
-    # Check if FlareSolverr is available - AL requires it
-    if not is_flaresolverr_available(shared_state):
-        info(
-            "This source requires FlareSolverr which is not configured. "
-            "Please configure FlareSolverr in the web UI to use this site."
-        )
-        return {}
-
-    release_id = password  # password field carries release_id for AL
-
-    al = shared_state.values["config"]("Hostnames").get(Source.initials)
-
-    sess = retrieve_and_validate_session(shared_state)
-    if not sess:
-        info(f"Could not retrieve valid session for {al}")
-        mark_hostname_issue(Source.initials, "download", "Session error")
-        return {}
-
-    details_page = fetch_via_flaresolverr(shared_state, "GET", url, timeout=30)
-    details_html = details_page.get("text", "")
-    if not details_html:
-        info(f"Failed to load details page for {title} at {url}")
-        return {}
-
-    episode_in_title = extract_episode(title)
-    if episode_in_title:
-        selection = episode_in_title - 1  # Convert to zero-based index
-    else:
-        selection = "cnl"
-
-    title, release_id = check_release(
-        shared_state, details_html, release_id, title, episode_in_title
-    )
-    if int(release_id) == 0:
-        info(f"No valid release ID found for {title} - Download failed!")
-        return {}
-
-    anime_identifier = url.rstrip("/").split("/")[-1]
-
-    info(f'Selected "Release {release_id}" from {url}')
-
-    links = []
-    try:
-        raw_request = json.dumps(
-            ["media", anime_identifier, "downloads", release_id, selection]
-        )
-        b64 = base64.b64encode(raw_request.encode("ascii")).decode("ascii")
-
-        post_url = f"https://www.{al}/ajax/captcha"
-        payload = {"enc": b64, "response": "nocaptcha"}
-
-        result = fetch_via_flaresolverr(
-            shared_state,
-            method="POST",
-            target_url=post_url,
-            post_data=payload,
-            timeout=30,
-        )
-
-        status = result.get("status_code")
-        if not status == 200:
-            info(f"FlareSolverr returned HTTP {status} for captcha request")
-            StatsHelper(shared_state).increment_failed_decryptions_automatic()
-            return {}
-        else:
-            text = result.get("text", "")
-            try:
-                response_json = result["json"]
-            except ValueError:
-                info(f"Unexpected response when initiating captcha: {text}")
-                StatsHelper(shared_state).increment_failed_decryptions_automatic()
-                return {}
-
-            code = response_json.get("code", "")
-            message = response_json.get("message", "")
-            content_items = response_json.get("content", [])
-
-            tries = 0
-            if code == "success" and content_items:
-                info("CAPTCHA not required")
-            elif message == "cnl_login":
-                info("Login expired, re-creating session...")
-                invalidate_session(shared_state)
-            else:
-                tries = 0
-                while tries < 3:
-                    try:
-                        tries += 1
-                        info(
-                            f"Starting attempt {tries} to solve CAPTCHA for "
-                            f"{f'episode {episode_in_title}' if selection and selection != 'cnl' else 'all links'}"
-                        )
-                        attempt = solve_captcha(
-                            Source.initials,
-                            shared_state,
-                            fetch_via_flaresolverr,
-                            fetch_via_requests_session,
-                        )
-
-                        solved = (
-                            unwrap_flaresolverr_body(attempt.get("response")) == "1"
-                        )
-                        captcha_id = attempt.get("captcha_id", None)
-
-                        if solved and captcha_id:
-                            payload = {
-                                "enc": b64,
-                                "response": "captcha",
-                                "captcha-idhf": 0,
-                                "captcha-hf": captcha_id,
-                            }
-                            check_solution = fetch_via_flaresolverr(
-                                shared_state,
-                                method="POST",
-                                target_url=post_url,
-                                post_data=payload,
-                                timeout=30,
-                            )
-                            try:
-                                response_json = check_solution.get("json", {})
-                            except ValueError as e:
-                                raise RuntimeError(
-                                    f"Unexpected /ajax/captcha response: {check_solution.get('text', '')}"
-                                ) from e
-
-                            code = response_json.get("code", "")
-                            message = response_json.get("message", "")
-                            content_items = response_json.get("content", [])
-
-                            if code == "success":
-                                if content_items:
-                                    info(
-                                        "CAPTCHA solved successfully on attempt {}.".format(
-                                            tries
-                                        )
-                                    )
-                                    break
-                                else:
-                                    info(
-                                        "CAPTCHA was solved, but no links are available for the selection!"
-                                    )
-                                    StatsHelper(
-                                        shared_state
-                                    ).increment_failed_decryptions_automatic()
-                                    return {}
-                            elif message == "cnl_login":
-                                info("Login expired, re-creating session...")
-                                invalidate_session(shared_state)
-                            else:
-                                info(
-                                    f"CAPTCHA POST returned code={code}, message={message}. Retrying... (attempt {tries})"
-                                )
-
-                                if "slowndown" in str(message).lower():
-                                    wait_period = 30
-                                    info(
-                                        f"CAPTCHAs solved too quickly. Waiting {wait_period} seconds before next attempt..."
-                                    )
-                                    time.sleep(wait_period)
-                        else:
-                            info(
-                                f"CAPTCHA solver returned invalid solution, retrying... (attempt {tries})"
-                            )
-
-                    except RuntimeError as e:
-                        info(f"Error solving CAPTCHA: {e}")
-                        mark_hostname_issue(
-                            Source.initials,
-                            "download",
-                            str(e) if "e" in dir() else "Download error",
-                        )
-                    else:
-                        info(
-                            f"CAPTCHA solver returned invalid solution, retrying... (attempt {tries})"
-                        )
-
-            if code != "success":
-                info(
-                    f"CAPTCHA solution failed after {tries} attempts. Your IP is likely banned - "
-                    f"Code: {code}, Message: {message}"
-                )
-                invalidate_session(shared_state)
-                StatsHelper(shared_state).increment_failed_decryptions_automatic()
-                return {}
-
-            try:
-                links = decrypt_content(content_items, mirrors)
-                debug(f"Decrypted URLs: {links}")
-            except Exception as e:
-                info(f"Error during decryption: {e}")
-                mark_hostname_issue(
-                    Source.initials,
-                    "download",
-                    str(e) if "e" in dir() else "Download error",
-                )
-    except Exception as e:
-        info(f"Error loading download: {e}")
-        mark_hostname_issue(
-            Source.initials, "download", str(e) if "e" in dir() else "Download error"
-        )
-        invalidate_session(shared_state)
-
-    success = bool(links)
-    if success:
-        StatsHelper(shared_state).increment_captcha_decryptions_automatic()
-    else:
-        StatsHelper(shared_state).increment_failed_decryptions_automatic()
-
-    links_with_mirrors = [[url, derive_mirror(url)] for url in links]
-
-    return {"links": links_with_mirrors, "password": f"www.{al}", "title": title}

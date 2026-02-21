@@ -248,11 +248,11 @@ class Source(AbstractSearchSource):
                                 size_str = val
                                 break
 
-                    published = convert_to_rss_date(date_str) if date_str else ""
+                    published = _convert_to_rss_date(date_str) if date_str else ""
                     if not published:
                         debug("fuck")
                     size_info = (
-                        extract_size(size_str)
+                        _extract_size(size_str)
                         if size_str
                         else {"size": "0", "sizeunit": "MB"}
                     )
@@ -289,7 +289,7 @@ class Source(AbstractSearchSource):
                             val = cols[1].get_text(strip=True)
                             if re.match(r"\d{2}\.\d{2}\.\d{2} \d{2}:\d{2}", val):
                                 date_str = val
-                    published = convert_to_rss_date(date_str)
+                    published = _convert_to_rss_date(date_str)
                     size_bytes = 0
                     mb = 0
                     imdb_id = None
@@ -325,7 +325,7 @@ class Source(AbstractSearchSource):
         return releases
 
 
-def convert_to_rss_date(date_str):
+def _convert_to_rss_date(date_str):
     """
     BY date format: 'dd.mm.yy HH:MM', e.g. '20.07.25 17:48'
     """
@@ -336,7 +336,7 @@ def convert_to_rss_date(date_str):
         return ""
 
 
-def extract_size(text):
+def _extract_size(text):
     m = re.match(r"(\d+(?:[.,]\d+)?)\s*([A-Za-z]+)", text)
     if not m:
         raise ValueError(f"Invalid size format: {text!r}")

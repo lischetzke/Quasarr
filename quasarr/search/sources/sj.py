@@ -62,7 +62,7 @@ class Source(AbstractSearchSource):
                     if not title:
                         continue
 
-                    published = convert_to_rss_date(release.get("createdAt"))
+                    published = _convert_to_rss_date(release.get("createdAt"))
                     if not published:
                         continue
 
@@ -204,7 +204,7 @@ class Source(AbstractSearchSource):
                         ):
                             continue
 
-                        published = convert_to_rss_date(item.get("createdAt"))
+                        published = _convert_to_rss_date(item.get("createdAt"))
                         if not published:
                             debug(f"no published date for {title}")
                             published = one_hour_ago
@@ -248,7 +248,7 @@ class Source(AbstractSearchSource):
         return releases
 
 
-def convert_to_rss_date(date_str):
+def _convert_to_rss_date(date_str):
     try:
         return datetime.fromisoformat(date_str.replace("Z", "+00:00")).strftime(
             "%a, %d %b %Y %H:%M:%S +0000"

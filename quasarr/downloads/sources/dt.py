@@ -17,10 +17,82 @@ class Source(AbstractDownloadSource):
     initials = "dt"
 
     def get_download_links(self, shared_state, url, mirrors, title, password):
-        return _get_dt_download_links(shared_state, url, mirrors, title)
+        """
+        DT source handler - returns plain download links.
+        """
+        headers = {"User-Agent": shared_state.values["user_agent"]}
+        session = requests.Session()
+
+        try:
+            r = session.get(url, headers=headers, timeout=10)
+            r.raise_for_status()
+            soup = BeautifulSoup(r.text, "html.parser")
+
+            article = soup.find("article")
+            if not article:
+                info(f"Could not find article block for {title}")
+                mark_hostname_issue(
+                    Source.initials, "download", "Could not find article block"
+                )
+                return None
+
+            body = article.find("div", class_="card-body")
+            if not body:
+                info(f"Could not find download section for {title}")
+                mark_hostname_issue(
+                    Source.initials, "download", "Could not find download section"
+                )
+                return None
+
+            anchors = body.find_all("a", href=True)
+
+        except Exception as e:
+            info(
+                f"Site has been updated. Grabbing download links for {title} not possible! ({e})"
+            )
+            mark_hostname_issue(Source.initials, "download", str(e))
+            return None
+
+        filtered = []
+        for a in anchors:
+            href = a["href"].strip()
+
+            if not href.lower().startswith(("http://", "https://")):
+                continue
+            lower = href.lower()
+            if "imdb.com" in lower or "?ref=" in lower:
+                continue
+            if mirrors and not any(m in href for m in mirrors):
+                continue
+
+            mirror_name = _derive_mirror_from_url(href)
+            filtered.append([href, mirror_name])
+
+        # regex fallback if still empty
+        if not filtered:
+            text = body.get_text(separator="\n")
+            urls = re.findall(r'https?://[^\s<>"\']+', text)
+            seen = set()
+            for u in urls:
+                u = u.strip()
+                if u not in seen:
+                    seen.add(u)
+                    low = u.lower()
+                    if (
+                        low.startswith(("http://", "https://"))
+                        and "imdb.com" not in low
+                        and "?ref=" not in low
+                    ):
+                        if not mirrors or any(m in u for m in mirrors):
+                            mirror_name = _derive_mirror_from_url(u)
+                            filtered.append([u, mirror_name])
+
+        if filtered:
+            clear_hostname_issue(Source.initials)
+        return {"links": filtered} if filtered else None
 
 
-def derive_mirror_from_url(url):
+def _derive_mirror_from_url(url):
     """Extract hoster name from URL hostname."""
     try:
         mirror_hostname = urlparse(url).netloc.lower()
@@ -32,81 +104,3 @@ def derive_mirror_from_url(url):
         return mirror_hostname
     except:
         return "unknown"
-
-
-def _get_dt_download_links(shared_state, url, mirrors, title):
-    """
-
-    DT source handler - returns plain download links.
-    """
-
-    headers = {"User-Agent": shared_state.values["user_agent"]}
-    session = requests.Session()
-
-    try:
-        r = session.get(url, headers=headers, timeout=10)
-        r.raise_for_status()
-        soup = BeautifulSoup(r.text, "html.parser")
-
-        article = soup.find("article")
-        if not article:
-            info(f"Could not find article block for {title}")
-            mark_hostname_issue(
-                Source.initials, "download", "Could not find article block"
-            )
-            return None
-
-        body = article.find("div", class_="card-body")
-        if not body:
-            info(f"Could not find download section for {title}")
-            mark_hostname_issue(
-                Source.initials, "download", "Could not find download section"
-            )
-            return None
-
-        anchors = body.find_all("a", href=True)
-
-    except Exception as e:
-        info(
-            f"Site has been updated. Grabbing download links for {title} not possible! ({e})"
-        )
-        mark_hostname_issue(Source.initials, "download", str(e))
-        return None
-
-    filtered = []
-    for a in anchors:
-        href = a["href"].strip()
-
-        if not href.lower().startswith(("http://", "https://")):
-            continue
-        lower = href.lower()
-        if "imdb.com" in lower or "?ref=" in lower:
-            continue
-        if mirrors and not any(m in href for m in mirrors):
-            continue
-
-        mirror_name = derive_mirror_from_url(href)
-        filtered.append([href, mirror_name])
-
-    # regex fallback if still empty
-    if not filtered:
-        text = body.get_text(separator="\n")
-        urls = re.findall(r'https?://[^\s<>"\']+', text)
-        seen = set()
-        for u in urls:
-            u = u.strip()
-            if u not in seen:
-                seen.add(u)
-                low = u.lower()
-                if (
-                    low.startswith(("http://", "https://"))
-                    and "imdb.com" not in low
-                    and "?ref=" not in low
-                ):
-                    if not mirrors or any(m in u for m in mirrors):
-                        mirror_name = derive_mirror_from_url(u)
-                        filtered.append([u, mirror_name])
-
-    if filtered:
-        clear_hostname_issue(Source.initials)
-    return {"links": filtered} if filtered else None

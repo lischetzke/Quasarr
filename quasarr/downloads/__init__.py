@@ -20,6 +20,7 @@ from quasarr.providers.utils import (
     download_package,
     extract_client_type,
     filter_offline_links,
+    normalize_download_title,
 )
 from quasarr.storage.categories import (
     download_category_exists,
@@ -205,7 +206,7 @@ def process_links(
     links = source_result.get("links", [])
     password = source_result.get("password") or password
     imdb_id = imdb_id or source_result.get("imdb_id")
-    title = source_result.get("title") or title
+    title = normalize_download_title(source_result.get("title") or title)
 
     if not links:
         return fail(
@@ -359,6 +360,7 @@ def download(
         if imdb_id and imdb_id.lower() == "none":
             imdb_id = None
 
+        title = normalize_download_title(title)
         config = shared_state.values["config"]("Hostnames")
 
         # Extract client type (without version) for deterministic hashing

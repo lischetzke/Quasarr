@@ -525,6 +525,18 @@ def setup_packages_routes(app):
                 let slowConnection = false;
                 let refreshTimer = null;
                 let isFetching = false;
+                const SCROLL_STORAGE_KEY = 'quasarr_packages_scroll_y';
+
+                function saveScrollPosition() {{
+                    sessionStorage.setItem(SCROLL_STORAGE_KEY, String(window.scrollY || 0));
+                }}
+
+                function restoreScrollPosition() {{
+                    const saved = Number(sessionStorage.getItem(SCROLL_STORAGE_KEY) || '0');
+                    if (!Number.isFinite(saved)) return;
+
+                    window.scrollTo(0, saved);
+                }}
 
                 async function refreshContent() {{
                     if (refreshPaused) return;
@@ -535,7 +547,7 @@ def setup_packages_routes(app):
                     const warningEl = document.getElementById('slow-warning');
 
                     // Save scroll position before refresh
-                    const scrollY = window.scrollY;
+                    saveScrollPosition();
 
                     // Show warning after 5s if still loading
                     const slowTimer = setTimeout(() => {{
@@ -565,7 +577,8 @@ def setup_packages_routes(app):
                                 container.innerHTML = html;
                                 restoreCollapseState();
                                 // Restore scroll position after content update
-                                window.scrollTo(0, scrollY);
+                                restoreScrollPosition();
+                                requestAnimationFrame(restoreScrollPosition);
                             }}
                         }}
                     }} catch (e) {{
@@ -605,6 +618,8 @@ def setup_packages_routes(app):
 
                 // Initial collapse state setup
                 restoreCollapseState();
+                restoreScrollPosition();
+                window.addEventListener('scroll', saveScrollPosition, {{ passive: true }});
 
                 // Clear status message from URL after display and auto-hide after 5s
                 if (window.location.search.includes('deleted=')) {{

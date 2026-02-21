@@ -105,11 +105,11 @@ class Source(AbstractSearchSource):
                         warn(f"Size not found in article for {title_raw}")
                         continue
                     size_info = size_match.group(1).strip()
-                    size_item = extract_size(size_info)
+                    size_item = _extract_size(size_info)
                     mb = convert_to_mb(size_item)
                     size = mb * 1024 * 1024
 
-                    published = parse_published_datetime(article)
+                    published = _parse_published_datetime(article)
 
                     link = generate_download_link(
                         shared_state,
@@ -256,11 +256,11 @@ class Source(AbstractSearchSource):
                     if not m:
                         debug(f"Size not found in search-article for {title_raw}")
                         continue
-                    size_item = extract_size(m.group(1).strip())
+                    size_item = _extract_size(m.group(1).strip())
                     mb = convert_to_mb(size_item)
                     size = mb * 1024 * 1024
 
-                    published = parse_published_datetime(article)
+                    published = _parse_published_datetime(article)
 
                     link = generate_download_link(
                         shared_state,
@@ -310,7 +310,7 @@ class Source(AbstractSearchSource):
         return releases
 
 
-def extract_size(text):
+def _extract_size(text):
     match = re.match(r"([\d\.]+)\s*([KMGT]B)", text, re.IGNORECASE)
     if match:
         size = match.group(1)
@@ -320,7 +320,7 @@ def extract_size(text):
         raise ValueError(f"Invalid size format: {text}")
 
 
-def parse_published_datetime(article):
+def _parse_published_datetime(article):
     date_box = article.find("div", class_="mr-2 shadow-sm1 text-center")
     mon = date_box.find("small").text.strip()
     day = date_box.find("h4").text.strip()

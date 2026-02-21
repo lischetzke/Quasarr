@@ -4,7 +4,6 @@
 
 import traceback
 import xml.sax.saxutils as sax_utils
-from base64 import urlsafe_b64decode
 from datetime import datetime
 from urllib.parse import parse_qs, urlparse
 from xml.etree import ElementTree
@@ -32,14 +31,14 @@ def setup_arr_routes(app):
     @app.get("/download/")
     def fake_nzb_file():
         payload = request.query.payload
-        decoded_payload = urlsafe_b64decode(payload).decode("utf-8").split("|")
+        decoded_payload = parse_payload(payload)
 
-        title = decoded_payload[0]
-        url = decoded_payload[1]
-        size_mb = decoded_payload[2]
-        password = decoded_payload[3]
-        imdb_id = decoded_payload[4]
-        source_key = decoded_payload[5]
+        title = decoded_payload["title"]
+        url = decoded_payload["url"]
+        size_mb = decoded_payload["size_mb"]
+        password = decoded_payload["password"] or ""
+        imdb_id = decoded_payload["imdb_id"] or ""
+        source_key = decoded_payload["source_key"] or ""
 
         return f'<nzb><file title="{title}" url="{url}" size_mb="{size_mb}" password="{password}" imdb_id="{imdb_id}" source_key="{source_key}"/></nzb>'
 
