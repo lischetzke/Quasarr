@@ -1,16 +1,19 @@
-import os
+import importlib.util
 import pkgutil
 
 
 def get_hostnames():
+    spec = importlib.util.find_spec("quasarr.search.sources")
+    if not spec or not spec.submodule_search_locations:
+        return []
+
     hostnames = []
-
-    for _, module_name, _ in pkgutil.iter_modules([os.path.dirname(__path__[0])]):
-        if module_name == "abstract" or module_name == "helpers":
+    for _, module_name, _ in pkgutil.iter_modules(spec.submodule_search_locations):
+        if module_name == "helpers" or module_name.startswith("_"):
             continue
-
         hostnames.append(module_name)
-    return hostnames
+
+    return sorted(hostnames)
 
 
 def get_login_required_hostnames():

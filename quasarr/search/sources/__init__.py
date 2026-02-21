@@ -10,13 +10,32 @@ from quasarr.providers.log import error, warn
 from quasarr.search.sources.helpers.abstract_source import AbstractSource
 
 _sources = {}
+_source_module_names = []
+
+
+def get_source_module_names() -> list[str]:
+    global _source_module_names
+
+    if _source_module_names:
+        return _source_module_names
+
+    discovered = []
+    for _, module_name, _ in pkgutil.iter_modules(__path__):
+        if module_name == "helpers" or module_name.startswith("_"):
+            continue
+        discovered.append(module_name)
+
+    _source_module_names = sorted(discovered)
+    return _source_module_names
 
 
 def get_sources() -> dict[str, AbstractSource]:
     if not _sources:
-        for _, module_name, _ in pkgutil.iter_modules(__path__):
-            mod = importlib.import_module(f"{__name__}.{module_name}")
-            if module_name == "abstract" or module_name == "helpers":
+        for module_name in get_source_module_names():
+            try:
+                mod = importlib.import_module(f"{__name__}.{module_name}")
+            except Exception as e:
+                error(f"Error importing {module_name}: {e}")
                 continue
 
             if hasattr(mod, "Source"):
@@ -32,5 +51,5 @@ def get_sources() -> dict[str, AbstractSource]:
                         f"Source '{module_name.upper()}.Source' does not implement AbstractSource"
                     )
             else:
-                warn(f"Source '{module_name.upper()}' does not expose a Search class")
+                warn(f"Source '{module_name.upper()}' does not expose a Source class")
     return _sources

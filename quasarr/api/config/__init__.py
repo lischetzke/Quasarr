@@ -200,6 +200,14 @@ def setup_config(app, shared_state):
             name = details["name"]
             emoji = details["emoji"]
             search_sources = get_search_category_sources(cat_id)
+            base_source_category_id = details.get("base_type", cat_id)
+            try:
+                base_source_category_id = int(base_source_category_id)
+            except (ValueError, TypeError):
+                if cat_id >= 100000:
+                    base_source_category_id = ((cat_id - 100000) // 1000) * 1000
+                else:
+                    base_source_category_id = cat_id
             search_sources_str = (
                 ", ".join([s.upper() for s in search_sources])
                 if search_sources
@@ -219,7 +227,7 @@ def setup_config(app, shared_state):
                 )
 
             edit_btn = f"""
-            <button class="btn-primary" onclick='editSearchCategory({cat_id}, "{name}", {search_sources_json})'>Edit</button>
+            <button class="btn-primary" onclick='editSearchCategory({cat_id}, "{name}", {search_sources_json}, {base_source_category_id})'>Edit</button>
             """
 
             search_list_items += f"""
@@ -494,12 +502,13 @@ def setup_config(app, shared_state):
             );
         }}
 
-        function editSearchCategory(catId, name, currentSearchSources) {{
+        function editSearchCategory(catId, name, currentSearchSources, baseCategoryId) {{
             let searchPills = '';
             HOSTNAMES.forEach(source => {{
                 if (SUPPORTED_CATEGORIES_PER_SOURCE[source]) {{
-                    supported_cat_id = catId > 100000 ? catId - 100000 : catId;
-                    const supportsCategory = SUPPORTED_CATEGORIES_PER_SOURCE[source].includes(supported_cat_id);
+                    const parsedBaseCategoryId = parseInt(baseCategoryId, 10);
+                    const categoryForFilter = Number.isNaN(parsedBaseCategoryId) ? catId : parsedBaseCategoryId;
+                    const supportsCategory = SUPPORTED_CATEGORIES_PER_SOURCE[source].includes(categoryForFilter);
                     if (!supportsCategory) return; // Skip sources that don't support this category
                 }}
 

@@ -11,23 +11,7 @@ from quasarr.constants import (
 )
 from quasarr.downloads.linkcrypters.hide import decrypt_links_if_hide
 from quasarr.downloads.packages import get_packages
-from quasarr.downloads.sources.al import get_al_download_links
-from quasarr.downloads.sources.by import get_by_download_links
-from quasarr.downloads.sources.dd import get_dd_download_links
-from quasarr.downloads.sources.dj import get_dj_download_links
-from quasarr.downloads.sources.dl import get_dl_download_links
-from quasarr.downloads.sources.dt import get_dt_download_links
-from quasarr.downloads.sources.dw import get_dw_download_links
-from quasarr.downloads.sources.he import get_he_download_links
-from quasarr.downloads.sources.hs import get_hs_download_links
-from quasarr.downloads.sources.mb import get_mb_download_links
-from quasarr.downloads.sources.nk import get_nk_download_links
-from quasarr.downloads.sources.nx import get_nx_download_links
-from quasarr.downloads.sources.sf import get_sf_download_links
-from quasarr.downloads.sources.sj import get_sj_download_links
-from quasarr.downloads.sources.sl import get_sl_download_links
-from quasarr.downloads.sources.wd import get_wd_download_links
-from quasarr.downloads.sources.wx import get_wx_download_links
+from quasarr.downloads.sources import get_download_source_getters
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.log import info, warn
 from quasarr.providers.notifications import send_discord_message
@@ -41,28 +25,6 @@ from quasarr.storage.categories import (
     download_category_exists,
     get_download_category_mirrors,
 )
-
-# All getters have signature: (shared_state, url, mirrors, title, password)
-_SOURCE_GETTERS = {
-    "al": get_al_download_links,
-    "by": get_by_download_links,
-    "dd": get_dd_download_links,
-    "dj": get_dj_download_links,
-    "dl": get_dl_download_links,
-    "dt": get_dt_download_links,
-    "dw": get_dw_download_links,
-    "he": get_he_download_links,
-    "hs": get_hs_download_links,
-    "mb": get_mb_download_links,
-    "nk": get_nk_download_links,
-    "nx": get_nx_download_links,
-    "sf": get_sf_download_links,
-    "sj": get_sj_download_links,
-    "sl": get_sl_download_links,
-    "wd": get_wd_download_links,
-    "wx": get_wx_download_links,
-}
-
 
 # =============================================================================
 # DETERMINISTIC PACKAGE ID GENERATION
@@ -78,7 +40,7 @@ def generate_deterministic_package_id(title, source_key, client_type, category):
 
     Args:
         title: Release title (e.g., "Movie.Name.2024.1080p.BluRay")
-        source_key: Source identifier/hostname shorthand (e.g., "nx", "dl", "al")
+        source_key: Source identifier/hostname shorthand
         client_type: Client type without version (e.g., "radarr", "sonarr", "lazylibrarian")
         category: Optional category override (e.g., "movies", "tv", "docs")
 
@@ -122,15 +84,7 @@ def detect_crypter(url):
     return None, None
 
 
-def is_junkies_link(url, shared_state):
-    """Check if URL is a junkies (sj/dj) link."""
-    sj = shared_state.values["config"]("Hostnames").get("sj")
-    dj = shared_state.values["config"]("Hostnames").get("dj")
-    url_lower = url.lower()
-    return (sj and sj.lower() in url_lower) or (dj and dj.lower() in url_lower)
-
-
-def classify_links(links, shared_state):
+def classify_links(links):
     """
     Classify links into direct/auto/protected categories.
     Direct = anything that's not a known crypter or junkies link.
@@ -140,8 +94,9 @@ def classify_links(links, shared_state):
 
     for link in links:
         url = link[0]
+        mirror = link[1] if len(link) > 1 else ""
 
-        if is_junkies_link(url, shared_state):
+        if isinstance(mirror, str) and mirror.lower() == "junkies":
             classified["protected"].append(link)
             continue
 
@@ -274,7 +229,7 @@ def process_links(
             reason=f'All verifiable links are offline for "{title}" on {label} - "{source_url}"',
         )
 
-    classified = classify_links(links, shared_state)
+    classified = classify_links(links)
 
     # PRIORITY 1: Direct hoster links
     if classified["direct"]:
@@ -389,7 +344,7 @@ def download(
         size_mb: Size in MB
         password: Archive password
         imdb_id: IMDb ID (optional)
-        source_key: Hostname shorthand from search (e.g., "nx", "dl"). If not provided,
+        source_key: Hostname shorthand from search. If not provided,
                     will be derived from URL matching against configured hostnames.
     """
     package_id = None
@@ -408,22 +363,45 @@ def download(
         detected_source_key = None
 
         mirrors = get_download_category_mirrors(category, lowercase=True)
+        source_getters = get_download_source_getters()
 
-        for key, getter in _SOURCE_GETTERS.items():
+        normalized_source_key = None
+        if source_key and isinstance(source_key, str):
+            normalized_source_key = source_key.lower().strip()
+
+        source_candidates = []
+        if normalized_source_key and normalized_source_key in source_getters:
+            source_candidates.append(
+                (normalized_source_key, source_getters[normalized_source_key], True)
+            )
+
+        for key, getter in source_getters.items():
+            if normalized_source_key and key == normalized_source_key:
+                continue
+            source_candidates.append((key, getter, False))
+
+        for key, getter, from_source_key in source_candidates:
             hostname = config.get(key)
-            if hostname and hostname.lower() in url.lower():
-                try:
-                    # Mirror is None as it is now handled by category settings
-                    source_result = getter(shared_state, url, mirrors, title, password)
-                    if source_result and source_result.get("links"):
-                        clear_hostname_issue(key)
-                except Exception as e:
-                    info(f"Error getting download links from {key.upper()}: {e}")
+            if not from_source_key and not (
+                hostname and hostname.lower() in url.lower()
+            ):
+                continue
+
+            try:
+                # Mirrors are category-driven and passed to each source getter.
+                candidate_result = getter(shared_state, url, mirrors, title, password)
+                if candidate_result and candidate_result.get("links"):
+                    clear_hostname_issue(key)
+                    source_result = candidate_result
+                    label = key.upper()
+                    detected_source_key = key
+                    break
+            except Exception as e:
+                info(f"Error getting download links from {key.upper()}: {e}")
+                if not from_source_key or (
+                    hostname and hostname.lower() in url.lower()
+                ):
                     mark_hostname_issue(key, "download", str(e))
-                    source_result = None
-                label = key.upper()
-                detected_source_key = key
-                break
 
         # No source matched - check if URL is a known crypter directly
         if source_result is None:

@@ -96,9 +96,12 @@ def get_search_categories():
 
 def get_search_category_sources(cat_id):
     """Returns the list of preferred search sources for a search category ID."""
-    if not cat_id:
-        return False, "Category ID is required."
-    cat_id = int(cat_id)
+    if cat_id is None or cat_id == "":
+        return []
+    try:
+        cat_id = int(cat_id)
+    except (ValueError, TypeError):
+        return []
     db = DataBase("categories_search")
     data_str = db.retrieve(str(cat_id))
     if data_str:
@@ -108,6 +111,51 @@ def get_search_category_sources(cat_id):
         except json.JSONDecodeError:
             pass
     return []
+
+
+def get_search_category_base_type(cat_id):
+    """Returns the base category ID for a search category (default or custom)."""
+    if cat_id is None or cat_id == "":
+        return None
+
+    try:
+        cat_id = int(cat_id)
+    except (ValueError, TypeError):
+        return None
+
+    if cat_id in SEARCH_CATEGORIES:
+        return cat_id
+
+    db = DataBase("categories_search")
+    data_str = db.retrieve(str(cat_id))
+    if not data_str:
+        return None
+
+    try:
+        data = json.loads(data_str)
+    except json.JSONDecodeError:
+        return None
+
+    base_type = data.get("base_type")
+    legacy_base_type_map = {
+        "movies": 2000,
+        "music": 3000,
+        "tv": 5000,
+        "books": 7000,
+    }
+
+    if isinstance(base_type, str):
+        if base_type in legacy_base_type_map:
+            return legacy_base_type_map[base_type]
+        try:
+            base_type = int(base_type)
+        except ValueError:
+            return None
+
+    if isinstance(base_type, int) and base_type in SEARCH_CATEGORIES:
+        return base_type
+
+    return None
 
 
 def update_search_category_sources(cat_id: int, sources):
@@ -159,7 +207,7 @@ def add_custom_search_category(base_cat_id: int):
     all_cats = db.retrieve_all_titles() or []
 
     # Base IDs: Movies=2000, Music=3000, TV=5000, Books=7000
-    # Custom IDs: 102000, 103000, 105000, 107000
+    # Custom IDs: 100000 + base category ID (one custom per base)
 
     start_id = 100000 + base_cat_id
 
@@ -175,18 +223,17 @@ def add_custom_search_category(base_cat_id: int):
     if custom_count >= 10:
         return False, "Limit of 10 custom search categories reached."
 
-    # Find next available slot for this specific base type
-    next_id = start_id
-    while next_id in existing_ids:
-        next_id += 10
-
-    # Let's count how many custom categories of this base type exist
-    type_count = 0
+    # Enforce one custom category per base type to keep IDs reversible.
     for eid in existing_ids:
-        if eid >= start_id and eid < start_id + 10000:  # Assuming range won't overlap
-            type_count += 1
+        if start_id <= eid < start_id + 10000:
+            return (
+                False,
+                f"Custom category for base type '{base_cat_info['name']}' already exists.",
+            )
 
-    name = f"Custom {base_cat_info['name']} {type_count + 1}"
+    next_id = start_id
+
+    name = f"Custom {base_cat_info['name']}"
 
     data = {
         "name": name,
