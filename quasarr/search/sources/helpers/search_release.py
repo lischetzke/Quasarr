@@ -11,6 +11,6 @@ class ReleaseDetails(TypedDict):
     source: str
 
 
-class Release(TypedDict):
+class SearchRelease(TypedDict):
     details: ReleaseDetails
     type: str

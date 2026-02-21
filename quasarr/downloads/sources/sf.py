@@ -8,19 +8,17 @@ from datetime import datetime
 import requests
 from bs4 import BeautifulSoup
 
-from quasarr.downloads.sources.helpers.abstract_source import AbstractSource
+from quasarr.downloads.sources.helpers.abstract_source import AbstractDownloadSource
 from quasarr.providers.hostname_issues import mark_hostname_issue
 from quasarr.providers.log import debug, info
 from quasarr.search.sources.sf import parse_mirrors
 
-hostname = "sf"
 
-
-class Source(AbstractSource):
-    initials = hostname
+class Source(AbstractDownloadSource):
+    initials = "sf"
 
     def get_download_links(self, shared_state, url, mirrors, title, password):
-        return _get_sf_download_links(shared_state, url, mirrors, title, password)
+        return _get_sf_download_links(shared_state, url, mirrors, title)
 
 
 def is_last_section_integer(url):
@@ -41,29 +39,29 @@ def resolve_sf_redirect(url, user_agent):
             for resp in r.history:
                 debug(f"Redirected from {resp.url} to {r.url}")
             if "/404.html" in r.url:
-                info(f"SF link redirected to 404 page: {r.url}")
+                info(f"Link redirected to 404 page: {r.url}")
                 return None
             return r.url
         else:
             info(
-                f"SF blocked attempt to resolve {url}. Your IP may be banned. Try again later."
+                f"Blocked attempt to resolve {url}. "
+                "Your IP may be banned. Try again later."
             )
     except Exception as e:
         info(f"Error fetching redirected URL for {url}: {e}")
         mark_hostname_issue(
-            hostname, "download", str(e) if "e" in dir() else "Download error"
+            Source.initials, "download", str(e) if "e" in dir() else "Download error"
         )
     return None
 
 
-def _get_sf_download_links(shared_state, url, mirrors, title, password):
+def _get_sf_download_links(shared_state, url, mirrors, title):
     """
-    KEEP THE SIGNATURE EVEN IF SOME PARAMETERS ARE UNUSED!
 
     SF source handler - resolves redirects and returns filecrypt links.
     """
 
-    sf = shared_state.values["config"]("Hostnames").get("sf")
+    sf = shared_state.values["config"]("Hostnames").get(Source.initials)
     user_agent = shared_state.values["user_agent"]
 
     # Handle external redirect URLs
@@ -178,7 +176,7 @@ def _get_sf_download_links(shared_state, url, mirrors, title, password):
                 group_match = not result_groups.isdisjoint(release_groups)
 
                 if name_match and season_match and resolution_match and group_match:
-                    info(f'Release "{name}" found on SF at: {url}')
+                    info(f'Release "{name}" found at: {url}')
 
                     mirrors_dict = parse_mirrors(f"https://{sf}", details)
 

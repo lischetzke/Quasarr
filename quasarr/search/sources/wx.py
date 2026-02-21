@@ -26,15 +26,15 @@ from quasarr.providers.utils import (
     is_imdb_id,
     is_valid_release,
 )
-from quasarr.search.sources.helpers.abstract_source import AbstractSource
-from quasarr.search.sources.helpers.release import Release
+from quasarr.search.sources.helpers.search_release import SearchRelease
+from quasarr.search.sources.helpers.search_source import AbstractSearchSource
 
 warnings.filterwarnings(
     "ignore", category=XMLParsedAsHTMLWarning
 )  # we dont want to use lxml
 
 
-class Source(AbstractSource):
+class Source(AbstractSearchSource):
     initials = "wx"
     supports_imdb = True
     supports_phrase = False
@@ -42,7 +42,7 @@ class Source(AbstractSource):
 
     def feed(
         self, shared_state: shared_state, start_time: float, search_category: str
-    ) -> list[Release]:
+    ) -> list[SearchRelease]:
         """
         Fetch latest releases from RSS feed.
         """
@@ -161,7 +161,7 @@ class Source(AbstractSource):
         search_string: str = "",
         season: int = None,
         episode: int = None,
-    ) -> list[Release]:
+    ) -> list[SearchRelease]:
         """
         Search using internal API.
         Deduplicates results by fulltitle - each unique release appears only once.
@@ -169,7 +169,7 @@ class Source(AbstractSource):
         releases = []
         host = shared_state.values["config"]("Hostnames").get(self.initials)
 
-        base_category = get_base_search_category_id(search_category)
+        base_search_category = get_base_search_category_id(search_category)
 
         imdb_id = is_imdb_id(search_string)
         if imdb_id:
@@ -206,11 +206,11 @@ class Source(AbstractSource):
             "sortOrder": "desc",
         }
 
-        if base_category == SEARCH_CAT_SHOWS:
+        if base_search_category == SEARCH_CAT_SHOWS:
             params["types"] = "series,anime"
             if search_category == SEARCH_CAT_SHOWS_ANIME:
                 params["types"] = "anime"
-        elif base_category == SEARCH_CAT_MOVIES:
+        elif base_search_category == SEARCH_CAT_MOVIES:
             params["types"] = "movie"
         else:
             warn(f"Unknown search category: {search_category}")

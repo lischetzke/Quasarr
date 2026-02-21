@@ -9,7 +9,7 @@ from urllib.parse import urljoin
 import requests
 from bs4 import BeautifulSoup
 
-from quasarr.downloads.sources.helpers.abstract_source import AbstractSource
+from quasarr.downloads.sources.helpers.abstract_source import AbstractDownloadSource
 from quasarr.providers.cloudflare import (
     flaresolverr_create_session,
     flaresolverr_destroy_session,
@@ -20,14 +20,12 @@ from quasarr.providers.hostname_issues import mark_hostname_issue
 from quasarr.providers.log import debug, info
 from quasarr.providers.utils import is_flaresolverr_available
 
-hostname = "wd"
 
-
-class Source(AbstractSource):
-    initials = hostname
+class Source(AbstractDownloadSource):
+    initials = "wd"
 
     def get_download_links(self, shared_state, url, mirrors, title, password):
-        return _get_wd_download_links(shared_state, url, mirrors, title, password)
+        return _get_wd_download_links(shared_state, url, mirrors, title)
 
 
 def resolve_wd_redirect(shared_state, url, session_id=None):
@@ -43,7 +41,7 @@ def resolve_wd_redirect(shared_state, url, session_id=None):
                     return None
                 return r.url
             else:
-                info(f"WD blocked attempt to resolve {url}. Status: {r.status_code}")
+                info(f"Blocked attempt to resolve {url}. Status: {r.status_code}")
         except Exception as e:
             info(f"FlareSolverr error fetching redirected URL for {url}: {e}")
             # Fallback to requests if FlareSolverr fails?
@@ -69,26 +67,26 @@ def resolve_wd_redirect(shared_state, url, session_id=None):
             # WD usually redirects. If we get 200 OK but same URL, it might be a block page or direct link?
             # The original code assumed if no history -> blocked.
             # But if it's a direct link, history is empty.
-            # Let's trust the original logic: "WD blocked attempt..."
+            # Keep the original behavior: no redirect history is treated as blocked.
             info(
-                f"WD blocked attempt to resolve {url}. Your IP may be banned. Try again later."
+                f"Blocked attempt to resolve {url}. "
+                "Your IP may be banned. Try again later."
             )
     except Exception as e:
         info(f"Error fetching redirected URL for {url}: {e}")
         mark_hostname_issue(
-            hostname, "download", str(e) if "e" in dir() else "Download error"
+            Source.initials, "download", str(e) if "e" in dir() else "Download error"
         )
     return None
 
 
-def _get_wd_download_links(shared_state, url, mirrors, title, password):
+def _get_wd_download_links(shared_state, url, mirrors, title):
     """
-    KEEP THE SIGNATURE EVEN IF SOME PARAMETERS ARE UNUSED!
 
     WD source handler - resolves redirects and returns protected download links.
     """
 
-    wd = shared_state.values["config"]("Hostnames").get("wd")
+    wd = shared_state.values["config"]("Hostnames").get(Source.initials)
 
     # Try normal request first
     text = None
@@ -107,9 +105,7 @@ def _get_wd_download_links(shared_state, url, mirrors, title, password):
     except Exception as e:
         # If blocked or failed, try FlareSolverr
         if is_flaresolverr_available(shared_state):
-            debug(
-                f"Encountered Cloudflare on {hostname} download. Trying FlareSolverr..."
-            )
+            debug("Encountered Cloudflare on download. Trying FlareSolverr...")
             # Create a temporary FlareSolverr session for this download attempt
             session_id = str(uuid.uuid4())
             created_session = flaresolverr_create_session(shared_state, session_id)
@@ -126,7 +122,7 @@ def _get_wd_download_links(shared_state, url, mirrors, title, password):
                 if r.status_code == 403 or is_cloudflare_challenge(r.text):
                     info("Could not bypass Cloudflare protection with FlareSolverr!")
                     mark_hostname_issue(
-                        hostname, "download", "Cloudflare challenge failed"
+                        Source.initials, "download", "Cloudflare challenge failed"
                     )
                     if session_id:
                         flaresolverr_destroy_session(shared_state, session_id)
@@ -134,21 +130,22 @@ def _get_wd_download_links(shared_state, url, mirrors, title, password):
                 text = r.text
                 status_code = r.status_code
             except RuntimeError as fs_err:
-                info(f"WD access failed via FlareSolverr: {fs_err}")
+                info(f"Access failed via FlareSolverr: {fs_err}")
                 if session_id:
                     flaresolverr_destroy_session(shared_state, session_id)
                 return {"links": [], "imdb_id": None}
         else:
             info(
-                f"WD site has been updated or is protected. Grabbing download links for {title} not possible! ({e})"
+                f"Site has been updated or is protected. "
+                f"Grabbing download links for {title} not possible! ({e})"
             )
-            mark_hostname_issue(hostname, "download", str(e))
+            mark_hostname_issue(Source.initials, "download", str(e))
             return {"links": [], "imdb_id": None}
 
     try:
         if status_code and status_code >= 400:
             mark_hostname_issue(
-                hostname, "download", f"Download error: {str(status_code)}"
+                Source.initials, "download", f"Download error: {str(status_code)}"
             )
 
         soup = BeautifulSoup(text, "html.parser")
@@ -170,7 +167,8 @@ def _get_wd_download_links(shared_state, url, mirrors, title, password):
         )
         if not header:
             info(
-                f"WD Downloads section not found. Grabbing download links for {title} not possible!"
+                "Downloads section not found. "
+                f"Grabbing download links for {title} not possible!"
             )
             return {"links": [], "imdb_id": None}
 
@@ -215,7 +213,8 @@ def _get_wd_download_links(shared_state, url, mirrors, title, password):
                     results.append([resolved, hoster])
         except Exception as e:
             info(
-                f"WD site has been updated. Parsing download links for {title} not possible! Error: {e}"
+                "Site has been updated. "
+                f"Parsing download links for {title} not possible! Error: {e}"
             )
 
         return {
@@ -225,7 +224,8 @@ def _get_wd_download_links(shared_state, url, mirrors, title, password):
 
     except Exception as e:
         info(
-            f"WD site has been updated. Grabbing download links for {title} not possible! Error: {e}"
+            "Site has been updated. "
+            f"Grabbing download links for {title} not possible! Error: {e}"
         )
         return {"links": [], "imdb_id": None}
     finally:

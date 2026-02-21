@@ -6,18 +6,16 @@ import requests
 from bs4 import BeautifulSoup
 
 from quasarr.constants import AFFILIATE_REGEX, FILECRYPT_REGEX
-from quasarr.downloads.sources.helpers.abstract_source import AbstractSource
+from quasarr.downloads.sources.helpers.abstract_source import AbstractDownloadSource
 from quasarr.providers.hostname_issues import mark_hostname_issue
 from quasarr.providers.log import debug, info
 
-hostname = "hs"
 
-
-class Source(AbstractSource):
-    initials = hostname
+class Source(AbstractDownloadSource):
+    initials = "hs"
 
     def get_download_links(self, shared_state, url, mirrors, title, password):
-        return _get_hs_download_links(shared_state, url, mirrors, title, password)
+        return _get_hs_download_links(shared_state, url, mirrors, title)
 
 
 def normalize_mirror_name(name):
@@ -34,9 +32,8 @@ def normalize_mirror_name(name):
     return name_lower
 
 
-def _get_hs_download_links(shared_state, url, mirrors, title, password):
+def _get_hs_download_links(shared_state, url, mirrors, title):
     """
-    KEEP THE SIGNATURE EVEN IF SOME PARAMETERS ARE UNUSED!
 
     HS handler - extracts filecrypt download links from release pages.
     The site structure pairs affiliate links (indicating mirror) with filecrypt links.
@@ -127,7 +124,7 @@ def _get_hs_download_links(shared_state, url, mirrors, title, password):
             debug(f"No filecrypt links found on {url} for {title}")
 
     except Exception as e:
-        info(f"Error loading HS download links: {e}")
-        mark_hostname_issue(hostname, "download", str(e))
+        info(f"Error loading download links: {e}")
+        mark_hostname_issue(Source.initials, "download", str(e))
 
     return {"links": links}

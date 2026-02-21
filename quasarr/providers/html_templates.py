@@ -46,6 +46,7 @@ def render_centered_html(inner_content, footer_content=""):
                 --error-color: #dc3545;
                 --error-bg: #f8d7da;
                 --error-border: #f1aeb5;
+                --custom-category-bg: #eef2ff;
             }
             @media (prefers-color-scheme: dark) {
                 :root {
@@ -70,6 +71,7 @@ def render_centered_html(inner_content, footer_content=""):
                     --error-color: #fc8181;
                     --error-bg: #3d2d2d;
                     --error-border: #c53030;
+                    --custom-category-bg: #313f5c;
                 }
             }
             /* Info box styling */

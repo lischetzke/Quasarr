@@ -1,10 +1,10 @@
 from abc import ABC, abstractmethod
 
 from quasarr.providers import shared_state
-from quasarr.search.sources.helpers.release import Release
+from quasarr.search.sources.helpers.search_release import SearchRelease
 
 
-class AbstractSource(ABC):
+class AbstractSearchSource(ABC):
     @property
     @abstractmethod
     def initials(self) -> str:
@@ -38,7 +38,7 @@ class AbstractSource(ABC):
         search_string: str = "",
         season: int = None,
         episode: int = None,
-    ) -> list[Release]:
+    ) -> list[SearchRelease]:
         pass
 
     @abstractmethod
@@ -47,5 +47,5 @@ class AbstractSource(ABC):
         shared_state: shared_state,
         start_time: float,
         search_category: str,
-    ) -> list[Release]:
+    ) -> list[SearchRelease]:
         pass

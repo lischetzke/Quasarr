@@ -4,8 +4,10 @@
 
 from abc import ABC, abstractmethod
 
+from quasarr.downloads.sources.helpers.download_release import DownloadRelease
 
-class AbstractSource(ABC):
+
+class AbstractDownloadSource(ABC):
     @property
     @abstractmethod
     def initials(self) -> str:
@@ -19,5 +21,5 @@ class AbstractSource(ABC):
         mirrors: list[str],
         title: str,
         password: str,
-    ) -> dict:
+    ) -> DownloadRelease:
         pass

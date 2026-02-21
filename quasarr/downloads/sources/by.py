@@ -10,28 +10,25 @@ from urllib.parse import urlparse
 import requests
 from bs4 import BeautifulSoup
 
-from quasarr.downloads.sources.helpers.abstract_source import AbstractSource
+from quasarr.downloads.sources.helpers.abstract_source import AbstractDownloadSource
 from quasarr.providers.hostname_issues import mark_hostname_issue
 from quasarr.providers.log import debug, info
 
-hostname = "by"
 
-
-class Source(AbstractSource):
-    initials = hostname
+class Source(AbstractDownloadSource):
+    initials = "by"
 
     def get_download_links(self, shared_state, url, mirrors, title, password):
-        return _get_by_download_links(shared_state, url, mirrors, title, password)
+        return _get_by_download_links(shared_state, url, mirrors, title)
 
 
-def _get_by_download_links(shared_state, url, mirrors, title, password):
+def _get_by_download_links(shared_state, url, mirrors, title):
     """
-    KEEP THE SIGNATURE EVEN IF SOME PARAMETERS ARE UNUSED!
 
     BY source handler - fetches protected download links from BY iframes.
     """
 
-    by = shared_state.values["config"]("Hostnames").get("by")
+    by = shared_state.values["config"]("Hostnames").get(Source.initials)
     headers = {
         "User-Agent": shared_state.values["user_agent"],
     }
@@ -61,7 +58,7 @@ def _get_by_download_links(shared_state, url, mirrors, title, password):
                 return rq.text, url
             except Exception as e:
                 info(f"Error fetching iframe URL: {url}")
-                mark_hostname_issue(hostname, "download", str(e))
+                mark_hostname_issue(Source.initials, "download", str(e))
                 return None, url
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
@@ -101,7 +98,7 @@ def _get_by_download_links(shared_state, url, mirrors, title, password):
             url_hosters.append((href, link_hostname))
 
         def resolve_redirect(href_hostname):
-            href, hostname = href_hostname
+            href, _hostname = href_hostname
             try:
                 rq = requests.get(
                     href, headers=headers, timeout=10, allow_redirects=True
@@ -115,7 +112,9 @@ def _get_by_download_links(shared_state, url, mirrors, title, password):
             except Exception as e:
                 info(f"Error resolving link: {e}")
                 mark_hostname_issue(
-                    hostname, "download", str(e) if "e" in dir() else "Download error"
+                    Source.initials,
+                    "download",
+                    str(e) if "e" in dir() else "Download error",
                 )
                 return None
 
@@ -139,9 +138,9 @@ def _get_by_download_links(shared_state, url, mirrors, title, password):
                     links.append([resolved_url, link_hostname])
 
     except Exception as e:
-        info(f"Error loading BY download links: {e}")
+        info(f"Error loading download links: {e}")
         mark_hostname_issue(
-            hostname, "download", str(e) if "e" in dir() else "Download error"
+            Source.initials, "download", str(e) if "e" in dir() else "Download error"
         )
 
     return {"links": links}

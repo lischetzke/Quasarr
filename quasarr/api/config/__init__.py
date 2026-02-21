@@ -17,7 +17,10 @@ from quasarr.constants import (
 )
 from quasarr.providers.html_templates import render_button, render_form
 from quasarr.providers.log import info
-from quasarr.providers.utils import has_source_capability_for_category
+from quasarr.providers.utils import (
+    get_search_capability_category,
+    has_source_capability_for_category,
+)
 from quasarr.search.sources import get_sources
 from quasarr.search.sources.helpers import get_hostnames
 from quasarr.storage.categories import (
@@ -26,11 +29,10 @@ from quasarr.storage.categories import (
     delete_download_category,
     delete_search_category,
     get_download_categories,
-    get_download_category_emoji,
     get_download_category_mirrors,
     get_search_categories,
     get_search_category_sources,
-    update_download_category_emoji,
+    get_search_category_whitelist_owner,
     update_download_category_mirrors,
     update_search_category_sources,
 )
@@ -140,14 +142,33 @@ def setup_config(app, shared_state):
         response.set_header("Expires", "0")
 
         categories = get_download_categories()
+        default_download_categories = [
+            cat for cat in DOWNLOAD_CATEGORIES if cat in categories
+        ]
+        custom_download_categories = sorted(
+            [cat for cat in categories if cat not in DOWNLOAD_CATEGORIES]
+        )
+        ordered_download_categories = (
+            default_download_categories + custom_download_categories
+        )
+        can_add_download_category = len(custom_download_categories) < 10
 
         # Generate list items for Download Categories
         download_list_items = ""
-        for cat in categories:
-            emoji = get_download_category_emoji(cat)
+        for cat in ordered_download_categories:
+            emoji = (
+                DOWNLOAD_CATEGORIES[cat]["emoji"]
+                if cat in DOWNLOAD_CATEGORIES
+                else "📁"
+            )
             mirrors = get_download_category_mirrors(cat)
             mirrors_str = ", ".join(mirrors) if mirrors else "All"
             mirrors_json = json.dumps(mirrors)
+            item_css_class = (
+                "category-item custom-category-item"
+                if cat not in DOWNLOAD_CATEGORIES
+                else "category-item"
+            )
 
             delete_btn = ""
             # Prevent deleting default categories
@@ -158,11 +179,11 @@ def setup_config(app, shared_state):
 
             # Combined edit button
             edit_btn = f"""
-            <button class="btn-primary" onclick='editCategory("{cat}", "{emoji}", {mirrors_json})'>Edit</button>
+            <button class="btn-primary" onclick='editCategory("{cat}", {mirrors_json})'>Edit</button>
             """
 
             download_list_items += f"""
-            <div class="category-item">
+            <div class="{item_css_class}">
                 <span class="category-emoji">{emoji}</span>
                 <div class="category-details">
                     <span class="category-name">{cat}</span>
@@ -194,21 +215,59 @@ def setup_config(app, shared_state):
             if has_source_capability_for_category(cat_id, supported_categories_union)
         ]
 
-        base_category_options = ""
+        default_search_cats = []
+        custom_search_cats = []
+        grouped_default_subcategories = {}
 
         for cat_id, details in sorted_search_cats:
             cat_id = int(cat_id)
+            if cat_id >= 100000:
+                custom_search_cats.append((cat_id, details))
+                continue
+
+            owner_cat_id = get_search_category_whitelist_owner(cat_id)
+            if owner_cat_id != cat_id:
+                grouped_default_subcategories.setdefault(owner_cat_id, []).append(
+                    (cat_id, details)
+                )
+                continue
+
+            default_search_cats.append((cat_id, details))
+
+        default_search_cats.sort(key=lambda x: int(x[0]))
+        custom_search_cats.sort(key=lambda x: int(x[0]))
+        for owner_cat_id in grouped_default_subcategories:
+            grouped_default_subcategories[owner_cat_id].sort(key=lambda x: int(x[0]))
+
+        used_custom_base_types = set()
+        for custom_cat_id, custom_details in custom_search_cats:
+            custom_base_type = custom_details.get("base_type")
+            try:
+                used_custom_base_types.add(int(custom_base_type))
+            except (TypeError, ValueError):
+                if int(custom_cat_id) >= 100000:
+                    used_custom_base_types.add(int(custom_cat_id) - 100000)
+
+        selectable_base_categories = [
+            (int(cat_id), details)
+            for cat_id, details in sorted_search_cats
+            if int(cat_id) < 100000 and int(cat_id) not in used_custom_base_types
+        ]
+        base_category_options = "".join(
+            [
+                f'<option value="{int(cat_id)}">{details["name"]} ({int(cat_id)})</option>'
+                for cat_id, details in selectable_base_categories
+            ]
+        )
+        can_add_search_category = len(custom_search_cats) < 10 and bool(
+            selectable_base_categories
+        )
+
+        for cat_id, details in default_search_cats:
             name = details["name"]
             emoji = details["emoji"]
             search_sources = get_search_category_sources(cat_id)
-            base_source_category_id = details.get("base_type", cat_id)
-            try:
-                base_source_category_id = int(base_source_category_id)
-            except (ValueError, TypeError):
-                if cat_id >= 100000:
-                    base_source_category_id = ((cat_id - 100000) // 1000) * 1000
-                else:
-                    base_source_category_id = cat_id
+            base_source_category_id = get_search_capability_category(cat_id) or cat_id
             search_sources_str = (
                 ", ".join([s.upper() for s in search_sources])
                 if search_sources
@@ -216,27 +275,78 @@ def setup_config(app, shared_state):
             )
             search_sources_json = json.dumps(search_sources)
 
-            delete_btn = ""
-            # Allow deleting custom categories (ID >= 100000)
-            if cat_id >= 100000:
-                delete_btn = f"""
-                <button class="btn-danger" onclick="deleteSearchCategory('{cat_id}')">Delete</button>
-                """
-            else:
-                base_category_options += (
-                    f'<option value="{cat_id}">{name} ({cat_id})</option>'
-                )
-
             edit_btn = f"""
             <button class="btn-primary" onclick='editSearchCategory({cat_id}, "{name}", {search_sources_json}, {base_source_category_id})'>Edit</button>
             """
+
+            inherited_subcats = grouped_default_subcategories.get(cat_id, [])
+            category_pills = [f"{name} ({cat_id})"] + [
+                f"{sub_details['name']} ({sub_cat_id})"
+                for sub_cat_id, sub_details in inherited_subcats
+            ]
+            category_pills_html = "".join(
+                [
+                    f'<span class="category-badge">{pill}</span>'
+                    for pill in category_pills
+                ]
+            )
 
             search_list_items += f"""
             <div class="category-item">
                 <span class="category-emoji">{emoji}</span>
                 <div class="category-details">
-                    <span class="category-name">{name} ({cat_id})</span>
+                    <span class="category-name">{name}</span>
                     <span class="category-mirrors">Hostnames: {search_sources_str}</span>
+                    <div class="category-subcategories">
+                        {category_pills_html}
+                    </div>
+                </div>
+                <div class="category-actions">
+                    {edit_btn}
+                </div>
+            </div>
+            """
+
+        for cat_id, details in custom_search_cats:
+            cat_id = int(cat_id)
+            name = details["name"]
+            emoji = details["emoji"]
+            search_sources = get_search_category_sources(cat_id)
+            base_source_category_id = get_search_capability_category(cat_id) or cat_id
+            search_sources_str = (
+                ", ".join([s.upper() for s in search_sources])
+                if search_sources
+                else "All"
+            )
+            search_sources_json = json.dumps(search_sources)
+
+            delete_btn = f"""
+            <button class="btn-danger" onclick="deleteSearchCategory('{cat_id}')">Delete</button>
+            """
+            edit_btn = f"""
+            <button class="btn-primary" onclick='editSearchCategory({cat_id}, "{name}", {search_sources_json}, {base_source_category_id})'>Edit</button>
+            """
+
+            custom_base_type = details.get("base_type")
+            try:
+                custom_base_type = int(custom_base_type)
+            except (TypeError, ValueError):
+                custom_base_type = get_search_capability_category(cat_id) or cat_id
+
+            custom_pills = [f"Custom ({cat_id} -> {custom_base_type})"]
+            custom_pills_html = "".join(
+                [f'<span class="category-badge">{pill}</span>' for pill in custom_pills]
+            )
+
+            search_list_items += f"""
+            <div class="category-item custom-category-item">
+                <span class="category-emoji">{emoji}</span>
+                <div class="category-details">
+                    <span class="category-name">{name}</span>
+                    <span class="category-mirrors">Hostnames: {search_sources_str}</span>
+                    <div class="category-subcategories">
+                        {custom_pills_html}
+                    </div>
                 </div>
                 <div class="category-actions">
                     {delete_btn}
@@ -254,6 +364,31 @@ def setup_config(app, shared_state):
             for source in get_sources().values()
         }
 
+        download_add_form_html = ""
+        if can_add_download_category:
+            download_add_form_html = """
+            <div class="add-category-form category-list">
+                <div class="category-item">
+                    <input type="text" id="newCategoryName" placeholder="New category name (a-z, 0-9, _)" pattern="[a-z0-9_]+" title="Lowercase letters, numbers and underscores only">
+                    <button class="btn-primary" onclick="addCategory()">Add</button>
+                </div>
+            </div>
+            """
+
+        search_add_form_html = ""
+        if can_add_search_category:
+            search_add_form_html = f"""
+            <div class="add-category-form category-list">
+                <div class="category-item">
+                    <select id="newSearchCategoryBase" style="flex: 1;">
+                        <option value="" disabled selected>Select Base Category Type</option>
+                        {base_category_options}
+                    </select>
+                    <button class="btn-primary" onclick="addSearchCategory()">Add Custom Category</button>
+                </div>
+            </div>
+            """
+
         form_html = f"""
         <style>
             .category-list {{
@@ -261,8 +396,6 @@ def setup_config(app, shared_state):
                 flex-direction: column;
                 gap: 0.5rem;
                 margin-bottom: 1.5rem;
-                max-height: 380px;
-                overflow-y: auto;
                 border: 1px solid var(--border-color, #dee2e6);
                 border-radius: 0.5rem;
                 padding: 0.5rem;
@@ -274,6 +407,9 @@ def setup_config(app, shared_state):
                 background: var(--code-bg, #f8f9fa);
                 border-radius: 0.5rem;
                 gap: 1rem;
+            }}
+            .custom-category-item {{
+                background: var(--custom-category-bg, #eef2ff);
             }}
             .category-emoji {{
                 font-size: 1.5em;
@@ -293,6 +429,26 @@ def setup_config(app, shared_state):
                 font-size: 0.85em;
                 color: var(--text-muted);
             }}
+            .category-subnote {{
+                font-size: 0.82em;
+                color: var(--text-muted);
+                margin-top: 0.25rem;
+            }}
+            .category-subcategories {{
+                margin-top: 0.35rem;
+                display: flex;
+                flex-wrap: wrap;
+                gap: 0.35rem;
+                align-items: center;
+                justify-content: center;
+            }}
+            .category-badge {{
+                font-size: 0.78em;
+                border: 1px solid var(--border-color, #dee2e6);
+                border-radius: 999px;
+                padding: 0.15rem 0.5rem;
+                background: var(--card-bg, #ffffff);
+            }}
             .category-actions {{
                 display: flex;
                 gap: 0.5rem;
@@ -311,11 +467,6 @@ def setup_config(app, shared_state):
             }}
             .add-category-form input[type="text"] {{
                 flex: 1;
-            }}
-            .emoji-input {{
-                width: 4em !important;
-                text-align: center;
-                flex: 0 0 auto !important;
             }}
             .warning-box {{
                 background: var(--error-bg);
@@ -385,29 +536,15 @@ def setup_config(app, shared_state):
             {download_list_items}
         </div>
 
-        <div class="add-category-form category-list">
-            <div class="category-item">
-                <input type="text" id="newCategoryEmoji" class="emoji-input" placeholder="📁" title="Emoji (single char)">
-                <input type="text" id="newCategoryName" placeholder="New category name (a-z, 0-9, _)" pattern="[a-z0-9_]+" title="Lowercase letters, numbers and underscores only">
-                <button class="btn-primary" onclick="addCategory()">Add</button>
-            </div>
-        </div>
+        {download_add_form_html}
 
         <h3>Search Categories</h3>
         <p class="description">Manage hostname whitelists for Newznab search categories.</p>
         <div class="category-list" id="searchCategoryList">
             {search_list_items}
         </div>
-        
-        <div class="add-category-form category-list">
-            <div class="category-item">
-                <select id="newSearchCategoryBase" style="flex: 1;">
-                    <option value="" disabled selected>Select Base Category Type</option>
-                    {base_category_options}
-                </select>
-                <button class="btn-primary" onclick="addSearchCategory()">Add Custom Category</button>
-            </div>
-        </div>
+
+        {search_add_form_html}
 
         <p>{render_button("Back", "secondary", {"onclick": "location.href='/'"})}</p>
 
@@ -419,16 +556,14 @@ def setup_config(app, shared_state):
 
         function addCategory() {{
             const nameInput = document.getElementById('newCategoryName');
-            const emojiInput = document.getElementById('newCategoryEmoji');
             const name = nameInput.value.trim();
-            const emoji = emojiInput.value.trim() || '📁';
             
             if (!name) return;
             
             fetch('/api/categories', {{
                 method: 'POST',
                 headers: {{ 'Content-Type': 'application/json' }},
-                body: JSON.stringify({{ name: name, emoji: emoji }})
+                body: JSON.stringify({{ name: name }})
             }})
             .then(response => response.json())
             .then(data => {{
@@ -467,7 +602,7 @@ def setup_config(app, shared_state):
             }});
         }}
 
-        function editCategory(name, currentEmoji, currentMirrors) {{
+        function editCategory(name, currentMirrors) {{
             let pills = '';
             ALL_HOSTERS.forEach(hoster => {{
                 const isChecked = currentMirrors.includes(hoster);
@@ -482,11 +617,7 @@ def setup_config(app, shared_state):
                          '</label>';
             }});
 
-            const content = '<div style="margin-bottom: 1.5rem; border-bottom: 1px solid var(--border-color); padding-bottom: 1rem;">' +
-                            '<h4>Category-Emoji:</h4>' +
-                            '<input type="text" id="editEmojiInput" value="' + currentEmoji + '" maxlength="1" style="font-size: 1em; width: 4em; text-align: center; margin: 0.5rem auto; display: block;">' +
-                            '</div>' +
-                            '<h4>Mirror-Whitelist:</h4>' +
+            const content = '<h4>Mirror-Whitelist:</h4>' +
                             '<div class="warning-box">' +
                             '<strong>⚠️ Warning:</strong><br>This does not affect search results.<br>' +
                             'If specific mirrors are set, downloads will fail unless the release contains them.' +
@@ -538,9 +669,6 @@ def setup_config(app, shared_state):
         }}
 
         function performEditCategory(name) {{
-            const emojiInput = document.getElementById('editEmojiInput');
-            const emoji = emojiInput.value.trim() || '📁';
-            
             const selectedMirrors = [];
             document.querySelectorAll('.mirror-checkbox:checked').forEach(cb => {{
                 selectedMirrors.push(cb.value);
@@ -548,23 +676,10 @@ def setup_config(app, shared_state):
             
             closeModal();
             
-            // Update emoji first, then mirrors
-            fetch('/api/categories/' + name + '/emoji', {{
+            fetch('/api/categories/' + name + '/mirrors', {{
                 method: 'POST',
                 headers: {{ 'Content-Type': 'application/json' }},
-                body: JSON.stringify({{ emoji: emoji }})
-            }})
-            .then(response => response.json())
-            .then(data => {{
-                if (data.success) {{
-                    return fetch('/api/categories/' + name + '/mirrors', {{
-                        method: 'POST',
-                        headers: {{ 'Content-Type': 'application/json' }},
-                        body: JSON.stringify({{ mirrors: selectedMirrors }})
-                    }});
-                }} else {{
-                    throw new Error(data.message);
-                }}
+                body: JSON.stringify({{ mirrors: selectedMirrors }})
             }})
             .then(response => response.json())
             .then(data => {{
@@ -664,8 +779,7 @@ def setup_config(app, shared_state):
         try:
             data = request.json
             name = data.get("name")
-            emoji = data.get("emoji", "📁")
-            success, message = add_download_category(name, emoji)
+            success, message = add_download_category(name)
             return {"success": success, "message": message}
         except Exception as e:
             return {"success": False, "message": str(e)}
@@ -677,17 +791,6 @@ def setup_config(app, shared_state):
             data = request.json
             base_type = data.get("base_type")
             success, message = add_custom_search_category(base_type)
-            return {"success": success, "message": message}
-        except Exception as e:
-            return {"success": False, "message": str(e)}
-
-    @app.post("/api/categories/<name>/emoji")
-    def update_category_emoji_api(name):
-        response.content_type = "application/json"
-        try:
-            data = request.json
-            emoji = data.get("emoji", "📁")
-            success, message = update_download_category_emoji(name, emoji)
             return {"success": success, "message": message}
         except Exception as e:
             return {"success": False, "message": str(e)}

@@ -8,18 +8,16 @@ from urllib.parse import urlparse
 import requests
 from bs4 import BeautifulSoup
 
-from quasarr.downloads.sources.helpers.abstract_source import AbstractSource
+from quasarr.downloads.sources.helpers.abstract_source import AbstractDownloadSource
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.log import info
 
-hostname = "dt"
 
-
-class Source(AbstractSource):
-    initials = hostname
+class Source(AbstractDownloadSource):
+    initials = "dt"
 
     def get_download_links(self, shared_state, url, mirrors, title, password):
-        return _get_dt_download_links(shared_state, url, mirrors, title, password)
+        return _get_dt_download_links(shared_state, url, mirrors, title)
 
 
 def derive_mirror_from_url(url):
@@ -36,9 +34,8 @@ def derive_mirror_from_url(url):
         return "unknown"
 
 
-def _get_dt_download_links(shared_state, url, mirrors, title, password):
+def _get_dt_download_links(shared_state, url, mirrors, title):
     """
-    KEEP THE SIGNATURE EVEN IF SOME PARAMETERS ARE UNUSED!
 
     DT source handler - returns plain download links.
     """
@@ -53,23 +50,27 @@ def _get_dt_download_links(shared_state, url, mirrors, title, password):
 
         article = soup.find("article")
         if not article:
-            info(f"Could not find article block on DT page for {title}")
-            mark_hostname_issue(hostname, "download", "Could not find article block")
+            info(f"Could not find article block for {title}")
+            mark_hostname_issue(
+                Source.initials, "download", "Could not find article block"
+            )
             return None
 
         body = article.find("div", class_="card-body")
         if not body:
             info(f"Could not find download section for {title}")
-            mark_hostname_issue(hostname, "download", "Could not find download section")
+            mark_hostname_issue(
+                Source.initials, "download", "Could not find download section"
+            )
             return None
 
         anchors = body.find_all("a", href=True)
 
     except Exception as e:
         info(
-            f"DT site has been updated. Grabbing download links for {title} not possible! ({e})"
+            f"Site has been updated. Grabbing download links for {title} not possible! ({e})"
         )
-        mark_hostname_issue(hostname, "download", str(e))
+        mark_hostname_issue(Source.initials, "download", str(e))
         return None
 
     filtered = []
@@ -107,5 +108,5 @@ def _get_dt_download_links(shared_state, url, mirrors, title, password):
                         filtered.append([u, mirror_name])
 
     if filtered:
-        clear_hostname_issue(hostname)
+        clear_hostname_issue(Source.initials)
     return {"links": filtered} if filtered else None

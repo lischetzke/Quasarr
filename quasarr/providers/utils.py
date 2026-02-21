@@ -550,6 +550,48 @@ def get_base_search_category_id(cat_id):
     return None
 
 
+def get_search_behavior_category(cat_id):
+    """
+    Resolve the effective category behavior for search execution/filtering.
+
+    - Default categories return themselves.
+    - Custom categories (100000+) return their stored base_type when available.
+      This allows custom categories derived from subcategories (e.g. 2040/5070)
+      to behave exactly like those categories except for whitelist ownership.
+    """
+    try:
+        cat_id = int(cat_id)
+    except (ValueError, TypeError):
+        return None
+
+    if cat_id < 100000:
+        return cat_id
+
+    db = DataBase("categories_search")
+    data_str = db.retrieve(str(cat_id))
+    if data_str:
+        try:
+            data = json.loads(data_str)
+            base_type = data.get("base_type")
+            if isinstance(base_type, str):
+                try:
+                    base_type = int(base_type)
+                except ValueError:
+                    base_type = None
+            if isinstance(base_type, int) and base_type in SEARCH_CATEGORIES:
+                return base_type
+        except json.JSONDecodeError:
+            pass
+
+    # Legacy fallback for IDs created as 100000 + category_id.
+    legacy_base = cat_id - 100000
+    if legacy_base in SEARCH_CATEGORIES:
+        return legacy_base
+
+    # Final fallback to canonical base type.
+    return get_base_search_category_id(cat_id)
+
+
 SEARCH_SUBCATEGORY_CAPABILITY_BASE = {
     SEARCH_CAT_MOVIES_HD: SEARCH_CAT_MOVIES,
     SEARCH_CAT_MOVIES_4K: SEARCH_CAT_MOVIES,
@@ -581,15 +623,10 @@ def get_search_capability_category(cat_id):
     - Quality/format subcategories map to their base category capability.
     - Custom categories map to their resolved base category.
     """
-    try:
-        cat_id = int(cat_id)
-    except (TypeError, ValueError):
+    behavior_category = get_search_behavior_category(cat_id)
+    if behavior_category is None:
         return None
-
-    if cat_id >= 100000:
-        return get_base_search_category_id(cat_id)
-
-    return SEARCH_SUBCATEGORY_CAPABILITY_BASE.get(cat_id, cat_id)
+    return SEARCH_SUBCATEGORY_CAPABILITY_BASE.get(behavior_category, behavior_category)
 
 
 def has_source_capability_for_category(cat_id, supported_categories):
@@ -621,23 +658,22 @@ def release_matches_search_category(search_category, release_title):
     Return True when a release title matches the requested subcategory rules.
     Categories without title filters are accepted as-is.
     """
-    try:
-        search_category = int(search_category)
-    except (TypeError, ValueError):
+    behavior_category = get_search_behavior_category(search_category)
+    if behavior_category is None:
         return True
 
     normalized_title = _normalize_release_title_for_category_match(release_title)
 
     # 4K categories: require explicit 4K signal (2160/4k), or UHD without lower-res tags.
     # This prevents false positives like "1080p ... UHD ...".
-    if search_category in (SEARCH_CAT_MOVIES_4K, SEARCH_CAT_SHOWS_4K):
+    if behavior_category in (SEARCH_CAT_MOVIES_4K, SEARCH_CAT_SHOWS_4K):
         if _STRONG_4K_PATTERN.search(normalized_title):
             return True
         if not _UHD_PATTERN.search(normalized_title):
             return False
         return not bool(_HD_RESOLUTION_PATTERN.search(normalized_title))
 
-    pattern = _SEARCH_SUBCATEGORY_TITLE_FILTERS.get(search_category)
+    pattern = _SEARCH_SUBCATEGORY_TITLE_FILTERS.get(behavior_category)
     if not pattern:
         return True
     return bool(pattern.search(normalized_title))

@@ -5,14 +5,13 @@
 import json
 import re
 
-import emoji
-
 from quasarr.constants import (
     DOWNLOAD_CATEGORIES,
+    SEARCH_CAT_SHOWS_ANIME,
     SEARCH_CATEGORIES,
 )
 
-from ..providers.log import debug, info
+from ..providers.log import info
 from .sqlite_database import DataBase
 
 
@@ -102,15 +101,54 @@ def get_search_category_sources(cat_id):
         cat_id = int(cat_id)
     except (ValueError, TypeError):
         return []
+
+    owner_cat_id = get_search_category_whitelist_owner(cat_id)
+    lookup_ids = [owner_cat_id]
+    if owner_cat_id != cat_id:
+        # Keep legacy compatibility for old subcategory-specific rows.
+        lookup_ids.append(cat_id)
+
     db = DataBase("categories_search")
-    data_str = db.retrieve(str(cat_id))
-    if data_str:
+    for lookup_id in lookup_ids:
+        data_str = db.retrieve(str(lookup_id))
+        if not data_str:
+            continue
         try:
             data = json.loads(data_str)
             return data.get("search_sources", [])
         except json.JSONDecodeError:
-            pass
+            continue
     return []
+
+
+def get_search_category_whitelist_owner(cat_id: int) -> int:
+    """
+    Resolve which category ID owns whitelist settings.
+
+    - Base categories own themselves.
+    - Quality/format subcategories inherit from their base category.
+    - TV/Anime (5070) is treated as its own base.
+    - Custom categories (100000+) keep their own independent whitelist.
+    """
+    try:
+        cat_id = int(cat_id)
+    except (ValueError, TypeError):
+        return cat_id
+
+    if cat_id >= 100000:
+        return cat_id
+
+    if cat_id == SEARCH_CAT_SHOWS_ANIME:
+        return cat_id
+
+    if cat_id % 1000 == 0:
+        return cat_id
+
+    base_cat_id = (cat_id // 1000) * 1000
+    if base_cat_id in SEARCH_CATEGORIES:
+        return base_cat_id
+
+    return cat_id
 
 
 def update_search_category_sources(cat_id: int, sources):
@@ -119,27 +157,28 @@ def update_search_category_sources(cat_id: int, sources):
         return False, "Category ID is required."
     db = DataBase("categories_search")
     cat_id = int(cat_id)
-    is_default = cat_id in SEARCH_CATEGORIES
+    owner_cat_id = get_search_category_whitelist_owner(cat_id)
+    is_default = owner_cat_id in SEARCH_CATEGORIES
 
-    data_str = db.retrieve(str(cat_id))
+    data_str = db.retrieve(str(owner_cat_id))
     data = {}
 
     if data_str:
         try:
             data = json.loads(data_str)
         except json.JSONDecodeError:
-            return False, f"Database error for category id {cat_id}."
+            return False, f"Database error for category id {owner_cat_id}."
     elif is_default:
         # Implicitly create default category if missing
         data = {}
     else:
-        return False, f"Search category ID {cat_id} not found."
+        return False, f"Search category ID {owner_cat_id} not found."
 
     data["search_sources"] = sources
-    db.update_store(str(cat_id), json.dumps(data))
+    db.update_store(str(owner_cat_id), json.dumps(data))
 
     info(
-        f"Updated search-source-whitelist for search category {cat_id} to {[source.upper() for source in sources]}"
+        f"Updated search-source-whitelist for search category {cat_id} (owner {owner_cat_id}) to {[source.upper() for source in sources]}"
     )
     return (
         True,
@@ -153,20 +192,6 @@ def add_custom_search_category(base_cat_id: int):
         return False, "Base category ID is required."
     base_cat_id = int(base_cat_id)
 
-    # Normalize subcategories to their canonical base type.
-    if 2000 <= base_cat_id < 3000:
-        base_cat_id = 2000
-    elif 3000 <= base_cat_id < 4000:
-        base_cat_id = 3000
-    elif 5000 <= base_cat_id < 6000:
-        base_cat_id = 5000
-    elif 6000 <= base_cat_id < 7000:
-        base_cat_id = 6000
-    elif 7000 <= base_cat_id < 8000:
-        base_cat_id = 7000
-    else:
-        return False, "Invalid base category type."
-
     if base_cat_id not in SEARCH_CATEGORIES:
         return False, "Invalid base category type."
 
@@ -175,9 +200,7 @@ def add_custom_search_category(base_cat_id: int):
     db = DataBase("categories_search")
     all_cats = db.retrieve_all_titles() or []
 
-    # Base IDs: Movies=2000, Music=3000, TV=5000, Books=7000
-    # Custom IDs: 100000 + base category ID (one custom per base)
-
+    # Custom IDs: 100000 + selected category ID
     start_id = 100000 + base_cat_id
 
     # Find next available ID
@@ -192,13 +215,12 @@ def add_custom_search_category(base_cat_id: int):
     if custom_count >= 10:
         return False, "Limit of 10 custom search categories reached."
 
-    # Enforce one custom category per base type to keep IDs reversible.
-    for eid in existing_ids:
-        if start_id <= eid < start_id + 10000:
-            return (
-                False,
-                f"Custom category for base type '{base_cat_info['name']}' already exists.",
-            )
+    # Enforce one custom category per selected category type.
+    if start_id in existing_ids:
+        return (
+            False,
+            f"Custom category for '{base_cat_info['name']}' already exists.",
+        )
 
     next_id = start_id
 
@@ -267,9 +289,8 @@ def add_download_category(name, emj="📁"):
             "Category name can only contain lowercase letters and numbers.",
         )
 
-    if not emj or not emoji.is_emoji(emj):
-        debug(f"Invalid emoji: {emj}, falling back to default '📁'")
-        emj = "📁"
+    # Custom download categories intentionally use a single fixed emoji in UI.
+    emj = "📁"
 
     db = DataBase("categories_download")
     if db.retrieve(name):
@@ -285,43 +306,6 @@ def add_download_category(name, emj="📁"):
         f"Added category: {name} with emoji {emj} <d>-</d> <y>Please restart your *arr to apply changes.</y>"
     )
     return True, f"Category '{name}' added successfully."
-
-
-def update_download_category_emoji(name, emj):
-    """Updates the emoji for an existing category."""
-    name = name.strip().lower()
-    db = DataBase("categories_download")
-
-    # Check if default
-    is_default = name in DOWNLOAD_CATEGORIES
-
-    if not emj or not emoji.is_emoji(emj):
-        debug(f"Invalid emoji: {emj}, falling back to default '📁'")
-        emj = "📁"
-
-    # Retrieve existing data to preserve mirrors
-    data_str = db.retrieve(name)
-    data = {}
-
-    if data_str:
-        try:
-            data = json.loads(data_str)
-        except json.JSONDecodeError:
-            pass
-    elif is_default:
-        # Implicitly create default category if missing
-        data = {}
-    else:
-        # Custom category not found
-        return False, f"Category '{name}' not found."
-
-    data["emoji"] = emj
-
-    db.update_store(name, json.dumps(data))
-    info(
-        f"Updated emoji for category: {name} to {emj} <d>-</d> <y>Please restart your *arr to apply changes.</y>"
-    )
-    return True, f"Category '{name}' emoji updated successfully."
 
 
 def update_download_category_mirrors(name, mirrors):

@@ -7,28 +7,25 @@ import re
 import requests
 from bs4 import BeautifulSoup
 
-from quasarr.downloads.sources.helpers.abstract_source import AbstractSource
+from quasarr.downloads.sources.helpers.abstract_source import AbstractDownloadSource
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.log import debug, info
 
-hostname = "dw"
 
-
-class Source(AbstractSource):
-    initials = hostname
+class Source(AbstractDownloadSource):
+    initials = "dw"
 
     def get_download_links(self, shared_state, url, mirrors, title, password):
-        return _get_dw_download_links(shared_state, url, mirrors, title, password)
+        return _get_dw_download_links(shared_state, url, mirrors, title)
 
 
-def _get_dw_download_links(shared_state, url, mirrors, title, password):
+def _get_dw_download_links(shared_state, url, mirrors, title):
     """
-    KEEP THE SIGNATURE EVEN IF SOME PARAMETERS ARE UNUSED!
 
     DW source handler - fetches protected download links from DW site.
     """
 
-    dw = shared_state.values["config"]("Hostnames").get("dw")
+    dw = shared_state.values["config"]("Hostnames").get(Source.initials)
     ajax_url = "https://" + dw + "/wp-admin/admin-ajax.php"
 
     headers = {
@@ -44,9 +41,9 @@ def _get_dw_download_links(shared_state, url, mirrors, title, password):
         download_buttons = content.find_all("button", {"class": "show_link"})
     except Exception as e:
         info(
-            f"DW site has been updated. Grabbing download links for {title} not possible!"
+            f"Site has been updated. Grabbing download links for {title} not possible!"
         )
-        mark_hostname_issue(hostname, "download", str(e))
+        mark_hostname_issue(Source.initials, "download", str(e))
         return {"links": []}
 
     download_links = []
@@ -88,11 +85,9 @@ def _get_dw_download_links(shared_state, url, mirrors, title, password):
 
                 download_links.append([link, hoster])
     except Exception as e:
-        info(
-            f"DW site has been updated. Parsing download links for {title} not possible!"
-        )
-        mark_hostname_issue(hostname, "download", str(e))
+        info(f"Site has been updated. Parsing download links for {title} not possible!")
+        mark_hostname_issue(Source.initials, "download", str(e))
 
     if download_links:
-        clear_hostname_issue(hostname)
+        clear_hostname_issue(Source.initials)
     return {"links": download_links}

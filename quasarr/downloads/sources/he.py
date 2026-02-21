@@ -9,7 +9,7 @@ from urllib.parse import urlencode, urljoin, urlparse, urlunparse
 import requests
 from bs4 import BeautifulSoup
 
-from quasarr.downloads.sources.helpers.abstract_source import AbstractSource
+from quasarr.downloads.sources.helpers.abstract_source import AbstractDownloadSource
 from quasarr.providers.cloudflare import (
     flaresolverr_create_session,
     flaresolverr_destroy_session,
@@ -20,14 +20,12 @@ from quasarr.providers.cloudflare import (
 from quasarr.providers.log import debug, info, warn
 from quasarr.providers.utils import is_flaresolverr_available
 
-hostname = "he"
 
-
-class Source(AbstractSource):
-    initials = hostname
+class Source(AbstractDownloadSource):
+    initials = "he"
 
     def get_download_links(self, shared_state, url, mirrors, title, password):
-        return _get_he_download_links(shared_state, url, mirrors, title, password)
+        return _get_he_download_links(shared_state, url, title)
 
 
 def remove_fragment(url):
@@ -315,9 +313,8 @@ def strategy_flaresolverr_loop(shared_state, url):
         flaresolverr_destroy_session(shared_state, session_id)
 
 
-def _get_he_download_links(shared_state, url, mirrors, title, password):
+def _get_he_download_links(shared_state, url, title):
     """
-    KEEP THE SIGNATURE EVEN IF SOME PARAMETERS ARE UNUSED!
 
     HE source handler - fetches plain download links from HE pages.
     """

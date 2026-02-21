@@ -7,7 +7,7 @@ import inspect
 import pkgutil
 
 from quasarr.providers.log import error, warn
-from quasarr.search.sources.helpers.abstract_source import AbstractSource
+from quasarr.search.sources.helpers.search_source import AbstractSearchSource
 
 _sources = {}
 _source_module_names = []
@@ -29,7 +29,7 @@ def get_source_module_names() -> list[str]:
     return _source_module_names
 
 
-def get_sources() -> dict[str, AbstractSource]:
+def get_sources() -> dict[str, AbstractSearchSource]:
     if not _sources:
         for module_name in get_source_module_names():
             try:
@@ -40,7 +40,7 @@ def get_sources() -> dict[str, AbstractSource]:
 
             if hasattr(mod, "Source"):
                 if inspect.isclass(mod.Source) and issubclass(
-                    mod.Source, AbstractSource
+                    mod.Source, AbstractSearchSource
                 ):
                     try:
                         _sources[module_name] = mod.Source()
@@ -48,7 +48,7 @@ def get_sources() -> dict[str, AbstractSource]:
                         error(f"Error instantiating {module_name.upper()}: {e}")
                 else:
                     error(
-                        f"Source '{module_name.upper()}.Source' does not implement AbstractSource"
+                        f"Source '{module_name.upper()}.Source' does not implement AbstractSearchSource"
                     )
             else:
                 warn(f"Source '{module_name.upper()}' does not expose a Source class")

@@ -13,7 +13,7 @@ from urllib.parse import urlparse
 from bs4 import BeautifulSoup
 
 from quasarr.downloads.linkcrypters.al import decrypt_content, solve_captcha
-from quasarr.downloads.sources.helpers.abstract_source import AbstractSource
+from quasarr.downloads.sources.helpers.abstract_source import AbstractDownloadSource
 from quasarr.providers.hostname_issues import mark_hostname_issue
 from quasarr.providers.log import debug, info
 from quasarr.providers.sessions.al import (
@@ -26,11 +26,9 @@ from quasarr.providers.sessions.al import (
 from quasarr.providers.statistics import StatsHelper
 from quasarr.providers.utils import is_flaresolverr_available, sanitize_title
 
-hostname = "al"
 
-
-class Source(AbstractSource):
-    initials = hostname
+class Source(AbstractDownloadSource):
+    initials = "al"
 
     def get_download_links(self, shared_state, url, mirrors, title, password):
         return _get_al_download_links(shared_state, url, mirrors, title, password)
@@ -593,7 +591,9 @@ def check_release(shared_state, details_html, release_id, title, episode_in_titl
         except Exception as e:
             info(f"Error guessing release title from release: {e}")
             mark_hostname_issue(
-                hostname, "download", str(e) if "e" in dir() else "Download error"
+                Source.initials,
+                "download",
+                str(e) if "e" in dir() else "Download error",
             )
 
     return title, release_id
@@ -614,7 +614,6 @@ def extract_episode(title: str) -> int | None:
 
 def _get_al_download_links(shared_state, url, mirrors, title, password):
     """
-    KEEP THE SIGNATURE EVEN IF SOME PARAMETERS ARE UNUSED!
 
     AL source handler. Returns plain download links automatically by solving CAPTCHA.
 
@@ -626,19 +625,19 @@ def _get_al_download_links(shared_state, url, mirrors, title, password):
     # Check if FlareSolverr is available - AL requires it
     if not is_flaresolverr_available(shared_state):
         info(
-            f'"{hostname.upper()}" requires FlareSolverr which is not configured. '
-            f"Please configure FlareSolverr in the web UI to use this site."
+            "This source requires FlareSolverr which is not configured. "
+            "Please configure FlareSolverr in the web UI to use this site."
         )
         return {}
 
     release_id = password  # password field carries release_id for AL
 
-    al = shared_state.values["config"]("Hostnames").get(hostname)
+    al = shared_state.values["config"]("Hostnames").get(Source.initials)
 
     sess = retrieve_and_validate_session(shared_state)
     if not sess:
         info(f"Could not retrieve valid session for {al}")
-        mark_hostname_issue(hostname, "download", "Session error")
+        mark_hostname_issue(Source.initials, "download", "Session error")
         return {}
 
     details_page = fetch_via_flaresolverr(shared_state, "GET", url, timeout=30)
@@ -716,7 +715,7 @@ def _get_al_download_links(shared_state, url, mirrors, title, password):
                             f"{f'episode {episode_in_title}' if selection and selection != 'cnl' else 'all links'}"
                         )
                         attempt = solve_captcha(
-                            hostname,
+                            Source.initials,
                             shared_state,
                             fetch_via_flaresolverr,
                             fetch_via_requests_session,
@@ -790,7 +789,7 @@ def _get_al_download_links(shared_state, url, mirrors, title, password):
                     except RuntimeError as e:
                         info(f"Error solving CAPTCHA: {e}")
                         mark_hostname_issue(
-                            hostname,
+                            Source.initials,
                             "download",
                             str(e) if "e" in dir() else "Download error",
                         )
@@ -814,12 +813,14 @@ def _get_al_download_links(shared_state, url, mirrors, title, password):
             except Exception as e:
                 info(f"Error during decryption: {e}")
                 mark_hostname_issue(
-                    hostname, "download", str(e) if "e" in dir() else "Download error"
+                    Source.initials,
+                    "download",
+                    str(e) if "e" in dir() else "Download error",
                 )
     except Exception as e:
-        info(f"Error loading AL download: {e}")
+        info(f"Error loading download: {e}")
         mark_hostname_issue(
-            hostname, "download", str(e) if "e" in dir() else "Download error"
+            Source.initials, "download", str(e) if "e" in dir() else "Download error"
         )
         invalidate_session(shared_state)
 

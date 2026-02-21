@@ -6,31 +6,28 @@ import re
 
 import requests
 
-from quasarr.downloads.sources.helpers.abstract_source import AbstractSource
+from quasarr.downloads.sources.helpers.abstract_source import AbstractDownloadSource
 from quasarr.providers.hostname_issues import mark_hostname_issue
 from quasarr.providers.log import debug, info
 from quasarr.providers.utils import check_links_online_status
 
-hostname = "wx"
 
-
-class Source(AbstractSource):
-    initials = hostname
+class Source(AbstractDownloadSource):
+    initials = "wx"
 
     def get_download_links(self, shared_state, url, mirrors, title, password):
-        return _get_wx_download_links(shared_state, url, mirrors, title, password)
+        return _get_wx_download_links(shared_state, url, mirrors, title)
 
 
-def _get_wx_download_links(shared_state, url, mirrors, title, password):
+def _get_wx_download_links(shared_state, url, mirrors, title):
     """
-    KEEP THE SIGNATURE EVEN IF SOME PARAMETERS ARE UNUSED!
 
     WX source handler - Grabs download links from API based on title.
     Finds the best mirror (M1, M2, M3...) by checking online status.
     Returns all online links from the first complete mirror, or the best partial mirror.
     Prefers hide.cx links over other crypters (filecrypt, etc.) when online counts are equal.
     """
-    host = shared_state.values["config"]("Hostnames").get(hostname)
+    host = shared_state.values["config"]("Hostnames").get(Source.initials)
 
     headers = {
         "User-Agent": shared_state.values["user_agent"],
@@ -179,6 +176,6 @@ def _get_wx_download_links(shared_state, url, mirrors, title, password):
     except Exception as e:
         info(f"Error extracting download links from {url}: {e}")
         mark_hostname_issue(
-            hostname, "download", str(e) if "e" in dir() else "Download error"
+            Source.initials, "download", str(e) if "e" in dir() else "Download error"
         )
         return {"links": []}

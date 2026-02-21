@@ -7,7 +7,7 @@ import re
 from bs4 import BeautifulSoup, NavigableString
 
 from quasarr.constants import COMMON_TLDS, SHARE_HOSTERS_LOWERCASE
-from quasarr.downloads.sources.helpers.abstract_source import AbstractSource
+from quasarr.downloads.sources.helpers.abstract_source import AbstractDownloadSource
 from quasarr.providers.hostname_issues import mark_hostname_issue
 from quasarr.providers.log import debug, info
 from quasarr.providers.sessions.dl import (
@@ -17,14 +17,12 @@ from quasarr.providers.sessions.dl import (
 )
 from quasarr.providers.utils import check_links_online_status, generate_status_url
 
-hostname = "dl"
 
-
-class Source(AbstractSource):
-    initials = hostname
+class Source(AbstractDownloadSource):
+    initials = "dl"
 
     def get_download_links(self, shared_state, url, mirrors, title, password):
-        return _get_dl_download_links(shared_state, url, mirrors, title, password)
+        return _get_dl_download_links(shared_state, url, title)
 
 
 def normalize_mirror_name(name):
@@ -347,22 +345,20 @@ def extract_links_and_password_from_post(post_content, host):
     return links, password
 
 
-def _get_dl_download_links(shared_state, url, mirrors, title, password):
+def _get_dl_download_links(shared_state, url, title):
     """
-    KEEP THE SIGNATURE EVEN IF SOME PARAMETERS ARE UNUSED!
 
     DL source handler - extracts links and password from forum thread.
     Iterates through posts to find one with online links.
 
-    Note: The password parameter is unused intentionally - password must be extracted from the post.
     """
 
-    host = shared_state.values["config"]("Hostnames").get(hostname)
+    host = shared_state.values["config"]("Hostnames").get(Source.initials)
 
     sess = retrieve_and_validate_session(shared_state)
     if not sess:
         info(f"Could not retrieve valid session for {host}")
-        mark_hostname_issue(hostname, "download", "Session error")
+        mark_hostname_issue(Source.initials, "download", "Session error")
         return {"links": [], "password": ""}
 
     try:
@@ -441,7 +437,7 @@ def _get_dl_download_links(shared_state, url, mirrors, title, password):
     except Exception as e:
         info(f"Error extracting download links from {url}: {e}")
         mark_hostname_issue(
-            hostname, "download", str(e) if "e" in dir() else "Download error"
+            Source.initials, "download", str(e) if "e" in dir() else "Download error"
         )
         invalidate_session(shared_state)
         return {"links": [], "password": ""}

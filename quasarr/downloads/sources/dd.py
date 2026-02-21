@@ -2,7 +2,7 @@
 # Quasarr
 # Project by https://github.com/rix1337
 
-from quasarr.downloads.sources.helpers.abstract_source import AbstractSource
+from quasarr.downloads.sources.helpers.abstract_source import AbstractDownloadSource
 from quasarr.providers.hostname_issues import mark_hostname_issue
 from quasarr.providers.log import debug, info
 from quasarr.providers.sessions.dd import (
@@ -10,29 +10,26 @@ from quasarr.providers.sessions.dd import (
     retrieve_and_validate_session,
 )
 
-hostname = "dd"
 
-
-class Source(AbstractSource):
-    initials = hostname
+class Source(AbstractDownloadSource):
+    initials = "dd"
 
     def get_download_links(self, shared_state, url, mirrors, title, password):
-        return _get_dd_download_links(shared_state, url, mirrors, title, password)
+        return _get_dd_download_links(shared_state, mirrors, title)
 
 
-def _get_dd_download_links(shared_state, url, mirrors, title, password):
+def _get_dd_download_links(shared_state, mirrors, title):
     """
-    KEEP THE SIGNATURE EVEN IF SOME PARAMETERS ARE UNUSED!
 
     Returns plain download links from DD API.
     """
 
-    dd = shared_state.values["config"]("Hostnames").get("dd")
+    dd = shared_state.values["config"]("Hostnames").get(Source.initials)
 
     dd_session = retrieve_and_validate_session(shared_state)
     if not dd_session:
         info(f"Could not retrieve valid session for {dd}")
-        mark_hostname_issue(hostname, "download", "Session error")
+        mark_hostname_issue(Source.initials, "download", "Session error")
         return {"links": []}
 
     links = []
@@ -68,7 +65,8 @@ def _get_dd_download_links(shared_state, url, mirrors, title, password):
             try:
                 if release.get("fake"):
                     debug(
-                        f"Release {release.get('release')} marked as fake. Invalidating DD session..."
+                        f"Release {release.get('release')} marked as fake. "
+                        "Invalidating session..."
                     )
                     create_and_persist_session(shared_state)
                     return {"links": []}
@@ -97,16 +95,18 @@ def _get_dd_download_links(shared_state, url, mirrors, title, password):
                     links = [[link["url"], link["hostname"]] for link in filtered_links]
                     break
             except Exception as e:
-                info(f"Error parsing DD download: {e}")
+                info(f"Error parsing download: {e}")
                 mark_hostname_issue(
-                    hostname, "download", str(e) if "e" in dir() else "Download error"
+                    Source.initials,
+                    "download",
+                    str(e) if "e" in dir() else "Download error",
                 )
                 continue
 
     except Exception as e:
-        info(f"Error loading DD download: {e}")
+        info(f"Error loading download: {e}")
         mark_hostname_issue(
-            hostname, "download", str(e) if "e" in dir() else "Download error"
+            Source.initials, "download", str(e) if "e" in dir() else "Download error"
         )
 
     return {"links": links}

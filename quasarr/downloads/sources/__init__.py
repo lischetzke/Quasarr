@@ -2,7 +2,7 @@ import importlib
 import inspect
 import pkgutil
 
-from quasarr.downloads.sources.helpers.abstract_source import AbstractSource
+from quasarr.downloads.sources.helpers.abstract_source import AbstractDownloadSource
 from quasarr.providers.log import error, warn
 
 _source_module_names = []
@@ -25,7 +25,7 @@ def get_download_source_module_names() -> list[str]:
     return _source_module_names
 
 
-def get_sources() -> dict[str, AbstractSource]:
+def get_sources() -> dict[str, AbstractDownloadSource]:
     global _sources
 
     if _sources:
@@ -45,10 +45,10 @@ def get_sources() -> dict[str, AbstractSource]:
             continue
 
         if not inspect.isclass(mod.Source) or not issubclass(
-            mod.Source, AbstractSource
+            mod.Source, AbstractDownloadSource
         ):
             error(
-                f"Download source '{module_name.upper()}.Source' does not implement AbstractSource"
+                f"Download source '{module_name.upper()}.Source' does not implement AbstractDownloadSource"
             )
             continue
 

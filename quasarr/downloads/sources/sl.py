@@ -8,19 +8,17 @@ from urllib.parse import urlparse
 import requests
 from bs4 import BeautifulSoup
 
-from quasarr.downloads.sources.helpers.abstract_source import AbstractSource
+from quasarr.downloads.sources.helpers.abstract_source import AbstractDownloadSource
 from quasarr.providers.cloudflare import ensure_session_cf_bypassed
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.log import debug, info
 
-hostname = "sl"
 
-
-class Source(AbstractSource):
-    initials = hostname
+class Source(AbstractDownloadSource):
+    initials = "sl"
 
     def get_download_links(self, shared_state, url, mirrors, title, password):
-        return _get_sl_download_links(shared_state, url, mirrors, title, password)
+        return _get_sl_download_links(shared_state, url, mirrors, title)
 
 
 supported_mirrors = ["nitroflare", "ddownload"]
@@ -34,9 +32,8 @@ def derive_mirror_from_host(host):
     return host.split(".")[0] if host else "unknown"
 
 
-def _get_sl_download_links(shared_state, url, mirrors, title, password):
+def _get_sl_download_links(shared_state, url, mirrors, title):
     """
-    KEEP THE SIGNATURE EVEN IF SOME PARAMETERS ARE UNUSED!
 
     SL source handler - returns plain download links.
     """
@@ -57,7 +54,7 @@ def _get_sl_download_links(shared_state, url, mirrors, title, password):
         if not entry:
             info(f"Could not find main content section for {title}")
             mark_hostname_issue(
-                hostname, "download", "Could not find main content section"
+                Source.initials, "download", "Could not find main content section"
             )
             return {"links": [], "imdb_id": None}
 
@@ -84,9 +81,9 @@ def _get_sl_download_links(shared_state, url, mirrors, title, password):
 
     except Exception as e:
         info(
-            f"SL site has been updated. Grabbing download links for {title} not possible! ({e})"
+            f"Site has been updated. Grabbing download links for {title} not possible! ({e})"
         )
-        mark_hostname_issue(hostname, "download", str(e))
+        mark_hostname_issue(Source.initials, "download", str(e))
         return {"links": [], "imdb_id": None}
 
     filtered = []
@@ -127,7 +124,7 @@ def _get_sl_download_links(shared_state, url, mirrors, title, password):
             filtered.append([u, mirror_name])
 
     if filtered:
-        clear_hostname_issue(hostname)
+        clear_hostname_issue(Source.initials)
     return {
         "links": filtered,
         "imdb_id": imdb_id,

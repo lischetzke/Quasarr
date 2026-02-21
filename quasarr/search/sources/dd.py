@@ -25,11 +25,11 @@ from quasarr.providers.utils import (
     is_imdb_id,
     is_valid_release,
 )
-from quasarr.search.sources.helpers.abstract_source import AbstractSource
-from quasarr.search.sources.helpers.release import Release
+from quasarr.search.sources.helpers.search_release import SearchRelease
+from quasarr.search.sources.helpers.search_source import AbstractSearchSource
 
 
-class Source(AbstractSource):
+class Source(AbstractSearchSource):
     initials = "dd"
     supports_imdb = True
     supports_phrase = False
@@ -38,7 +38,7 @@ class Source(AbstractSource):
 
     def feed(
         self, shared_state: shared_state, start_time: float, search_category: str
-    ) -> list[Release]:
+    ) -> list[SearchRelease]:
         return self.search(shared_state, start_time, search_category, "")
 
     def search(
@@ -49,7 +49,7 @@ class Source(AbstractSource):
         search_string: str = "",
         season: int = None,
         episode: int = None,
-    ) -> list[Release]:
+    ) -> list[SearchRelease]:
         releases = []
         dd = shared_state.values["config"]("Hostnames").get(self.initials)
         password = dd

@@ -29,8 +29,8 @@ from quasarr.providers.utils import (
     is_imdb_id,
     is_valid_release,
 )
-from quasarr.search.sources.helpers.abstract_source import AbstractSource
-from quasarr.search.sources.helpers.release import Release
+from quasarr.search.sources.helpers.search_release import SearchRelease
+from quasarr.search.sources.helpers.search_source import AbstractSearchSource
 
 
 def convert_to_rss_date(date_str):
@@ -45,7 +45,7 @@ def extract_size(text):
     return {"size": m.group(1), "sizeunit": m.group(2)}
 
 
-class Source(AbstractSource):
+class Source(AbstractSearchSource):
     initials = "mb"
     supports_imdb = True
     supports_phrase = False
@@ -166,15 +166,15 @@ class Source(AbstractSource):
 
     def feed(
         self, shared_state: shared_state, start_time: float, search_category: str
-    ) -> list[Release]:
+    ) -> list[SearchRelease]:
         mb = shared_state.values["config"]("Hostnames").get(self.initials)
 
-        base_category = get_base_search_category_id(search_category)
+        base_search_category = get_base_search_category_id(search_category)
 
         password = mb
-        if base_category == SEARCH_CAT_MOVIES:
+        if base_search_category == SEARCH_CAT_MOVIES:
             section = "neuerscheinungen"
-        elif base_category == SEARCH_CAT_SHOWS:
+        elif base_search_category == SEARCH_CAT_SHOWS:
             section = "serie"
         else:
             warn(f"Unknown search category: {search_category}")
@@ -207,7 +207,7 @@ class Source(AbstractSource):
         search_string: str = "",
         season: int = None,
         episode: int = None,
-    ) -> list[Release]:
+    ) -> list[SearchRelease]:
         mb = shared_state.values["config"]("Hostnames").get(self.initials)
 
         password = mb

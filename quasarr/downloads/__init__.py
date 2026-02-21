@@ -31,7 +31,9 @@ from quasarr.storage.categories import (
 # =============================================================================
 
 
-def generate_deterministic_package_id(title, source_key, client_type, category):
+def generate_deterministic_package_id(
+    title, source_key, client_type, download_category
+):
     """
     Generate a deterministic package ID from title, source, and client type.
 
@@ -42,30 +44,35 @@ def generate_deterministic_package_id(title, source_key, client_type, category):
         title: Release title (e.g., "Movie.Name.2024.1080p.BluRay")
         source_key: Source identifier/hostname shorthand
         client_type: Client type without version (e.g., "radarr", "sonarr", "lazylibrarian")
-        category: Optional category override (e.g., "movies", "tv", "docs")
+        download_category: Optional download category override
+            (e.g., "movies", "tv", "docs")
 
     Returns:
-        Deterministic package ID in format: Quasarr_{category}_{hash32}
+        Deterministic package ID in format: Quasarr_{download_category}_{hash32}
     """
     # Normalize inputs for consistency
     normalized_title = title.strip()
     normalized_source = source_key.lower().strip() if source_key else "unknown"
     normalized_client = client_type.lower().strip() if client_type else "unknown"
 
-    # Determine category
-    if category and download_category_exists(category):
-        final_category = category
+    # Determine download category
+    if download_category and download_category_exists(download_category):
+        final_download_category = download_category
     else:
         # Fallback to client type mapping
-        category_map = {"lazylibrarian": "docs", "radarr": "movies", "sonarr": "tv"}
-        final_category = category_map.get(normalized_client, "tv")
+        download_category_map = {
+            "lazylibrarian": "docs",
+            "radarr": "movies",
+            "sonarr": "tv",
+        }
+        final_download_category = download_category_map.get(normalized_client, "tv")
 
     # Create deterministic hash from combination using SHA256
     hash_input = f"{normalized_title}|{normalized_source}|{normalized_client}"
     hash_bytes = hashlib.sha256(hash_input.encode("utf-8")).hexdigest()
 
     # Use first 32 characters for good collision resistance (128-bit)
-    return f"Quasarr_{final_category}_{hash_bytes[:32]}"
+    return f"Quasarr_{final_download_category}_{hash_bytes[:32]}"
 
 
 # =============================================================================
@@ -324,7 +331,7 @@ def package_id_exists(shared_state, package_id):
 def download(
     shared_state,
     request_from,
-    category,
+    download_category,
     title,
     url,
     size_mb,
@@ -338,7 +345,7 @@ def download(
     Args:
         shared_state: Application shared state
         request_from: User-Agent string (e.g., "Radarr/6.0.4.10291")
-        category: Category (e.g., "movies", "tv", "docs")
+        download_category: Download category (e.g., "movies", "tv", "docs")
         title: Release title
         url: Source URL
         size_mb: Size in MB
@@ -362,7 +369,7 @@ def download(
         label = None
         detected_source_key = None
 
-        mirrors = get_download_category_mirrors(category, lowercase=True)
+        mirrors = get_download_category_mirrors(download_category, lowercase=True)
         download_sources = get_download_sources()
 
         normalized_source_key = None
@@ -388,7 +395,7 @@ def download(
                 continue
 
             try:
-                # Mirrors are category-driven and passed to each source getter.
+                # Mirrors are download-category-driven and passed to each source getter.
                 candidate_result = source.get_download_links(
                     shared_state, url, mirrors, title, password
                 )
@@ -420,7 +427,7 @@ def download(
 
         # Generate DETERMINISTIC package_id
         package_id = generate_deterministic_package_id(
-            title, final_source_key, client_type, category
+            title, final_source_key, client_type, download_category
         )
 
         # Skip Download if package_id already exists
@@ -461,7 +468,7 @@ def download(
             final_source_key = source_key if source_key else "unknown"
 
             package_id = generate_deterministic_package_id(
-                title, final_source_key, client_type, category
+                title, final_source_key, client_type, download_category
             )
 
         result = fail(title, package_id, shared_state, reason=f"Unexpected error: {e}")

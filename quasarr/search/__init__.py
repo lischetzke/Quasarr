@@ -16,7 +16,7 @@ from quasarr.constants import (
 from quasarr.providers.imdb_metadata import get_imdb_metadata
 from quasarr.providers.log import debug, get_logger, info, trace, warn
 from quasarr.search.sources import get_sources
-from quasarr.search.sources.helpers.abstract_source import AbstractSource
+from quasarr.search.sources.helpers.search_source import AbstractSearchSource
 from quasarr.storage.categories import get_search_category_sources
 
 
@@ -34,6 +34,7 @@ def get_search_results(
     from quasarr.providers.utils import (
         determine_search_category,
         get_base_search_category_id,
+        get_search_behavior_category,
         get_search_capability_category,
         release_matches_search_category,
     )
@@ -51,8 +52,21 @@ def get_search_results(
         search_category = determine_search_category(request_from)
 
     # Resolve base category for logic (Movies, TV, etc.).
-    base_category = get_base_search_category_id(search_category) or search_category
+    base_search_category = (
+        get_base_search_category_id(search_category) or search_category
+    )
+    behavior_search_category = (
+        get_search_behavior_category(search_category) or search_category
+    )
     capability_category = get_search_capability_category(search_category)
+    is_custom_search_category = False
+    try:
+        is_custom_search_category = int(search_category) >= 100000
+    except (TypeError, ValueError):
+        pass
+    cache_key_category = (
+        search_category if is_custom_search_category else capability_category
+    )
 
     # Filter out sources that are not in the search category's whitelist
     # We use the original search_category ID here to get the specific whitelist
@@ -71,11 +85,11 @@ def get_search_results(
 
     use_pagination = True
 
-    # Use base_category for logic branching
+    # Use base_search_category for logic branching
     if imdb_id:
         stype = f"IMDb-ID <b>{imdb_id}</b>"
-        if base_category in [SEARCH_CAT_MOVIES, SEARCH_CAT_SHOWS]:
-            args = (shared_state, start_time, search_category)
+        if base_search_category in [SEARCH_CAT_MOVIES, SEARCH_CAT_SHOWS]:
+            args = (shared_state, start_time, behavior_search_category)
             kwargs = {"search_string": imdb_id, "season": season, "episode": episode}
             for source in sources.values():
                 url = config.get(source.initials)
@@ -93,17 +107,17 @@ def get_search_results(
                         args,
                         kwargs,
                         use_cache=True,
-                        cache_category=capability_category,
+                        cache_category=cache_key_category,
                     )
         else:
             warn(
-                f"{stype} is not supported for {request_from}, category: {search_category} (Base: {base_category})"
+                f"{stype} is not supported for {request_from}, category: {search_category} (Base: {base_search_category})"
             )
 
     elif search_phrase:
         stype = f"Search-Phrase <b>{search_phrase}</b>"
-        if base_category in [SEARCH_CAT_BOOKS, SEARCH_CAT_MUSIC]:
-            args = (shared_state, start_time, search_category)
+        if base_search_category in [SEARCH_CAT_BOOKS, SEARCH_CAT_MUSIC]:
+            args = (shared_state, start_time, behavior_search_category)
             kwargs = {"search_string": search_phrase}
             for source in sources.values():
                 url = config.get(source.initials)
@@ -121,16 +135,16 @@ def get_search_results(
                         args,
                         kwargs,
                         use_cache=True,
-                        cache_category=capability_category,
+                        cache_category=cache_key_category,
                     )
         else:
             warn(
-                f"{stype} is not supported for {request_from}, category: {search_category} (Base: {base_category})"
+                f"{stype} is not supported for {request_from}, category: {search_category} (Base: {base_search_category})"
             )
 
     else:
         stype = "<b>Feed</b> search"
-        args = (shared_state, start_time, search_category)
+        args = (shared_state, start_time, behavior_search_category)
         kwargs = {}
         use_pagination = False
         for source in sources.values():
@@ -147,7 +161,7 @@ def get_search_results(
                     use_cache=True,
                     ttl=60,
                     action="feed",
-                    cache_category=capability_category,
+                    cache_category=cache_key_category,
                 )
 
     debug(f"Starting <g>{len(search_executor.searches)}</g> searches for {stype}...")
@@ -223,7 +237,7 @@ class SearchExecutor:
 
     def add(
         self,
-        source: AbstractSource,
+        source: AbstractSearchSource,
         args,
         kwargs,
         use_cache=False,

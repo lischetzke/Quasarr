@@ -7,19 +7,17 @@ from urllib.parse import urlparse
 
 import requests
 
-from quasarr.downloads.sources.helpers.abstract_source import AbstractSource
+from quasarr.downloads.sources.helpers.abstract_source import AbstractDownloadSource
 from quasarr.providers.hostname_issues import mark_hostname_issue
 from quasarr.providers.log import info
 from quasarr.providers.sessions.nx import retrieve_and_validate_session
 
-hostname = "nx"
 
-
-class Source(AbstractSource):
-    initials = hostname
+class Source(AbstractDownloadSource):
+    initials = "nx"
 
     def get_download_links(self, shared_state, url, mirrors, title, password):
-        return _get_nx_download_links(shared_state, url, mirrors, title, password)
+        return _get_nx_download_links(shared_state, url, title)
 
 
 def derive_mirror_from_url(url):
@@ -67,14 +65,13 @@ def get_filer_folder_links_via_api(shared_state, url):
         return url
 
 
-def _get_nx_download_links(shared_state, url, mirrors, title, password):
+def _get_nx_download_links(shared_state, url, title):
     """
-    KEEP THE SIGNATURE EVEN IF SOME PARAMETERS ARE UNUSED!
 
     NX source handler - auto-decrypts via site API and returns plain download links.
     """
 
-    nx = shared_state.values["config"]("Hostnames").get("nx")
+    nx = shared_state.values["config"]("Hostnames").get(Source.initials)
 
     if f"{nx}/release/" not in url:
         info("Link is not a Release link, could not proceed:" + url)
@@ -82,7 +79,7 @@ def _get_nx_download_links(shared_state, url, mirrors, title, password):
     nx_session = retrieve_and_validate_session(shared_state)
     if not nx_session:
         info(f"Could not retrieve valid session for {nx}")
-        mark_hostname_issue(hostname, "download", "Session error")
+        mark_hostname_issue(Source.initials, "download", "Session error")
         return {"links": []}
 
     headers = {"User-Agent": shared_state.values["user_agent"], "Referer": url}
@@ -98,14 +95,14 @@ def _get_nx_download_links(shared_state, url, mirrors, title, password):
 
         payload = r.json()
     except Exception as e:
-        info(f"Could not get NX Links: {e}")
-        mark_hostname_issue(hostname, "download", str(e))
+        info(f"Could not get download links: {e}")
+        mark_hostname_issue(Source.initials, "download", str(e))
         return {"links": []}
 
     if payload and any(key in payload for key in ("err", "error")):
         error_msg = payload.get("err") or payload.get("error")
         info(f"Error decrypting {title!r} URL: {url!r} - {error_msg}")
-        mark_hostname_issue(hostname, "download", "Download error")
+        mark_hostname_issue(Source.initials, "download", "Download error")
         shared_state.values["database"]("sessions").delete("nx")
         return {"links": []}
 

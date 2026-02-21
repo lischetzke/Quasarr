@@ -34,11 +34,11 @@ from quasarr.providers.utils import (
     is_valid_release,
     normalize_magazine_title,
 )
-from quasarr.search.sources.helpers.abstract_source import AbstractSource
-from quasarr.search.sources.helpers.release import Release
+from quasarr.search.sources.helpers.search_release import SearchRelease
+from quasarr.search.sources.helpers.search_source import AbstractSearchSource
 
 
-class Source(AbstractSource):
+class Source(AbstractSearchSource):
     initials = "wd"
     supports_imdb = True
     supports_phrase = True
@@ -51,19 +51,19 @@ class Source(AbstractSource):
 
     def feed(
         self, shared_state: shared_state, start_time: float, search_category: str
-    ) -> list[Release]:
+    ) -> list[SearchRelease]:
         wd = shared_state.values["config"]("Hostnames").get(self.initials)
         password = wd
 
-        base_category = get_base_search_category_id(search_category)
+        base_search_category = get_base_search_category_id(search_category)
 
-        if base_category == SEARCH_CAT_BOOKS:
+        if base_search_category == SEARCH_CAT_BOOKS:
             feed_type = "Ebooks"
-        elif base_category == SEARCH_CAT_MOVIES:
+        elif base_search_category == SEARCH_CAT_MOVIES:
             feed_type = "Movies"
-        elif base_category == SEARCH_CAT_SHOWS:
+        elif base_search_category == SEARCH_CAT_SHOWS:
             feed_type = "Serien"
-        elif base_category == SEARCH_CAT_MUSIC:
+        elif base_search_category == SEARCH_CAT_MUSIC:
             feed_type = "Music/Audio"
         else:
             warn(f"Unknown search category: {search_category}")
@@ -122,7 +122,7 @@ class Source(AbstractSource):
         search_string: str = "",
         season: int = None,
         episode: int = None,
-    ) -> list[Release]:
+    ) -> list[SearchRelease]:
         releases = []
         wd = shared_state.values["config"]("Hostnames").get(self.initials)
         password = wd
@@ -222,7 +222,7 @@ class Source(AbstractSource):
         releases = []
         is_search = search_string is not None
 
-        base_category = get_base_search_category_id(search_category)
+        base_search_category = get_base_search_category_id(search_category)
 
         one_hour_ago = (datetime.now() - timedelta(hours=1)).strftime(
             "%Y-%m-%d %H:%M:%S"
@@ -249,7 +249,7 @@ class Source(AbstractSource):
                     ):
                         continue
 
-                    if base_category == SEARCH_CAT_BOOKS:
+                    if base_search_category == SEARCH_CAT_BOOKS:
                         # lazylibrarian can only detect specific date formats / issue numbering for magazines
                         title = normalize_magazine_title(title)
                     else:

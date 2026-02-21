@@ -31,11 +31,11 @@ from quasarr.providers.utils import (
     is_valid_release,
     normalize_magazine_title,
 )
-from quasarr.search.sources.helpers.abstract_source import AbstractSource
-from quasarr.search.sources.helpers.release import Release
+from quasarr.search.sources.helpers.search_release import SearchRelease
+from quasarr.search.sources.helpers.search_source import AbstractSearchSource
 
 
-class Source(AbstractSource):
+class Source(AbstractSearchSource):
     initials = "by"
     supports_imdb = True
     supports_phrase = True
@@ -48,19 +48,19 @@ class Source(AbstractSource):
 
     def feed(
         self, shared_state: shared_state, start_time: float, search_category: str
-    ) -> list[Release]:
+    ) -> list[SearchRelease]:
         by = shared_state.values["config"]("Hostnames").get(self.initials)
         password = by
 
-        base_category = get_base_search_category_id(search_category)
+        base_search_category = get_base_search_category_id(search_category)
 
-        if base_category == SEARCH_CAT_BOOKS:
+        if base_search_category == SEARCH_CAT_BOOKS:
             feed_type = "?cat=71"
-        elif base_category == SEARCH_CAT_MOVIES:
+        elif base_search_category == SEARCH_CAT_MOVIES:
             feed_type = "?cat=1"
-        elif base_category == SEARCH_CAT_SHOWS:
+        elif base_search_category == SEARCH_CAT_SHOWS:
             feed_type = "?cat=2"
-        elif base_category == SEARCH_CAT_MUSIC:
+        elif base_search_category == SEARCH_CAT_MUSIC:
             feed_type = "?cat=35"
         else:
             warn(f"Invalid search category: {search_category}")
@@ -100,7 +100,7 @@ class Source(AbstractSource):
         search_string: str = "",
         season: int = None,
         episode: int = None,
-    ) -> list[Release]:
+    ) -> list[SearchRelease]:
         by = shared_state.values["config"]("Hostnames").get(self.initials)
         password = by
 
@@ -160,7 +160,7 @@ class Source(AbstractSource):
     ):
         releases = []
 
-        base_category = get_base_search_category_id(search_category)
+        base_search_category = get_base_search_category_id(search_category)
 
         if not is_search:
             feed_container = soup.find(
@@ -214,7 +214,7 @@ class Source(AbstractSource):
                             pass
                     if not title:
                         continue
-                    if base_category == SEARCH_CAT_BOOKS:
+                    if base_search_category == SEARCH_CAT_BOOKS:
                         # lazylibrarian can only detect specific date formats / issue numbering for magazines
                         title = normalize_magazine_title(title)
                     else:
@@ -263,7 +263,7 @@ class Source(AbstractSource):
                     row = entry
                     title_tag = row.find("p", class_="TITLE").find("a")
                     title = title_tag.get_text(strip=True)
-                    if base_category == SEARCH_CAT_BOOKS:
+                    if base_search_category == SEARCH_CAT_BOOKS:
                         # lazylibrarian can only detect specific date formats / issue numbering for magazines
                         title = normalize_magazine_title(title)
                     else:

@@ -15,3 +15,17 @@ services:
       - 'AUTH=form'
       - 'SILENT=True'
       - 'TZ=Europe/Berlin'
+
+  # Optional (sponsor-only): automatic CAPTCHA solving / decryption helper
+  sponsorshelper:
+    container_name: 'SponsorsHelper'
+    image: 'ghcr.io/rix1337-sponsors/docker/helper:latest'
+    restart: unless-stopped
+    depends_on:
+      - quasarr
+    environment:
+      - 'QUASARR_URL=http://192.168.1.1:8080'
+      - 'QUASARR_API_KEY=your_quasarr_api_key_here'
+      - 'APIKEY_2CAPTCHA=your_2captcha_api_key_here'
+      - 'GITHUB_TOKEN=ghp_123.....456789'
+      - 'FLARESOLVERR_URL=http://10.10.0.1:8191/v1'

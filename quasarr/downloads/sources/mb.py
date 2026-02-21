@@ -7,23 +7,20 @@ import re
 import requests
 from bs4 import BeautifulSoup
 
-from quasarr.downloads.sources.helpers.abstract_source import AbstractSource
+from quasarr.downloads.sources.helpers.abstract_source import AbstractDownloadSource
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.log import debug, info
 
-hostname = "mb"
 
-
-class Source(AbstractSource):
-    initials = hostname
+class Source(AbstractDownloadSource):
+    initials = "mb"
 
     def get_download_links(self, shared_state, url, mirrors, title, password):
-        return _get_mb_download_links(shared_state, url, mirrors, title, password)
+        return _get_mb_download_links(shared_state, url, mirrors, title)
 
 
-def _get_mb_download_links(shared_state, url, mirrors, title, password):
+def _get_mb_download_links(shared_state, url, mirrors, title):
     """
-    KEEP THE SIGNATURE EVEN IF SOME PARAMETERS ARE UNUSED!
 
     MB source handler - fetches protected download links from MB pages.
     """
@@ -37,7 +34,7 @@ def _get_mb_download_links(shared_state, url, mirrors, title, password):
         r.raise_for_status()
     except Exception as e:
         info(f"Failed to fetch page for {title or url}: {e}")
-        mark_hostname_issue(hostname, "download", str(e))
+        mark_hostname_issue(Source.initials, "download", str(e))
         return {"links": []}
 
     soup = BeautifulSoup(r.text, "html.parser")
@@ -60,18 +57,18 @@ def _get_mb_download_links(shared_state, url, mirrors, title, password):
 
             download_links.append([link, hoster])
         except Exception as e:
-            debug(f"Error parsing MB download links: {e}")
+            debug(f"Error parsing download links: {e}")
 
     if not download_links:
         info(
             f"No download links found for {title}. Site structure may have changed. - {url}"
         )
         mark_hostname_issue(
-            hostname,
+            Source.initials,
             "download",
             "No download links found - site structure may have changed",
         )
         return {"links": []}
 
-    clear_hostname_issue(hostname)
+    clear_hostname_issue(Source.initials)
     return {"links": download_links}

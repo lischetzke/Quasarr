@@ -28,14 +28,14 @@ from quasarr.providers.utils import (
     is_imdb_id,
     is_valid_release,
 )
-from quasarr.search.sources.helpers.abstract_source import AbstractSource
-from quasarr.search.sources.helpers.release import Release
+from quasarr.search.sources.helpers.search_release import SearchRelease
+from quasarr.search.sources.helpers.search_source import AbstractSearchSource
 
 warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
 from quasarr.providers.log import debug, warn
 
 
-class Source(AbstractSource):
+class Source(AbstractSearchSource):
     initials = "hs"
     supports_imdb = True
     supports_phrase = False
@@ -43,7 +43,7 @@ class Source(AbstractSource):
 
     def feed(
         self, shared_state: shared_state, start_time: float, search_category: str
-    ) -> list[Release]:
+    ) -> list[SearchRelease]:
         """Return recent releases from HS feed"""
         releases = []
         hs = shared_state.values["config"]("Hostnames").get(self.initials)
@@ -142,7 +142,7 @@ class Source(AbstractSource):
         search_string: str = "",
         season: int = None,
         episode: int = None,
-    ) -> list[Release]:
+    ) -> list[SearchRelease]:
         """Search HS for releases by IMDb ID"""
         releases = []
         hs = shared_state.values["config"]("Hostnames").get(self.initials)
@@ -204,7 +204,7 @@ class Source(AbstractSource):
         """
         releases = []
 
-        base_category = get_base_search_category_id(search_category)
+        base_search_category = get_base_search_category_id(search_category)
 
         # Find all result entries - they appear as sections with date/title headers
         # Pattern: "dd.mm.yy, HH:MM · [Title](url)"
@@ -279,7 +279,7 @@ class Source(AbstractSource):
                 for title in unique_episodes:
                     # Validate release against search criteria
                     if not is_valid_release(
-                        title, base_category, search_string, season, episode
+                        title, base_search_category, search_string, season, episode
                     ):
                         continue
 
@@ -317,7 +317,7 @@ class Source(AbstractSource):
                 # Also add the main title (season pack) with full size - if not duplicate
                 if main_title.lower() not in seen:
                     if is_valid_release(
-                        main_title, base_category, search_string, season, episode
+                        main_title, base_search_category, search_string, season, episode
                     ):
                         link = generate_download_link(
                             shared_state,

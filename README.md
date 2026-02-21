@@ -251,6 +251,10 @@ Most feature requests can be satisfied by:
 SponsorsHelper is a Docker image that solves CAPTCHAs and decrypts links for Quasarr.  
 Image access is limited to [active monthly GitHub sponsors](https://github.com/users/rix1337/sponsorship).
 
+> **Why private / sponsor-only?**  
+> SponsorsHelper is intentionally distributed offsite as a private, paid component to increase friction for site
+> owners who actively try to detect, fight, and break CAPTCHA-circumvention workflows.
+
 [![Github Sponsorship](https://img.shields.io/badge/support-me-red.svg)](https://github.com/users/rix1337/sponsorship)
 
 ---
@@ -265,6 +269,11 @@ Image access is limited to [active monthly GitHub sponsors](https://github.com/u
     - `read:user`
     - `read:org`
 5. Click **Generate token** and copy it for the next steps
+
+Scope details:
+- `read:packages` → allows pulling the private SponsorsHelper image from GHCR.
+- `read:org` → allows checking access to the private sponsor org/repository.
+- `read:user` → allows validating that your GitHub account still has an active sponsorship.
 
 ---
 
@@ -286,7 +295,7 @@ Image access is limited to [active monthly GitHub sponsors](https://github.com/u
 
 ```bash
 echo "GITHUB_TOKEN" | docker login ghcr.io -u USERNAME --password-stdin
-````
+```
 
 * `USERNAME` → your GitHub username
 * `GITHUB_TOKEN` → the token you just created
@@ -300,7 +309,7 @@ docker run -d \
   --name='SponsorsHelper' \
   -e 'QUASARR_URL'='http://192.168.0.1:8080' \
   -e 'QUASARR_API_KEY'='your_quasarr_api_key_here' \
-  -e 'DEATHBYCAPTCHA_TOKEN'='2FMum5zuDBxMmbXDIsADnllEFl73bomydIpzo7...' \
+  -e 'APIKEY_2CAPTCHA'='your_2captcha_api_key_here' \
   -e 'GITHUB_TOKEN'='ghp_123.....456789' \
   -e 'FLARESOLVERR_URL'='http://10.10.0.1:8191/v1' \
   ghcr.io/rix1337-sponsors/docker/helper:latest
