@@ -73,23 +73,37 @@ def setup_statistics(app, shared_state):
                 </div>
             </div>
 
-            <h3>🎬 IMDb Cache</h3>
+            <h3>🗂️ Cached Metadata</h3>
             <div class="stats-grid compact">
                 <div class="stat-card">
-                    <h3>💾 Total Cached IDs</h3>
+                    <h3>💾 Total Cached Entries</h3>
+                    <div class="stat-value">{stats["metadata_total_cached"]:,}</div>
+                </div>
+                <div class="stat-card">
+                    <h3>🎬 IMDb Cached IDs</h3>
                     <div class="stat-value">{stats["imdb_total_cached"]:,}</div>
                 </div>
                 <div class="stat-card">
-                    <h3>🏷️ With Title</h3>
+                    <h3>🏷️ IMDb With Title</h3>
                     <div class="stat-value">{stats["imdb_with_title"]:,}</div>
                 </div>
                 <div class="stat-card">
-                    <h3>🖼️ With Poster</h3>
+                    <h3>🖼️ IMDb With Poster</h3>
                     <div class="stat-value">{stats["imdb_with_poster"]:,}</div>
                 </div>
                 <div class="stat-card">
-                    <h3>🌍 With Localized Title</h3>
+                    <h3>🌍 IMDb With Localized Title</h3>
                     <div class="stat-value">{stats["imdb_with_localized"]:,}</div>
+                </div>
+                <div class="stat-card">
+                    <h3>🧩 XEM Global Name Index</h3>
+                    <div class="stat-value">{stats["xem_all_names_valid"]:,}</div>
+                    <div class="stat-subtitle">{stats["xem_all_names_cached"]:,} cached entry</div>
+                </div>
+                <div class="stat-card">
+                    <h3>📺 XEM Season Name Caches</h3>
+                    <div class="stat-value">{stats["xem_season_total_cached"]:,}</div>
+                    <div class="stat-subtitle">{stats["xem_season_valid_cached"]:,} valid</div>
                 </div>
             </div>
         </div>

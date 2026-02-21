@@ -2,6 +2,7 @@
 # Quasarr
 # Project by https://github.com/rix1337
 
+from datetime import datetime
 from json import loads
 from typing import Any, Dict
 
@@ -151,6 +152,61 @@ class StatsHelper:
                 "imdb_with_localized": 0,
             }
 
+    def get_xem_cache_stats(self) -> Dict[str, int]:
+        """
+        Get statistics about TheXEM metadata caches.
+
+        - xem_all_names contains one global allNames cache row (key: "allnames")
+        - xem_season_names contains per-show season name cache rows (key: tvdb_id)
+        """
+        try:
+            now = datetime.now().timestamp()
+            all_names_db = self.shared_state.values["database"]("xem_all_names")
+            season_names_db = self.shared_state.values["database"]("xem_season_names")
+
+            all_names_cached = 0
+            all_names_valid = 0
+            all_names_raw = all_names_db.retrieve("allnames")
+            if all_names_raw:
+                all_names_cached = 1
+                try:
+                    all_names_data = loads(all_names_raw)
+                    if all_names_data.get("ttl") and all_names_data["ttl"] > now:
+                        all_names_valid = 1
+                except (ValueError, TypeError):
+                    pass
+
+            season_total_cached = 0
+            season_valid_cached = 0
+            season_entries = season_names_db.retrieve_all_titles() or []
+
+            for _, data_str in season_entries:
+                try:
+                    data = loads(data_str)
+                    season_total_cached += 1
+                    if data.get("ttl") and data["ttl"] > now:
+                        season_valid_cached += 1
+                except (ValueError, TypeError):
+                    continue
+
+            return {
+                "xem_all_names_cached": all_names_cached,
+                "xem_all_names_valid": all_names_valid,
+                "xem_season_total_cached": season_total_cached,
+                "xem_season_valid_cached": season_valid_cached,
+                "xem_total_cached": all_names_cached + season_total_cached,
+                "xem_total_valid_cached": all_names_valid + season_valid_cached,
+            }
+        except Exception:
+            return {
+                "xem_all_names_cached": 0,
+                "xem_all_names_valid": 0,
+                "xem_season_total_cached": 0,
+                "xem_season_valid_cached": 0,
+                "xem_total_cached": 0,
+                "xem_total_valid_cached": 0,
+            }
+
     def get_stats(self) -> Dict[str, Any]:
         """Get all current statistics"""
         stats = {
@@ -229,7 +285,14 @@ class StatsHelper:
             }
         )
 
-        # Add IMDb cache stats
+        # Add metadata cache stats
         stats.update(self.get_imdb_cache_stats())
+        stats.update(self.get_xem_cache_stats())
+        stats["metadata_total_cached"] = (
+            stats["imdb_total_cached"] + stats["xem_total_cached"]
+        )
+        stats["metadata_total_valid_cached"] = (
+            stats["imdb_total_cached"] + stats["xem_total_valid_cached"]
+        )
 
         return stats
