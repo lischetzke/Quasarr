@@ -8,6 +8,7 @@ import quasarr.providers.html_images as images
 from quasarr.api.jdownloader import get_jdownloader_disconnected_page
 from quasarr.downloads.packages import delete_package, get_packages
 from quasarr.providers import shared_state
+from quasarr.providers.auth import require_api_key, require_browser_auth
 from quasarr.providers.html_templates import render_button, render_centered_html
 from quasarr.storage.categories import get_download_category_emoji
 
@@ -327,6 +328,7 @@ def setup_packages_routes(app):
             redirect("/packages?deleted=0")
 
     @app.get("/api/packages/content")
+    @require_browser_auth
     def packages_content_api():
         """AJAX endpoint - returns just the packages content HTML for background refresh."""
         try:
@@ -344,6 +346,32 @@ def setup_packages_routes(app):
             """
 
         return _render_packages_content()
+
+    @app.get("/api/packages/status")
+    @require_api_key
+    def packages_status_api():
+        try:
+            device = shared_state.values["device"]
+        except KeyError:
+            device = None
+
+        if not device:
+            return {
+                "connected": False,
+                "linkgrabber": {"is_collecting": False, "is_stopped": True},
+                "queue_count": 0,
+                "history_count": 0,
+            }
+
+        downloads = get_packages(shared_state)
+        return {
+            "connected": True,
+            "linkgrabber": downloads.get(
+                "linkgrabber", {"is_collecting": False, "is_stopped": True}
+            ),
+            "queue_count": len(downloads.get("queue", [])),
+            "history_count": len(downloads.get("history", [])),
+        }
 
     @app.get("/packages")
     def packages_status():
@@ -497,6 +525,18 @@ def setup_packages_routes(app):
                 let slowConnection = false;
                 let refreshTimer = null;
                 let isFetching = false;
+                const SCROLL_STORAGE_KEY = 'quasarr_packages_scroll_y';
+
+                function saveScrollPosition() {{
+                    sessionStorage.setItem(SCROLL_STORAGE_KEY, String(window.scrollY || 0));
+                }}
+
+                function restoreScrollPosition() {{
+                    const saved = Number(sessionStorage.getItem(SCROLL_STORAGE_KEY) || '0');
+                    if (!Number.isFinite(saved)) return;
+
+                    window.scrollTo(0, saved);
+                }}
 
                 async function refreshContent() {{
                     if (refreshPaused) return;
@@ -507,7 +547,7 @@ def setup_packages_routes(app):
                     const warningEl = document.getElementById('slow-warning');
 
                     // Save scroll position before refresh
-                    const scrollY = window.scrollY;
+                    saveScrollPosition();
 
                     // Show warning after 5s if still loading
                     const slowTimer = setTimeout(() => {{
@@ -537,7 +577,8 @@ def setup_packages_routes(app):
                                 container.innerHTML = html;
                                 restoreCollapseState();
                                 // Restore scroll position after content update
-                                window.scrollTo(0, scrollY);
+                                restoreScrollPosition();
+                                requestAnimationFrame(restoreScrollPosition);
                             }}
                         }}
                     }} catch (e) {{
@@ -577,6 +618,8 @@ def setup_packages_routes(app):
 
                 // Initial collapse state setup
                 restoreCollapseState();
+                restoreScrollPosition();
+                window.addEventListener('scroll', saveScrollPosition, {{ passive: true }});
 
                 // Clear status message from URL after display and auto-hide after 5s
                 if (window.location.search.includes('deleted=')) {{

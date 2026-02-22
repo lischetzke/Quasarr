@@ -9,6 +9,7 @@ from urllib.parse import urljoin
 import requests
 from bs4 import BeautifulSoup
 
+from quasarr.downloads.sources.helpers.abstract_source import AbstractDownloadSource
 from quasarr.providers.cloudflare import (
     flaresolverr_create_session,
     flaresolverr_destroy_session,
@@ -19,10 +20,166 @@ from quasarr.providers.hostname_issues import mark_hostname_issue
 from quasarr.providers.log import debug, info
 from quasarr.providers.utils import is_flaresolverr_available
 
-hostname = "wd"
+
+class Source(AbstractDownloadSource):
+    initials = "wd"
+
+    def get_download_links(self, shared_state, url, mirrors, title, password):
+        """
+        WD source handler - resolves redirects and returns protected download links.
+        """
+        wd = shared_state.values["config"]("Hostnames").get(Source.initials)
+
+        # Try normal request first
+        text = None
+        status_code = None
+        session_id = None
+
+        try:
+            headers = {"User-Agent": shared_state.values["user_agent"]}
+            r = requests.get(url, headers=headers, timeout=10)
+            # Don't raise for status yet, check for 403/challenge
+            if r.status_code == 403 or is_cloudflare_challenge(r.text):
+                raise requests.RequestException("Cloudflare protection detected")
+            r.raise_for_status()
+            text = r.text
+            status_code = r.status_code
+        except Exception as e:
+            # If blocked or failed, try FlareSolverr
+            if is_flaresolverr_available(shared_state):
+                debug("Encountered Cloudflare on download. Trying FlareSolverr...")
+                # Create a temporary FlareSolverr session for this download attempt
+                session_id = str(uuid.uuid4())
+                created_session = flaresolverr_create_session(shared_state, session_id)
+                if not created_session:
+                    info(
+                        "Could not create FlareSolverr session. Proceeding without session..."
+                    )
+                    session_id = None
+                else:
+                    debug(f"Created FlareSolverr session: {session_id}")
+
+                try:
+                    r = flaresolverr_get(shared_state, url, session_id=session_id)
+                    if r.status_code == 403 or is_cloudflare_challenge(r.text):
+                        info(
+                            "Could not bypass Cloudflare protection with FlareSolverr!"
+                        )
+                        mark_hostname_issue(
+                            Source.initials, "download", "Cloudflare challenge failed"
+                        )
+                        if session_id:
+                            flaresolverr_destroy_session(shared_state, session_id)
+                        return {"links": [], "imdb_id": None}
+                    text = r.text
+                    status_code = r.status_code
+                except RuntimeError as fs_err:
+                    info(f"Access failed via FlareSolverr: {fs_err}")
+                    if session_id:
+                        flaresolverr_destroy_session(shared_state, session_id)
+                    return {"links": [], "imdb_id": None}
+            else:
+                info(
+                    f"Site has been updated or is protected. "
+                    f"Grabbing download links for {title} not possible! ({e})"
+                )
+                mark_hostname_issue(Source.initials, "download", str(e))
+                return {"links": [], "imdb_id": None}
+
+        try:
+            if status_code and status_code >= 400:
+                mark_hostname_issue(
+                    Source.initials, "download", f"Download error: {str(status_code)}"
+                )
+
+            soup = BeautifulSoup(text, "html.parser")
+
+            # extract IMDb id if present
+            imdb_id = None
+            a_imdb = soup.find("a", href=re.compile(r"imdb\.com/title/tt\d+"))
+            if a_imdb:
+                m = re.search(r"(tt\d+)", a_imdb["href"])
+                if m:
+                    imdb_id = m.group(1)
+                    debug(f"Found IMDb id: {imdb_id}")
+
+            # find Downloads card
+            header = soup.find(
+                "div",
+                class_="card-header",
+                string=re.compile(r"^\s*Downloads\s*$", re.IGNORECASE),
+            )
+            if not header:
+                info(
+                    "Downloads section not found. "
+                    f"Grabbing download links for {title} not possible!"
+                )
+                return {"links": [], "imdb_id": None}
+
+            card = header.find_parent("div", class_="card")
+            body = card.find("div", class_="card-body")
+            link_tags = body.find_all(
+                "a", href=True, class_=lambda c: c and "background-" in c
+            )
+
+            results = []
+            try:
+                for a in link_tags:
+                    raw_href = a["href"]
+                    full_link = urljoin(f"https://{wd}", raw_href)
+
+                    # resolve any redirects using the same session (or requests if no session)
+                    resolved = _resolve_wd_redirect(
+                        shared_state, full_link, session_id=session_id
+                    )
+
+                    if resolved:
+                        if resolved.endswith("/404.html"):
+                            info(f"Link {resolved} is dead!")
+                            continue
+
+                        # determine hoster
+                        hoster = a.get_text(strip=True) or None
+                        if not hoster:
+                            for cls in a.get("class", []):
+                                if cls.startswith("background-"):
+                                    hoster = cls.split("-", 1)[1]
+                                    break
+
+                        if mirrors and not any(
+                            m.lower() in hoster.lower() for m in mirrors
+                        ):
+                            debug(
+                                f'Skipping link from "{hoster}" (not in desired mirrors "{mirrors}")!'
+                            )
+                            continue
+
+                        results.append([resolved, hoster])
+            except Exception as e:
+                info(
+                    "Site has been updated. "
+                    f"Parsing download links for {title} not possible! Error: {e}"
+                )
+
+            return {
+                "links": results,
+                "imdb_id": imdb_id,
+            }
+
+        except Exception as e:
+            info(
+                "Site has been updated. "
+                f"Grabbing download links for {title} not possible! Error: {e}"
+            )
+            return {"links": [], "imdb_id": None}
+        finally:
+            # Always destroy the session if we created one
+            if session_id:
+                debug(f"Destroying FlareSolverr session: {session_id}")
+                flaresolverr_destroy_session(shared_state, session_id)
 
 
-def resolve_wd_redirect(shared_state, url, session_id=None):
+def _resolve_wd_redirect(shared_state, url, session_id=None):
     """
     Follow redirects for a WD mirror URL and return the final destination.
     """
@@ -35,7 +192,7 @@ def resolve_wd_redirect(shared_state, url, session_id=None):
                     return None
                 return r.url
             else:
-                info(f"WD blocked attempt to resolve {url}. Status: {r.status_code}")
+                info(f"Blocked attempt to resolve {url}. Status: {r.status_code}")
         except Exception as e:
             info(f"FlareSolverr error fetching redirected URL for {url}: {e}")
             # Fallback to requests if FlareSolverr fails?
@@ -61,167 +218,14 @@ def resolve_wd_redirect(shared_state, url, session_id=None):
             # WD usually redirects. If we get 200 OK but same URL, it might be a block page or direct link?
             # The original code assumed if no history -> blocked.
             # But if it's a direct link, history is empty.
-            # Let's trust the original logic: "WD blocked attempt..."
+            # Keep the original behavior: no redirect history is treated as blocked.
             info(
-                f"WD blocked attempt to resolve {url}. Your IP may be banned. Try again later."
+                f"Blocked attempt to resolve {url}. "
+                "Your IP may be banned. Try again later."
             )
     except Exception as e:
         info(f"Error fetching redirected URL for {url}: {e}")
         mark_hostname_issue(
-            hostname, "download", str(e) if "e" in dir() else "Download error"
+            Source.initials, "download", str(e) if "e" in dir() else "Download error"
         )
     return None
-
-
-def get_wd_download_links(shared_state, url, mirrors, title, password):
-    """
-    KEEP THE SIGNATURE EVEN IF SOME PARAMETERS ARE UNUSED!
-
-    WD source handler - resolves redirects and returns protected download links.
-    """
-
-    wd = shared_state.values["config"]("Hostnames").get("wd")
-
-    # Try normal request first
-    text = None
-    status_code = None
-    session_id = None
-
-    try:
-        headers = {"User-Agent": shared_state.values["user_agent"]}
-        r = requests.get(url, headers=headers, timeout=10)
-        # Don't raise for status yet, check for 403/challenge
-        if r.status_code == 403 or is_cloudflare_challenge(r.text):
-            raise requests.RequestException("Cloudflare protection detected")
-        r.raise_for_status()
-        text = r.text
-        status_code = r.status_code
-    except Exception as e:
-        # If blocked or failed, try FlareSolverr
-        if is_flaresolverr_available(shared_state):
-            debug(
-                f"Encountered Cloudflare on {hostname} download. Trying FlareSolverr..."
-            )
-            # Create a temporary FlareSolverr session for this download attempt
-            session_id = str(uuid.uuid4())
-            created_session = flaresolverr_create_session(shared_state, session_id)
-            if not created_session:
-                info(
-                    "Could not create FlareSolverr session. Proceeding without session..."
-                )
-                session_id = None
-            else:
-                debug(f"Created FlareSolverr session: {session_id}")
-
-            try:
-                r = flaresolverr_get(shared_state, url, session_id=session_id)
-                if r.status_code == 403 or is_cloudflare_challenge(r.text):
-                    info("Could not bypass Cloudflare protection with FlareSolverr!")
-                    mark_hostname_issue(
-                        hostname, "download", "Cloudflare challenge failed"
-                    )
-                    if session_id:
-                        flaresolverr_destroy_session(shared_state, session_id)
-                    return {"links": [], "imdb_id": None}
-                text = r.text
-                status_code = r.status_code
-            except RuntimeError as fs_err:
-                info(f"WD access failed via FlareSolverr: {fs_err}")
-                if session_id:
-                    flaresolverr_destroy_session(shared_state, session_id)
-                return {"links": [], "imdb_id": None}
-        else:
-            info(
-                f"WD site has been updated or is protected. Grabbing download links for {title} not possible! ({e})"
-            )
-            mark_hostname_issue(hostname, "download", str(e))
-            return {"links": [], "imdb_id": None}
-
-    try:
-        if status_code and status_code >= 400:
-            mark_hostname_issue(
-                hostname, "download", f"Download error: {str(status_code)}"
-            )
-
-        soup = BeautifulSoup(text, "html.parser")
-
-        # extract IMDb id if present
-        imdb_id = None
-        a_imdb = soup.find("a", href=re.compile(r"imdb\.com/title/tt\d+"))
-        if a_imdb:
-            m = re.search(r"(tt\d+)", a_imdb["href"])
-            if m:
-                imdb_id = m.group(1)
-                debug(f"Found IMDb id: {imdb_id}")
-
-        # find Downloads card
-        header = soup.find(
-            "div",
-            class_="card-header",
-            string=re.compile(r"^\s*Downloads\s*$", re.IGNORECASE),
-        )
-        if not header:
-            info(
-                f"WD Downloads section not found. Grabbing download links for {title} not possible!"
-            )
-            return {"links": [], "imdb_id": None}
-
-        card = header.find_parent("div", class_="card")
-        body = card.find("div", class_="card-body")
-        link_tags = body.find_all(
-            "a", href=True, class_=lambda c: c and "background-" in c
-        )
-
-        results = []
-        try:
-            for a in link_tags:
-                raw_href = a["href"]
-                full_link = urljoin(f"https://{wd}", raw_href)
-
-                # resolve any redirects using the same session (or requests if no session)
-                resolved = resolve_wd_redirect(
-                    shared_state, full_link, session_id=session_id
-                )
-
-                if resolved:
-                    if resolved.endswith("/404.html"):
-                        info(f"Link {resolved} is dead!")
-                        continue
-
-                    # determine hoster
-                    hoster = a.get_text(strip=True) or None
-                    if not hoster:
-                        for cls in a.get("class", []):
-                            if cls.startswith("background-"):
-                                hoster = cls.split("-", 1)[1]
-                                break
-
-                    if mirrors and not any(
-                        m.lower() in hoster.lower() for m in mirrors
-                    ):
-                        debug(
-                            f'Skipping link from "{hoster}" (not in desired mirrors "{mirrors}")!'
-                        )
-                        continue
-
-                    results.append([resolved, hoster])
-        except Exception as e:
-            info(
-                f"WD site has been updated. Parsing download links for {title} not possible! Error: {e}"
-            )
-
-        return {
-            "links": results,
-            "imdb_id": imdb_id,
-        }
-
-    except Exception as e:
-        info(
-            f"WD site has been updated. Grabbing download links for {title} not possible! Error: {e}"
-        )
-        return {"links": [], "imdb_id": None}
-    finally:
-        # Always destroy the session if we created one
-        if session_id:
-            debug(f"Destroying FlareSolverr session: {session_id}")
-            flaresolverr_destroy_session(shared_state, session_id)

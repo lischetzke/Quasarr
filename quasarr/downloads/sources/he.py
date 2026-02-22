@@ -9,6 +9,7 @@ from urllib.parse import urlencode, urljoin, urlparse, urlunparse
 import requests
 from bs4 import BeautifulSoup
 
+from quasarr.downloads.sources.helpers.abstract_source import AbstractDownloadSource
 from quasarr.providers.cloudflare import (
     flaresolverr_create_session,
     flaresolverr_destroy_session,
@@ -19,16 +20,85 @@ from quasarr.providers.cloudflare import (
 from quasarr.providers.log import debug, info, warn
 from quasarr.providers.utils import is_flaresolverr_available
 
-hostname = "he"
+
+class Source(AbstractDownloadSource):
+    initials = "he"
+
+    def get_download_links(self, shared_state, url, mirrors, title, password):
+        """
+        HE source handler - fetches plain download links from HE pages.
+        """
+        headers = {
+            "User-Agent": shared_state.values["user_agent"],
+        }
+
+        # 1. Try Standard Strategy (Fast)
+        result = _strategy_standard(url, headers)
+
+        # 2. If Standard failed (result is None), switch to FlareSolverr (Robust)
+        if result is None:
+            info("Standard connection failed/blocked. Switching to FlareSolverr...")
+            result = _strategy_flaresolverr_loop(shared_state, url)
+
+        requested_mirrors = {
+            _normalize_mirror_name(mirror) for mirror in (mirrors or []) if mirror
+        }
+        if result and result.get("links"):
+            result["links"] = _filter_links_by_mirrors(
+                result["links"], requested_mirrors
+            )
+
+        if not result or not result["links"]:
+            info(f"No external download links found for {title}")
+            return {"links": [], "imdb_id": result["imdb_id"] if result else None}
+
+        return result
 
 
-def remove_fragment(url):
+def _normalize_mirror_name(mirror_name):
+    normalized = mirror_name.lower().strip()
+
+    if "://" in normalized:
+        parsed = urlparse(normalized)
+        normalized = parsed.netloc or parsed.path
+
+    if normalized.startswith("www."):
+        normalized = normalized[4:]
+
+    normalized = normalized.split("/", 1)[0]
+    normalized = normalized.split(":", 1)[0]
+    if " " in normalized:
+        normalized = normalized.split()[-1]
+    if "." in normalized:
+        normalized = normalized.split(".", 1)[0]
+
+    aliases = {
+        "ddl": "ddownload",
+        "ddlto": "ddownload",
+        "rg": "rapidgator",
+        "tb": "turbobit",
+    }
+    return aliases.get(normalized, normalized)
+
+
+def _filter_links_by_mirrors(links, requested_mirrors):
+    if not requested_mirrors:
+        return links
+
+    filtered_links = []
+    for link_url, mirror_name in links:
+        if _normalize_mirror_name(mirror_name) in requested_mirrors:
+            filtered_links.append([link_url, mirror_name])
+    return filtered_links
+
+
+def _remove_fragment(url):
     """Removes #unlocked or other fragments from URL."""
     parsed = urlparse(url)
     return urlunparse(parsed._replace(fragment=""))
 
 
-def extract_imdb_id(html_content):
+def _extract_imdb_id(html_content):
     """Helper to extract IMDB ID from HTML content."""
     if not html_content:
         return None
@@ -48,7 +118,7 @@ def extract_imdb_id(html_content):
     return None
 
 
-def extract_form_payload_list(html_content, url):
+def _extract_form_payload_list(html_content, url):
     """
     Extracts form data as a LIST of TUPLES from raw HTML.
     Crucial for sites that require duplicate keys (e.g. maZQ-D).
@@ -70,7 +140,7 @@ def extract_form_payload_list(html_content, url):
     else:
         action_url = action
 
-    action_url = remove_fragment(action_url)
+    action_url = _remove_fragment(action_url)
 
     # Use a LIST to preserve duplicate keys
     payload_list = []
@@ -111,7 +181,7 @@ def extract_form_payload_list(html_content, url):
     return action_url, payload_list, True
 
 
-def parse_links_strict(html):
+def _parse_links_strict(html):
     """
     Parses links specifically from the content-protector-access-form div
     or the #unlocked div.
@@ -152,7 +222,7 @@ def parse_links_strict(html):
     return valid_links
 
 
-def strategy_standard(url, headers):
+def _strategy_standard(url, headers):
     """
     Fast Path: Uses standard requests.
     Returns dict {'links': [], 'imdb_id': ...} if successful,
@@ -160,7 +230,7 @@ def strategy_standard(url, headers):
     """
     debug(f"Attempting Standard Strategy (No FlareSolverr) for {url}")
     session = requests.Session()
-    clean_url = remove_fragment(url)
+    clean_url = _remove_fragment(url)
 
     try:
         # 1. GET
@@ -171,16 +241,16 @@ def strategy_standard(url, headers):
         r.raise_for_status()
 
         # Extract IMDB immediately from the page content
-        imdb_id = extract_imdb_id(r.text)
+        imdb_id = _extract_imdb_id(r.text)
 
         # Check immediate links
-        links = parse_links_strict(r.text)
+        links = _parse_links_strict(r.text)
         if links:
             debug(f"Standard: Found {len(links)} links immediately.")
             return {"links": links, "imdb_id": imdb_id}
 
         # 2. Extract Form
-        action_url, payload_list, found_form = extract_form_payload_list(
+        action_url, payload_list, found_form = _extract_form_payload_list(
             r.text, clean_url
         )
         if not found_form:
@@ -208,7 +278,7 @@ def strategy_standard(url, headers):
         r_post.raise_for_status()
 
         # 4. Result
-        links = parse_links_strict(r_post.text)
+        links = _parse_links_strict(r_post.text)
         if links:
             debug(f"Standard: Success! Found {len(links)} links.")
             return {"links": links, "imdb_id": imdb_id}
@@ -221,7 +291,7 @@ def strategy_standard(url, headers):
         return None
 
 
-def strategy_flaresolverr_loop(shared_state, url):
+def _strategy_flaresolverr_loop(shared_state, url):
     """
     Robust Path: Uses FlareSolverr with a retry loop to handle
     Cloudflare token resets/reloads.
@@ -239,7 +309,7 @@ def strategy_flaresolverr_loop(shared_state, url):
         return {"links": [], "imdb_id": None}
 
     try:
-        clean_url = remove_fragment(url)
+        clean_url = _remove_fragment(url)
 
         # 1. Initial GET
         debug(f"FlareSolverr: GET {clean_url}")
@@ -247,14 +317,14 @@ def strategy_flaresolverr_loop(shared_state, url):
         current_html = r_current.text
 
         # Extract IMDB from the first successful page load
-        imdb_id = extract_imdb_id(current_html)
+        imdb_id = _extract_imdb_id(current_html)
 
         # 2. Submission Loop
         max_attempts = 3
 
         for attempt in range(1, max_attempts + 1):
             # A. Check for success (links already visible?)
-            links = parse_links_strict(current_html)
+            links = _parse_links_strict(current_html)
             if links:
                 debug(
                     f"FlareSolverr: Success! Found {len(links)} links on attempt {attempt}."
@@ -265,7 +335,7 @@ def strategy_flaresolverr_loop(shared_state, url):
                 break
 
                 # B. Extract Form Data
-            action_url, payload_list, found_form = extract_form_payload_list(
+            action_url, payload_list, found_form = _extract_form_payload_list(
                 current_html, clean_url
             )
 
@@ -305,28 +375,3 @@ def strategy_flaresolverr_loop(shared_state, url):
     finally:
         debug(f"Destroying FlareSolverr session: {session_id}")
         flaresolverr_destroy_session(shared_state, session_id)
-
-
-def get_he_download_links(shared_state, url, mirrors, title, password):
-    """
-    KEEP THE SIGNATURE EVEN IF SOME PARAMETERS ARE UNUSED!
-
-    HE source handler - fetches plain download links from HE pages.
-    """
-    headers = {
-        "User-Agent": shared_state.values["user_agent"],
-    }
-
-    # 1. Try Standard Strategy (Fast)
-    result = strategy_standard(url, headers)
-
-    # 2. If Standard failed (result is None), switch to FlareSolverr (Robust)
-    if result is None:
-        info("Standard connection failed/blocked. Switching to FlareSolverr...")
-        result = strategy_flaresolverr_loop(shared_state, url)
-
-    if not result or not result["links"]:
-        info(f"No external download links found for {title}")
-        return {"links": [], "imdb_id": result["imdb_id"] if result else None}
-
-    return result

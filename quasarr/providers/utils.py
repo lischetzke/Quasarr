@@ -2,6 +2,7 @@
 # Quasarr
 # Project by https://github.com/rix1337
 
+import html
 import json
 import re
 import socket
@@ -18,17 +19,26 @@ import requests
 from PIL import Image
 
 from quasarr.constants import (
-    HOSTNAMES_REQUIRING_LOGIN,
     MONTHS_MAP,
     MOVIE_REGEX,
     SEARCH_CAT_BOOKS,
     SEARCH_CAT_MOVIES,
+    SEARCH_CAT_MOVIES_4K,
+    SEARCH_CAT_MOVIES_HD,
     SEARCH_CAT_MUSIC,
+    SEARCH_CAT_MUSIC_FLAC,
+    SEARCH_CAT_MUSIC_MP3,
     SEARCH_CAT_SHOWS,
+    SEARCH_CAT_SHOWS_4K,
+    SEARCH_CAT_SHOWS_HD,
+    SEARCH_CAT_XXX,
+    SEARCH_CATEGORIES,
     SEASON_EP_REGEX,
 )
 from quasarr.providers.log import crit, debug, error, trace, warn
+from quasarr.search.sources.helpers import get_login_required_hostnames
 from quasarr.storage.categories import download_category_exists, search_category_exists
+from quasarr.storage.sqlite_database import DataBase
 
 
 class Unbuffered(object):
@@ -196,7 +206,7 @@ def is_site_usable(shared_state, shorthand):
     if not hostname:
         return False
 
-    if shorthand not in HOSTNAMES_REQUIRING_LOGIN:
+    if shorthand not in get_login_required_hostnames():
         return True  # No login needed, hostname is enough
 
     # Check if login was skipped
@@ -444,13 +454,23 @@ def parse_payload(payload_str):
         raise ValueError(f"expected 6 fields, got {len(parts)}")
 
     return {
-        "title": title,
+        "title": normalize_download_title(title),
         "url": url,
         "size_mb": size_mb,
         "password": password if password else None,
         "imdb_id": imdb_id if imdb_id else None,
         "source_key": source_key if source_key else None,
     }
+
+
+def normalize_download_title(title):
+    """
+    Normalize download titles at handoff time.
+    Removes trailing marker suffixes like "*mirror*" and trims whitespace.
+    """
+    normalized = str(title or "").rstrip()
+    normalized = re.sub(r"\s*\*mirror\*\s*$", "", normalized, flags=re.IGNORECASE)
+    return normalized.rstrip()
 
 
 def determine_category(request_from, category=None):
@@ -474,8 +494,8 @@ def determine_category(request_from, category=None):
 
 def get_base_search_category_id(cat_id):
     """
-    Reverse-parses a custom or default category ID to its base type ID.
-    E.g., 102010 -> 2000 (Movies), 5040 -> 5000 (TV)
+    Resolves a category ID (default, subcategory, or custom) to its base type ID.
+    Supports legacy custom category IDs by falling back to stored base_type metadata.
     """
     try:
         cat_id = int(cat_id)
@@ -502,10 +522,171 @@ def get_base_search_category_id(cat_id):
         return SEARCH_CAT_MUSIC
     elif 5000 <= cat_id < 6000:
         return SEARCH_CAT_SHOWS
+    elif 6000 <= cat_id < 7000:
+        return SEARCH_CAT_XXX
     elif 7000 <= cat_id < 8000:
         return SEARCH_CAT_BOOKS
 
+    # Legacy fallback: custom category IDs may not always be reversible from ID math.
+    db = DataBase("categories_search")
+    data_str = db.retrieve(str(cat_id))
+    if not data_str:
+        return None
+
+    try:
+        data = json.loads(data_str)
+    except json.JSONDecodeError:
+        return None
+
+    base_type = data.get("base_type")
+    legacy_base_type_map = {
+        "movies": SEARCH_CAT_MOVIES,
+        "music": SEARCH_CAT_MUSIC,
+        "tv": SEARCH_CAT_SHOWS,
+        "books": SEARCH_CAT_BOOKS,
+    }
+
+    if isinstance(base_type, str):
+        if base_type in legacy_base_type_map:
+            return legacy_base_type_map[base_type]
+        try:
+            base_type = int(base_type)
+        except ValueError:
+            return None
+
+    if isinstance(base_type, int) and base_type in SEARCH_CATEGORIES:
+        return base_type
+
     return None
+
+
+def get_search_behavior_category(cat_id):
+    """
+    Resolve the effective category behavior for search execution/filtering.
+
+    - Default categories return themselves.
+    - Custom categories (100000+) return their stored base_type when available.
+      This allows custom categories derived from subcategories (e.g. 2040/5070)
+      to behave exactly like those categories except for whitelist ownership.
+    """
+    try:
+        cat_id = int(cat_id)
+    except (ValueError, TypeError):
+        return None
+
+    if cat_id < 100000:
+        return cat_id
+
+    db = DataBase("categories_search")
+    data_str = db.retrieve(str(cat_id))
+    if data_str:
+        try:
+            data = json.loads(data_str)
+            base_type = data.get("base_type")
+            if isinstance(base_type, str):
+                try:
+                    base_type = int(base_type)
+                except ValueError:
+                    base_type = None
+            if isinstance(base_type, int) and base_type in SEARCH_CATEGORIES:
+                return base_type
+        except json.JSONDecodeError:
+            pass
+
+    # Legacy fallback for IDs created as 100000 + category_id.
+    legacy_base = cat_id - 100000
+    if legacy_base in SEARCH_CATEGORIES:
+        return legacy_base
+
+    # Final fallback to canonical base type.
+    return get_base_search_category_id(cat_id)
+
+
+SEARCH_SUBCATEGORY_CAPABILITY_BASE = {
+    SEARCH_CAT_MOVIES_HD: SEARCH_CAT_MOVIES,
+    SEARCH_CAT_MOVIES_4K: SEARCH_CAT_MOVIES,
+    SEARCH_CAT_SHOWS_HD: SEARCH_CAT_SHOWS,
+    SEARCH_CAT_SHOWS_4K: SEARCH_CAT_SHOWS,
+    SEARCH_CAT_MUSIC_MP3: SEARCH_CAT_MUSIC,
+    SEARCH_CAT_MUSIC_FLAC: SEARCH_CAT_MUSIC,
+}
+
+
+_HD_RESOLUTION_PATTERN = re.compile(r"\b(?:720p|720i|1080p|1080i|fullhd|fhd)\b", re.I)
+_STRONG_4K_PATTERN = re.compile(r"\b(?:2160p|2160i|4k)\b", re.I)
+_UHD_PATTERN = re.compile(r"\buhd\b", re.I)
+
+
+_SEARCH_SUBCATEGORY_TITLE_FILTERS = {
+    SEARCH_CAT_MOVIES_HD: _HD_RESOLUTION_PATTERN,
+    SEARCH_CAT_SHOWS_HD: _HD_RESOLUTION_PATTERN,
+    SEARCH_CAT_MUSIC_MP3: re.compile(r"\bmp3\b", re.I),
+    SEARCH_CAT_MUSIC_FLAC: re.compile(r"\b(?:flac|lossless)\b", re.I),
+}
+
+
+def get_search_capability_category(cat_id):
+    """
+    Resolve the category used for source capability checks.
+
+    - Base categories keep their own ID.
+    - Quality/format subcategories map to their base category capability.
+    - Custom categories map to their resolved base category.
+    """
+    behavior_category = get_search_behavior_category(cat_id)
+    if behavior_category is None:
+        return None
+    return SEARCH_SUBCATEGORY_CAPABILITY_BASE.get(behavior_category, behavior_category)
+
+
+def has_source_capability_for_category(cat_id, supported_categories):
+    """Check whether at least one source capability can serve the given category."""
+    try:
+        cat_id = int(cat_id)
+    except (TypeError, ValueError):
+        return False
+
+    # Keep legacy behavior: always expose custom categories.
+    if cat_id >= 100000:
+        return True
+
+    capability_category = get_search_capability_category(cat_id)
+    if capability_category is None:
+        return False
+    return capability_category in supported_categories
+
+
+def _normalize_release_title_for_category_match(title):
+    title = html.unescape(str(title or ""))
+    title = re.sub(r"[._-]+", " ", title)
+    title = re.sub(r"\s+", " ", title)
+    return title.strip()
+
+
+def release_matches_search_category(search_category, release_title):
+    """
+    Return True when a release title matches the requested subcategory rules.
+    Categories without title filters are accepted as-is.
+    """
+    behavior_category = get_search_behavior_category(search_category)
+    if behavior_category is None:
+        return True
+
+    normalized_title = _normalize_release_title_for_category_match(release_title)
+
+    # 4K categories: require explicit 4K signal (2160/4k), or UHD without lower-res tags.
+    # This prevents false positives like "1080p ... UHD ...".
+    if behavior_category in (SEARCH_CAT_MOVIES_4K, SEARCH_CAT_SHOWS_4K):
+        if _STRONG_4K_PATTERN.search(normalized_title):
+            return True
+        if not _UHD_PATTERN.search(normalized_title):
+            return False
+        return not bool(_HD_RESOLUTION_PATTERN.search(normalized_title))
+
+    pattern = _SEARCH_SUBCATEGORY_TITLE_FILTERS.get(behavior_category)
+    if not pattern:
+        return True
+    return bool(pattern.search(normalized_title))
 
 
 def determine_search_category(request_from, cat_param=None):
@@ -753,10 +934,11 @@ def is_valid_release(
     - episode: desired episode number (or None)
     """
     try:
-        is_movie_search = search_category == SEARCH_CAT_MOVIES
-        is_tv_search = search_category == SEARCH_CAT_SHOWS
-        is_docs_search = search_category == SEARCH_CAT_BOOKS
-        is_music_search = search_category == SEARCH_CAT_MUSIC
+        is_movie_search = search_category // 1000 * 1000 == SEARCH_CAT_MOVIES
+        is_tv_search = search_category // 1000 * 1000 == SEARCH_CAT_SHOWS
+        is_docs_search = search_category // 1000 * 1000 == SEARCH_CAT_BOOKS
+        is_music_search = search_category // 1000 * 1000 == SEARCH_CAT_MUSIC
+        is_xxx_search = search_category // 1000 * 1000 == SEARCH_CAT_XXX
 
         # if search string is NOT an imdb id check search_string_in_sanitized_title - if not match, it is not valid
         if not is_docs_search and not is_imdb_id(search_string):
@@ -823,6 +1005,9 @@ def is_valid_release(
                     pattern=SEASON_EP_REGEX.pattern,
                 )
                 return False
+            return True
+
+        if is_xxx_search:
             return True
 
         # unknown search source — reject by default

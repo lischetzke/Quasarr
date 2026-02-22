@@ -4,7 +4,6 @@
 
 import traceback
 import xml.sax.saxutils as sax_utils
-from base64 import urlsafe_b64decode
 from datetime import datetime
 from urllib.parse import parse_qs, urlparse
 from xml.etree import ElementTree
@@ -19,10 +18,12 @@ from quasarr.providers.log import debug, error, info, warn
 from quasarr.providers.utils import (
     determine_category,
     determine_search_category,
+    has_source_capability_for_category,
     parse_payload,
 )
 from quasarr.providers.version import get_version
 from quasarr.search import get_search_results
+from quasarr.search.sources import get_sources
 from quasarr.storage.categories import get_download_categories, get_search_categories
 
 
@@ -30,14 +31,14 @@ def setup_arr_routes(app):
     @app.get("/download/")
     def fake_nzb_file():
         payload = request.query.payload
-        decoded_payload = urlsafe_b64decode(payload).decode("utf-8").split("|")
+        decoded_payload = parse_payload(payload)
 
-        title = decoded_payload[0]
-        url = decoded_payload[1]
-        size_mb = decoded_payload[2]
-        password = decoded_payload[3]
-        imdb_id = decoded_payload[4]
-        source_key = decoded_payload[5]
+        title = decoded_payload["title"]
+        url = decoded_payload["url"]
+        size_mb = decoded_payload["size_mb"]
+        password = decoded_payload["password"] or ""
+        imdb_id = decoded_payload["imdb_id"] or ""
+        source_key = decoded_payload["source_key"] or ""
 
         return f'<nzb><file title="{title}" url="{url}" size_mb="{size_mb}" password="{password}" imdb_id="{imdb_id}" source_key="{source_key}"/></nzb>'
 
@@ -218,7 +219,10 @@ def setup_arr_routes(app):
                 elif mode == "queue" or mode == "history":
                     if request.query.name and request.query.name == "delete":
                         package_id = request.query.value
-                        deleted = delete_package(shared_state, package_id)
+                        package_title = getattr(request.query, "title", None)
+                        deleted = delete_package(
+                            shared_state, package_id, package_title=package_title
+                        )
                         response = {"status": deleted, "nzo_ids": [package_id]}
                         if not deleted:
                             response["quasarr_error"] = True
@@ -230,6 +234,10 @@ def setup_arr_routes(app):
                             "queue": {
                                 "paused": False,
                                 "slots": packages.get("queue", []),
+                                "linkgrabber": packages.get(
+                                    "linkgrabber",
+                                    {"is_collecting": False, "is_stopped": True},
+                                ),
                             }
                         }
                     elif mode == "history":
@@ -237,6 +245,10 @@ def setup_arr_routes(app):
                             "history": {
                                 "paused": False,
                                 "slots": packages.get("history", []),
+                                "linkgrabber": packages.get(
+                                    "linkgrabber",
+                                    {"is_collecting": False, "is_stopped": True},
+                                ),
                             }
                         }
             except Exception as e:
@@ -261,10 +273,20 @@ def setup_arr_routes(app):
                         all_categories.items(), key=lambda x: int(x[0])
                     )
 
+                    supported_categories_union = set()
+                    for source in get_sources().values():
+                        supported_categories_union.update(source.supported_categories)
+
                     for cat_id, details in sorted_cats:
-                        categories_xml += (
-                            f'<category id="{cat_id}" name="{details["name"]}" />\n'
-                        )
+                        if has_source_capability_for_category(
+                            cat_id, supported_categories_union
+                        ):
+                            cat_name = sax_utils.escape(
+                                str(details.get("name", cat_id))
+                            )
+                            categories_xml += (
+                                f'<category id="{cat_id}" name="{cat_name}" />\n'
+                            )
 
                     return f"""<?xml version="1.0" encoding="UTF-8"?>
                                 <caps>

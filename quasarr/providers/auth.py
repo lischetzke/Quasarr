@@ -326,3 +326,24 @@ def require_api_key(func):
         return func(*args, **kwargs)
 
     return decorated
+
+
+def require_browser_auth(func):
+    @wraps(func)
+    def decorated(*args, **kwargs):
+        if not is_auth_enabled():
+            return func(*args, **kwargs)
+
+        path = request.path.split("?")[0]
+
+        if is_form_auth():
+            if not check_form_auth():
+                _invalidate_cookie()
+                redirect(f"/login?next={path}")
+        else:
+            if not check_basic_auth():
+                return require_basic_auth()
+
+        return func(*args, **kwargs)
+
+    return decorated

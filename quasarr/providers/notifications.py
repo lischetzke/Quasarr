@@ -16,6 +16,110 @@ silent = bool(silent_env)
 silent_max = silent_env.lower() == "max"
 
 
+def _format_number(value):
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        if isinstance(value, float):
+            return f"{value:.5f}".rstrip("0").rstrip(".")
+        return str(value)
+    return str(value)
+
+
+def _build_solved_fields(details):
+    if not details:
+        return None
+
+    fields = []
+
+    providers = details.get("providers")
+    normalized_providers = []
+    if isinstance(providers, list):
+        for provider in providers:
+            if not isinstance(provider, dict):
+                continue
+            name = provider.get("provider") or provider.get("name")
+            attempt = provider.get("attempt")
+            max_attempts = provider.get("max_attempts")
+            cost = provider.get("cost")
+            balance = provider.get("balance")
+            currency = provider.get("currency")
+            normalized_providers.append(
+                {
+                    "name": name,
+                    "attempt": attempt,
+                    "max_attempts": max_attempts,
+                    "cost": cost,
+                    "balance": balance,
+                    "currency": currency,
+                }
+            )
+
+    if normalized_providers:
+        provider_lines = []
+        for provider in normalized_providers:
+            label = provider["name"] or "Unknown"
+            attempt = provider.get("attempt")
+            max_attempts = provider.get("max_attempts")
+            if attempt is not None and max_attempts is not None:
+                label += f" ({attempt}/{max_attempts} runs)"
+            provider_lines.append(label)
+
+        if provider_lines:
+            fields.append(
+                {
+                    "name": "Providers Used",
+                    "value": "\n".join(provider_lines),
+                }
+            )
+
+        cost_lines = []
+        for provider in normalized_providers:
+            if provider.get("cost") is None or not provider.get("currency"):
+                continue
+            label = f"{provider['name']}: " if provider.get("name") else ""
+            cost_lines.append(
+                f"{label}{_format_number(provider['cost'])} {provider['currency']}"
+            )
+        if cost_lines:
+            fields.append({"name": "Cost", "value": "\n".join(cost_lines)})
+
+        balance_lines = []
+        for provider in normalized_providers:
+            if provider.get("balance") is None or not provider.get("currency"):
+                continue
+            label = f"{provider['name']}: " if provider.get("name") else ""
+            balance_lines.append(
+                f"{label}{_format_number(provider['balance'])} {provider['currency']}"
+            )
+        if balance_lines:
+            fields.append(
+                {"name": "Remaining Balance", "value": "\n".join(balance_lines)}
+            )
+    else:
+        # Backward compatibility for older SponsorsHelper payloads.
+        summary = details.get("summary")
+        if summary:
+            fields.append({"name": "Providers Used", "value": str(summary)})
+
+        if details.get("cost") is not None and details.get("currency"):
+            fields.append(
+                {
+                    "name": "Cost",
+                    "value": f"{_format_number(details['cost'])} {details['currency']}",
+                }
+            )
+        if details.get("balance") is not None and details.get("currency"):
+            fields.append(
+                {
+                    "name": "Remaining Balance",
+                    "value": f"{_format_number(details['balance'])} {details['currency']}",
+                }
+            )
+
+    return fields or None
+
+
 def send_discord_message(
     shared_state, title, case, imdb_id=None, details=None, source=None
 ):
@@ -54,27 +158,7 @@ def send_discord_message(
         fields = None
     elif case == "solved":
         description = "CAPTCHA solved by SponsorsHelper!"
-        if details and details.get("summary"):
-            description += f"\n{details['summary']}"
-
-        fields = []
-        if details and details.get("cost") is not None and details.get("currency"):
-            fields.append(
-                {
-                    "name": "Cost",
-                    "value": f"{details['cost']} {details['currency']}",
-                }
-            )
-        if details and details.get("balance") is not None and details.get("currency"):
-            fields.append(
-                {
-                    "name": "Remaining Balance",
-                    "value": f"{details['balance']} {details['currency']}",
-                }
-            )
-
-        if not fields:
-            fields = None
+        fields = _build_solved_fields(details)
     elif case == "failed":
         description = "SponsorsHelper failed to solve the CAPTCHA! Package marked as failed for deletion."
         fields = None

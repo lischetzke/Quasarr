@@ -11,8 +11,8 @@ from Cryptodome.Cipher import AES
 from Cryptodome.Random import get_random_bytes
 from Cryptodome.Util.Padding import pad
 
-from quasarr.constants import HOSTNAMES
 from quasarr.providers import shared_state
+from quasarr.search.sources.helpers import get_hostnames
 from quasarr.storage.sqlite_database import DataBase
 
 
@@ -29,7 +29,7 @@ class Config(object):
         "Settings": [
             ("hostnames_url", "secret", ""),
         ],
-        "Hostnames": [(hostname, "secret", "") for hostname in HOSTNAMES],
+        "Hostnames": [(hostname, "secret", "") for hostname in get_hostnames()],
         "FlareSolverr": [
             ("url", "str", ""),
         ],

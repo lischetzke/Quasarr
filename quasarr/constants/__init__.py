@@ -9,55 +9,49 @@ import re
 # ==============================================================================
 
 # User agent for all requests, if not overwritten by Flaresolverr
-FALLBACK_USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"
+FALLBACK_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36"
 
-# These are the supported hostnames in Quasarr
-HOSTNAMES = [
-    "al",
-    "by",
-    "dd",
-    "dj",
-    "dl",
-    "dt",
-    "dw",
-    "fx",
-    "he",
-    "hs",
-    "mb",
-    "nk",
-    "nx",
-    "sf",
-    "sj",
-    "sl",
-    "wd",
-    "wx",
-]
-
-# These hostnames require credentials to be used
-HOSTNAMES_REQUIRING_LOGIN = ["al", "dd", "dj", "dl", "nx", "sj"]
-
-# These hostnames support not only feed and imdb searches, but also search phrases
-HOSTNAMES_SUPPORTING_SEARCH_PHRASE = ["by", "dl", "dt", "nx", "sl", "wd"]
 
 # ==============================================================================
-# SEARCH & CATEGORIES
+# SEARCH AND DOWNLOAD CATEGORIES
 # ==============================================================================
 
-# Numeric newznab categories supported by search
-SEARCH_CAT_MOVIES = 2000
-SEARCH_CAT_MUSIC = 3000
-SEARCH_CAT_SHOWS = 5000
-SEARCH_CAT_BOOKS = 7000
-
-# Default Set of Search Categories
-SEARCH_CATEGORIES = {
-    "2000": {"name": "Movies", "emoji": "🎬"},
-    "3000": {"name": "Music", "emoji": "🎵"},
-    "5000": {"name": "TV", "emoji": "📺"},
-    "7000": {"name": "Books", "emoji": "📚"},
+# Search category source of truth
+SEARCH_CATEGORY_DEFINITIONS = {
+    "MOVIES": {"id": 2000, "name": "Movies", "emoji": "🎬"},
+    "MOVIES_HD": {"id": 2040, "name": "Movies/HD", "emoji": "🎬"},
+    "MOVIES_4K": {"id": 2045, "name": "Movies/4K", "emoji": "🎬"},
+    "MUSIC": {"id": 3000, "name": "Audio", "emoji": "🎵"},
+    "MUSIC_MP3": {"id": 3010, "name": "Audio/MP3", "emoji": "🎵"},
+    "MUSIC_FLAC": {"id": 3040, "name": "Audio/FLAC", "emoji": "🎵"},
+    "SHOWS": {"id": 5000, "name": "TV", "emoji": "📺"},
+    "SHOWS_HD": {"id": 5040, "name": "TV/HD", "emoji": "📺"},
+    "SHOWS_4K": {"id": 5045, "name": "TV/4K", "emoji": "📺"},
+    "SHOWS_ANIME": {"id": 5070, "name": "Anime", "emoji": "⛩️"},
+    "XXX": {"id": 6000, "name": "XXX", "emoji": "🔞"},
+    "BOOKS": {"id": 7000, "name": "Books", "emoji": "📚"},
 }
 
-# Default SEt of Download Categories
+# Importable constants for search categories are generated from the source of truth above to ensure consistency and maintainability.
+SEARCH_CAT_MOVIES = SEARCH_CATEGORY_DEFINITIONS["MOVIES"]["id"]
+SEARCH_CAT_MOVIES_HD = SEARCH_CATEGORY_DEFINITIONS["MOVIES_HD"]["id"]
+SEARCH_CAT_MOVIES_4K = SEARCH_CATEGORY_DEFINITIONS["MOVIES_4K"]["id"]
+SEARCH_CAT_MUSIC = SEARCH_CATEGORY_DEFINITIONS["MUSIC"]["id"]
+SEARCH_CAT_MUSIC_MP3 = SEARCH_CATEGORY_DEFINITIONS["MUSIC_MP3"]["id"]
+SEARCH_CAT_MUSIC_FLAC = SEARCH_CATEGORY_DEFINITIONS["MUSIC_FLAC"]["id"]
+SEARCH_CAT_SHOWS = SEARCH_CATEGORY_DEFINITIONS["SHOWS"]["id"]
+SEARCH_CAT_SHOWS_HD = SEARCH_CATEGORY_DEFINITIONS["SHOWS_HD"]["id"]
+SEARCH_CAT_SHOWS_4K = SEARCH_CATEGORY_DEFINITIONS["SHOWS_4K"]["id"]
+SEARCH_CAT_SHOWS_ANIME = SEARCH_CATEGORY_DEFINITIONS["SHOWS_ANIME"]["id"]
+SEARCH_CAT_XXX = SEARCH_CATEGORY_DEFINITIONS["XXX"]["id"]
+SEARCH_CAT_BOOKS = SEARCH_CATEGORY_DEFINITIONS["BOOKS"]["id"]
+
+SEARCH_CATEGORIES = {
+    definition["id"]: {"name": definition["name"], "emoji": definition["emoji"]}
+    for definition in SEARCH_CATEGORY_DEFINITIONS.values()
+}
+
+# Default Set of Download Categories
 DOWNLOAD_CATEGORIES = {
     "movies": {"emoji": "🎬"},
     "music": {"emoji": "🎵"},
@@ -104,22 +98,6 @@ SHARE_HOSTERS = [h[0] for h in HOSTERS]
 
 # Recommend only these
 RECOMMENDED_HOSTERS = [h[0] for h in HOSTERS if h[1]]
-
-# Common TLDs to strip for mirror name comparison
-COMMON_TLDS = {
-    ".com",
-    ".net",
-    ".io",
-    ".cc",
-    ".to",
-    ".me",
-    ".org",
-    ".co",
-    ".de",
-    ".eu",
-    ".info",
-}
-
 
 # ==============================================================================
 # REGEX PATTERNS (CONTENT & PARSING)

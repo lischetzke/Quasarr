@@ -130,6 +130,7 @@ def setup_sponsors_helper_routes(app):
             summary = data.get("summary")
             balance = data.get("balance")
             currency = data.get("currency")
+            providers = data.get("providers")
 
             info(
                 f"Received <green>{len(download_links)}</green> download links for <y>{title}</y>"
@@ -147,7 +148,9 @@ def setup_sponsors_helper_routes(app):
                     shared_state.get_db("protected").delete(package_id)
 
                     details = {}
-                    if summary:
+                    if isinstance(providers, list) and providers:
+                        details["providers"] = providers
+                    elif summary:
                         details["summary"] = summary
                     if cost is not None and currency:
                         details["cost"] = cost
@@ -159,7 +162,20 @@ def setup_sponsors_helper_routes(app):
                         shared_state, title=title, case="solved", details=details
                     )
                     log_msg = f"Download successfully started for <y>{title}</y>"
-                    if summary:
+                    if isinstance(providers, list) and providers:
+                        used_providers = []
+                        for provider in providers:
+                            if not isinstance(provider, dict):
+                                continue
+                            provider_name = provider.get("provider") or provider.get(
+                                "name"
+                            )
+                            if provider_name:
+                                used_providers.append(str(provider_name))
+                        if used_providers:
+                            unique_providers = sorted(set(used_providers))
+                            log_msg += f" | Providers: {', '.join(unique_providers)}"
+                    elif summary:
                         log_msg += f" | {summary}"
                     if balance is not None and currency:
                         log_msg += f" | Balance: {balance} {currency}"

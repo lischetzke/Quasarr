@@ -12,7 +12,6 @@ import requests
 from bs4 import BeautifulSoup
 
 from quasarr.providers.log import debug, info
-from quasarr.providers.utils import search_string_in_sanitized_title
 
 
 def _get_db(table_name):
@@ -408,8 +407,7 @@ def _update_cache(imdb_id, key, value, language=None):
             metadata[key] = value
 
         now = datetime.now().timestamp()
-        days = 7 if metadata.get("title") and metadata.get("year") else 1
-        metadata["ttl"] = now + timedelta(days=days).total_seconds()
+        metadata["ttl"] = now + timedelta(hours=24).total_seconds()
 
         db.update_store(imdb_id, dumps(metadata))
     except Exception as e:
@@ -608,6 +606,8 @@ def get_imdb_id_from_title(shared_state, title, language="de"):
 
 
 def _match_result(shared_state, title, results, ttype_api, is_api=False):
+    from quasarr.providers.utils import search_string_in_sanitized_title
+
     for result in results:
         found_title = (
             result.get("primaryTitle") if is_api else result.get("titleNameText")

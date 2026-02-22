@@ -188,6 +188,9 @@ class Linkgrabber:
         resp = self.device.action(self.url + "/isCollecting")
         return resp
 
+    def is_stopped(self):
+        return not bool(self.is_collecting())
+
     def add_links(
         self,
         params=None,

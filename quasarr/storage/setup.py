@@ -16,7 +16,7 @@ import quasarr.providers.sessions.al
 import quasarr.providers.sessions.dd
 import quasarr.providers.sessions.dl
 import quasarr.providers.sessions.nx
-from quasarr.constants import FALLBACK_USER_AGENT, HOSTNAMES_REQUIRING_LOGIN
+from quasarr.constants import FALLBACK_USER_AGENT
 from quasarr.providers.auth import add_auth_hook, add_auth_routes
 from quasarr.providers.hostname_issues import get_all_hostname_issues
 from quasarr.providers.html_templates import (
@@ -34,6 +34,7 @@ from quasarr.providers.utils import (
     extract_kv_pairs,
 )
 from quasarr.providers.web_server import Server
+from quasarr.search.sources.helpers import get_login_required_hostnames
 from quasarr.storage.config import Config
 from quasarr.storage.sqlite_database import DataBase
 
@@ -223,7 +224,8 @@ def hostname_form_html(shared_state, message, show_skip_management=False):
 
         # Determine traffic light status
         is_login_skipped = (
-            field_id in HOSTNAMES_REQUIRING_LOGIN and skip_login_db.retrieve(field_id)
+            field_id in get_login_required_hostnames()
+            and skip_login_db.retrieve(field_id)
         )
         issue = hostname_issues.get(field_id)
         timestamp = ""
@@ -258,7 +260,7 @@ def hostname_form_html(shared_state, message, show_skip_management=False):
         user = ""
         password = ""
         supports_login = "false"
-        if field_id in HOSTNAMES_REQUIRING_LOGIN:
+        if field_id in get_login_required_hostnames():
             supports_login = "true"
             section = "JUNKIES" if field_id in ["dj", "sj"] else field_id.upper()
             site_config = Config(section)
@@ -289,7 +291,7 @@ def hostname_form_html(shared_state, message, show_skip_management=False):
         )
 
         # Add skip indicator for login-required sites if skip management is enabled
-        if show_skip_management and field_id in HOSTNAMES_REQUIRING_LOGIN:
+        if show_skip_management and field_id in get_login_required_hostnames():
             if current_value and skip_login_db.retrieve(field_id):
                 field_html.append(skip_indicator.format(id=field_id))
 
@@ -388,7 +390,7 @@ def hostname_form_html(shared_state, message, show_skip_management=False):
 <div class="url-import-section">
     <h3>📥 Import from URL</h3>
     <div class="url-import-row">
-        <input type="url" id="hostnamesUrl" placeholder="https://quasarr-host.name/ini?token=123..." value="{stored_url}" onfocus="onHostnameFieldFocus()">
+        <input type="url" id="hostnamesUrl" placeholder="https://quasarr-host.name/ini?token=123..." value="{stored_url}">
         <button type="button" class="btn-secondary" id="importBtn" onclick="importHostnames()">Import</button>
     </div>
     <div id="importStatus" class="import-status"></div>
@@ -427,16 +429,6 @@ def hostname_form_html(shared_state, message, show_skip_management=False):
 
     errorDiv.textContent = 'Please fill in at least one hostname!';
     return false;
-  }}
-
-  function onHostnameFieldFocus() {{
-    var urlInput = document.getElementById('hostnamesUrl');
-    if (urlInput.value.trim() === '') {{
-      window.open('https://quasarr-host.name', '_blank');
-      var statusDiv = document.getElementById('importStatus');
-      statusDiv.className = 'import-status';
-      statusDiv.textContent = 'Opened hostname helper in new tab. Paste the URL here after setup.';
-    }}
   }}
 
   function importHostnames() {{
@@ -940,7 +932,7 @@ def get_skip_login():
     response.content_type = "application/json"
     skip_db = DataBase("skip_login")
     skipped = []
-    for site in HOSTNAMES_REQUIRING_LOGIN:
+    for site in get_login_required_hostnames():
         if skip_db.retrieve(site):
             skipped.append(site)
     return {"skipped": skipped}
@@ -950,7 +942,7 @@ def clear_skip_login(shorthand):
     """Clear skip login preference for a hostname."""
     response.content_type = "application/json"
     shorthand = shorthand.lower()
-    if shorthand not in HOSTNAMES_REQUIRING_LOGIN:
+    if shorthand not in get_login_required_hostnames():
         return {"success": False, "error": f"Invalid shorthand: {shorthand}"}
 
     skip_db = DataBase("skip_login")

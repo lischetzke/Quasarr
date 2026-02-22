@@ -14,29 +14,9 @@ from quasarr.constants import (
     SEARCH_CAT_SHOWS,
 )
 from quasarr.providers.imdb_metadata import get_imdb_metadata
-from quasarr.providers.log import debug, info, trace, warn
-from quasarr.providers.utils import (
-    determine_search_category,
-    get_base_search_category_id,
-)
-from quasarr.search.sources.al import al_feed, al_search
-from quasarr.search.sources.by import by_feed, by_search
-from quasarr.search.sources.dd import dd_feed, dd_search
-from quasarr.search.sources.dj import dj_feed, dj_search
-from quasarr.search.sources.dl import dl_feed, dl_search
-from quasarr.search.sources.dt import dt_feed, dt_search
-from quasarr.search.sources.dw import dw_feed, dw_search
-from quasarr.search.sources.fx import fx_feed, fx_search
-from quasarr.search.sources.he import he_feed, he_search
-from quasarr.search.sources.hs import hs_feed, hs_search
-from quasarr.search.sources.mb import mb_feed, mb_search
-from quasarr.search.sources.nk import nk_feed, nk_search
-from quasarr.search.sources.nx import nx_feed, nx_search
-from quasarr.search.sources.sf import sf_feed, sf_search
-from quasarr.search.sources.sj import sj_feed, sj_search
-from quasarr.search.sources.sl import sl_feed, sl_search
-from quasarr.search.sources.wd import wd_feed, wd_search
-from quasarr.search.sources.wx import wx_feed, wx_search
+from quasarr.providers.log import debug, get_logger, info, trace, warn
+from quasarr.search.sources import get_sources
+from quasarr.search.sources.helpers.search_source import AbstractSearchSource
 from quasarr.storage.categories import get_search_category_sources
 
 
@@ -46,11 +26,21 @@ def get_search_results(
     search_category,
     imdb_id="",
     search_phrase="",
-    season="",
-    episode="",
+    season=None,
+    episode=None,
     offset=0,
     limit=1000,
 ):
+    from quasarr.providers.utils import (
+        determine_search_category,
+        get_base_search_category_id,
+        get_search_behavior_category,
+        get_search_capability_category,
+        release_matches_search_category,
+    )
+
+    sources = get_sources()
+
     if imdb_id and not imdb_id.startswith("tt"):
         imdb_id = f"tt{imdb_id}"
 
@@ -61,14 +51,22 @@ def get_search_results(
     if not search_category:
         search_category = determine_search_category(request_from)
 
-    # Resolve base category for logic (Movies, TV, etc.)
-    base_category = get_base_search_category_id(search_category)
-    if not base_category:
-        # Fallback if somehow invalid
-        base_category = search_category
-
-    # Config retrieval
-    config = shared_state.values["config"]("Hostnames")
+    # Resolve base category for logic (Movies, TV, etc.).
+    base_search_category = (
+        get_base_search_category_id(search_category) or search_category
+    )
+    behavior_search_category = (
+        get_search_behavior_category(search_category) or search_category
+    )
+    capability_category = get_search_capability_category(search_category)
+    is_custom_search_category = False
+    try:
+        is_custom_search_category = int(search_category) >= 100000
+    except (TypeError, ValueError):
+        pass
+    cache_key_category = (
+        search_category if is_custom_search_category else capability_category
+    )
 
     # Filter out sources that are not in the search category's whitelist
     # We use the original search_category ID here to get the specific whitelist
@@ -84,145 +82,86 @@ def get_search_results(
 
     # Config retrieval
     config = shared_state.values["config"]("Hostnames")
-    al = config.get("al")
-    by = config.get("by")
-    dd = config.get("dd")
-    dl = config.get("dl")
-    dt = config.get("dt")
-    dj = config.get("dj")
-    dw = config.get("dw")
-    fx = config.get("fx")
-    he = config.get("he")
-    hs = config.get("hs")
-    mb = config.get("mb")
-    nk = config.get("nk")
-    nx = config.get("nx")
-    sf = config.get("sf")
-    sj = config.get("sj")
-    sl = config.get("sl")
-    wd = config.get("wd")
-    wx = config.get("wx")
-
-    # Mappings
-    imdb_map = [
-        ("al", al, al_search),
-        ("by", by, by_search),
-        ("dd", dd, dd_search),
-        ("dl", dl, dl_search),
-        ("dt", dt, dt_search),
-        ("dj", dj, dj_search),
-        ("dw", dw, dw_search),
-        ("fx", fx, fx_search),
-        ("he", he, he_search),
-        ("hs", hs, hs_search),
-        ("mb", mb, mb_search),
-        ("nk", nk, nk_search),
-        ("nx", nx, nx_search),
-        ("sf", sf, sf_search),
-        ("sj", sj, sj_search),
-        ("sl", sl, sl_search),
-        ("wd", wd, wd_search),
-        ("wx", wx, wx_search),
-    ]
-
-    phrase_map = [
-        ("by", by, by_search),
-        ("dl", dl, dl_search),
-        ("dt", dt, dt_search),
-        ("nx", nx, nx_search),
-        ("sl", sl, sl_search),
-        ("wd", wd, wd_search),
-    ]
-
-    feed_map = [
-        ("al", al, al_feed),
-        ("by", by, by_feed),
-        ("dd", dd, dd_feed),
-        ("dj", dj, dj_feed),
-        ("dl", dl, dl_feed),
-        ("dt", dt, dt_feed),
-        ("dw", dw, dw_feed),
-        ("fx", fx, fx_feed),
-        ("he", he, he_feed),
-        ("hs", hs, hs_feed),
-        ("mb", mb, mb_feed),
-        ("nk", nk, nk_feed),
-        ("nx", nx, nx_feed),
-        ("sf", sf, sf_feed),
-        ("sj", sj, sj_feed),
-        ("sl", sl, sl_feed),
-        ("wd", wd, wd_feed),
-        ("wx", wx, wx_feed),
-    ]
-
-    # Set up searches
-    if imdb_id:
-        stype = f"IMDb-ID <b>{imdb_id}</b>"
-    elif search_phrase:
-        stype = f"Search-Phrase <b>{search_phrase}</b>"
-    else:
-        stype = "<b>Feed</b> search"
 
     use_pagination = True
 
-    # Use base_category for logic branching
+    # Use base_search_category for logic branching
     if imdb_id:
-        if base_category == SEARCH_CAT_MOVIES:
-            args = (shared_state, start_time, base_category, imdb_id)
-            kwargs = {}
-            for name, url, func in imdb_map:
-                if url and (not whitelisted_sources or name in whitelisted_sources):
-                    search_executor.add(
-                        func, args, kwargs, use_cache=True, source_name=name.upper()
+        stype = f"IMDb-ID <b>{imdb_id}</b>"
+        if base_search_category in [SEARCH_CAT_MOVIES, SEARCH_CAT_SHOWS]:
+            args = (shared_state, start_time, behavior_search_category)
+            kwargs = {"search_string": imdb_id, "season": season, "episode": episode}
+            for source in sources.values():
+                url = config.get(source.initials)
+                if (
+                    url
+                    and source.supports_imdb
+                    and capability_category in source.supported_categories
+                    and (
+                        not whitelisted_sources
+                        or source.initials in whitelisted_sources
                     )
-        elif base_category == SEARCH_CAT_SHOWS:
-            args = (shared_state, start_time, base_category, imdb_id)
-            kwargs = {"season": season, "episode": episode}
-            for name, url, func in imdb_map:
-                if url and (not whitelisted_sources or name in whitelisted_sources):
+                ):
                     search_executor.add(
-                        func, args, kwargs, use_cache=True, source_name=name.upper()
+                        source,
+                        args,
+                        kwargs,
+                        use_cache=True,
+                        cache_category=cache_key_category,
                     )
         else:
             warn(
-                f"{stype} is not supported for {request_from}, category: {search_category} (Base: {base_category})"
+                f"{stype} is not supported for {request_from}, category: {search_category} (Base: {base_search_category})"
             )
 
     elif search_phrase:
-        if base_category == SEARCH_CAT_BOOKS:
-            args = (shared_state, start_time, base_category, search_phrase)
-            kwargs = {}
-            for name, url, func in phrase_map:
-                if url and (not whitelisted_sources or name in whitelisted_sources):
-                    search_executor.add(
-                        func, args, kwargs, use_cache=True, source_name=name.upper()
+        stype = f"Search-Phrase <b>{search_phrase}</b>"
+        if base_search_category in [SEARCH_CAT_BOOKS, SEARCH_CAT_MUSIC]:
+            args = (shared_state, start_time, behavior_search_category)
+            kwargs = {"search_string": search_phrase}
+            for source in sources.values():
+                url = config.get(source.initials)
+                if (
+                    url
+                    and source.supports_phrase
+                    and capability_category in source.supported_categories
+                    and (
+                        not whitelisted_sources
+                        or source.initials in whitelisted_sources
                     )
-        elif base_category == SEARCH_CAT_MUSIC:
-            args = (shared_state, start_time, base_category, search_phrase)
-            kwargs = {}
-            for name, url, func in phrase_map:
-                if url and (not whitelisted_sources or name in whitelisted_sources):
+                ):
                     search_executor.add(
-                        func, args, kwargs, use_cache=True, source_name=name.upper()
+                        source,
+                        args,
+                        kwargs,
+                        use_cache=True,
+                        cache_category=cache_key_category,
                     )
         else:
             warn(
-                f"{stype} is not supported for {request_from}, category: {search_category} (Base: {base_category})"
+                f"{stype} is not supported for {request_from}, category: {search_category} (Base: {base_search_category})"
             )
 
     else:
-        args = (shared_state, start_time, base_category)
+        stype = "<b>Feed</b> search"
+        args = (shared_state, start_time, behavior_search_category)
         kwargs = {}
         use_pagination = False
-        for name, url, func in feed_map:
-            if url and (not whitelisted_sources or name in whitelisted_sources):
+        for source in sources.values():
+            url = config.get(source.initials)
+            if (
+                url
+                and capability_category in source.supported_categories
+                and (not whitelisted_sources or source.initials in whitelisted_sources)
+            ):
                 search_executor.add(
-                    func,
+                    source,
                     args,
                     kwargs,
                     use_cache=True,
                     ttl=60,
-                    source_name=name.upper(),
+                    action="feed",
+                    cache_category=cache_key_category,
                 )
 
     debug(f"Starting <g>{len(search_executor.searches)}</g> searches for {stype}...")
@@ -243,6 +182,21 @@ def get_search_results(
             return parsedate_to_datetime("Thu, 01 Jan 1970 00:00:00 +0000")
 
     results.sort(key=get_date, reverse=True)
+
+    filtered_results = [
+        release
+        for release in results
+        if release_matches_search_category(
+            search_category,
+            release.get("details", {}).get("title", ""),
+        )
+    ]
+    filtered_out_count = len(results) - len(filtered_results)
+    if filtered_out_count > 0:
+        debug(
+            f"Filtered out <r>{filtered_out_count}</r> releases by title rules for category <g>{search_category}</g>"
+        )
+    results = filtered_results
 
     # Calculate pagination for logging and return
     total_count = len(results)
@@ -281,18 +235,29 @@ class SearchExecutor:
     def __init__(self):
         self.searches = []
 
-    def add(self, func, args, kwargs, use_cache=False, ttl=300, source_name=None):
+    def add(
+        self,
+        source: AbstractSearchSource,
+        args,
+        kwargs,
+        use_cache=False,
+        ttl=300,
+        action="search",
+        cache_category=None,
+    ):
         key_args = list(args)
         key_args[1] = None
+        if cache_category is not None and len(key_args) >= 3:
+            key_args[2] = cache_category
         key_args = tuple(key_args)
-        key = hash((func.__name__, key_args, frozenset(kwargs.items())))
+        key = hash((source.initials, action, key_args, frozenset(kwargs.items())))
         self.searches.append(
             (
                 key,
-                lambda: func(*args, **kwargs),
+                lambda: getattr(source, action)(*args, **kwargs),
                 use_cache,
                 ttl,
-                source_name or func.__name__,
+                source.initials,
             )
         )
 
@@ -318,7 +283,9 @@ class SearchExecutor:
                     cached_result, exp = search_cache.get(key)
 
                 if cached_result is not None:
-                    debug(f"Using cached result for {key}")
+                    get_logger(f"{__name__}.{source_name}").debug(
+                        f"Using cached result with cache_key '{key}'"
+                    )
                     results.extend(cached_result)
 
                     # Calculate TTL for this cached item
@@ -341,10 +308,12 @@ class SearchExecutor:
                     try:
                         res = future.result()
                         if res and len(res) > 0:
-                            badge = f"<bg green><black>{source_name}</black></bg green>"
+                            badge = f"<bg green><black>{source_name.upper()}</black></bg green>"
                         else:
-                            debug(f"❌ No results returned by <g>{source_name}</g>")
-                            badge = f"<bg black><white>{source_name}</white></bg black>"
+                            get_logger(f"{__name__}.{source_name}").debug(
+                                "❌ No results returned"
+                            )
+                            badge = f"<bg black><white>{source_name.upper()}</white></bg black>"
 
                         results_badges[index] = badge
                         results.extend(res)
@@ -353,9 +322,11 @@ class SearchExecutor:
                             search_cache.set(cache_key, res, ttl=cache_ttl)
                     except Exception as e:
                         results_badges[index] = (
-                            f"<bg red><white>{source_name}</white></bg red>"
+                            f"<bg red><white>{source_name.upper()}</white></bg red>"
                         )
-                        warn(f"Search error: {e}")
+                        get_logger(f"{__name__}.{source_name}").warn(
+                            f"Search error: {e}"
+                        )
 
                 bar_str = f" [{' '.join(results_badges)}]"
 
