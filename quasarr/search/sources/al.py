@@ -545,10 +545,3 @@ def _get_release_id(tag):
     if match:
         return int(match.group(1))
     return 0
-
-
-def _extract_season(title: str) -> int | None:
-    match = re.search(r"(?i)(?:^|[^a-zA-Z0-9])S(\d{1,4})(?!\d)", title)
-    if match:
-        return int(match.group(1))
-    return None

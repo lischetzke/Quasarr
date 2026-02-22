@@ -375,73 +375,74 @@ class Source(AbstractSearchSource):
             clear_hostname_issue(self.initials)
         return releases
 
+    def _parse_mirrors(self, base_url, entry):
+        """
+        entry: a BeautifulSoup Tag for <div class="entry">
+        returns a dict with:
+        - name:        header text
+        - season:      list of {host: link}
+        - episodes:    list of {number, title, links}
+        """
 
-def _parse_mirrors(base_url, entry):
-    """
-    entry: a BeautifulSoup Tag for <div class="entry">
-    returns a dict with:
-    - name:        header text
-    - season:      list of {host: link}
-    - episodes:    list of {number, title, links}
-    """
+        mirrors = {}
+        try:
+            host_map = {
+                "1F": "1fichier",
+                "DD": "ddownload",
+                "KA": "katfile",
+                "RG": "rapidgator",
+                "TB": "turbobit",
+            }
 
-    mirrors = {}
-    try:
-        host_map = {
-            "1F": "1fichier",
-            "DD": "ddownload",
-            "KA": "katfile",
-            "RG": "rapidgator",
-            "TB": "turbobit",
-        }
+            h3 = entry.select_one("h3")
+            name = h3.get_text(separator=" ", strip=True) if h3 else ""
 
-        h3 = entry.select_one("h3")
-        name = h3.get_text(separator=" ", strip=True) if h3 else ""
-
-        season = {}
-        for a in entry.select("a.dlb.row"):
-            if a.find_parent("div.list.simple"):
-                continue
-            host = a.get_text(strip=True)
-            if len(host) > 2:  # episode hosts are 2 chars
-                season[host] = f"{base_url}{a['href']}"
-
-        # fallback: if mirrors are falsely missing a mirror title, return first season link as "filecrypt"
-        if not season:
-            fallback = next(
-                (
-                    a
-                    for a in entry.select("a.dlb.row")
-                    if not a.find_parent("div.list.simple")
-                ),
-                None,
-            )
-            if fallback:
-                season["filecrypt"] = f"{base_url}{fallback['href']}"
-
-        episodes = []
-        for ep_row in entry.select("div.list.simple > div.row"):
-            if "head" in ep_row.get("class", []):
-                continue
-
-            divs = ep_row.find_all("div", recursive=False)
-            number = int(divs[0].get_text(strip=True).rstrip("."))
-            title = divs[1].get_text(strip=True)
-
-            ep_links = {}
-            for a in ep_row.select("div.row > a.dlb.row"):
+            season = {}
+            for a in entry.select("a.dlb.row"):
+                if a.find_parent("div.list.simple"):
+                    continue
                 host = a.get_text(strip=True)
-                full_host = host_map.get(host, host)
-                ep_links[full_host] = f"{base_url}{a['href']}"
+                if len(host) > 2:  # episode hosts are 2 chars
+                    season[host] = f"{base_url}{a['href']}"
 
-            episodes.append({"number": number, "title": title, "links": ep_links})
+            # fallback: if mirrors are falsely missing a mirror title, return first season link as "filecrypt"
+            if not season:
+                fallback = next(
+                    (
+                        a
+                        for a in entry.select("a.dlb.row")
+                        if not a.find_parent("div.list.simple")
+                    ),
+                    None,
+                )
+                if fallback:
+                    season["filecrypt"] = f"{base_url}{fallback['href']}"
 
-        mirrors = {"name": name, "season": season, "episodes": episodes}
-    except Exception as e:
-        info(f"Error parsing mirrors: {e}")
-        mark_hostname_issue("sf", "feed", str(e) if "e" in dir() else "Error occurred")
+            episodes = []
+            for ep_row in entry.select("div.list.simple > div.row"):
+                if "head" in ep_row.get("class", []):
+                    continue
 
-    return mirrors
+                divs = ep_row.find_all("div", recursive=False)
+                number = int(divs[0].get_text(strip=True).rstrip("."))
+                title = divs[1].get_text(strip=True)
+
+                ep_links = {}
+                for a in ep_row.select("div.row > a.dlb.row"):
+                    host = a.get_text(strip=True)
+                    full_host = host_map.get(host, host)
+                    ep_links[full_host] = f"{base_url}{a['href']}"
+
+                episodes.append({"number": number, "title": title, "links": ep_links})
+
+            mirrors = {"name": name, "season": season, "episodes": episodes}
+        except Exception as e:
+            info(f"Error parsing mirrors: {e}")
+            mark_hostname_issue(
+                self.initials, "feed", str(e) if "e" in dir() else "Error occurred"
+            )
+
+        return mirrors
 
 
 check = lambda s: s.replace(
