@@ -23,14 +23,14 @@ from quasarr.constants import (
     MOVIE_REGEX,
     SEARCH_CAT_BOOKS,
     SEARCH_CAT_MOVIES,
-    SEARCH_CAT_MOVIES_4K,
     SEARCH_CAT_MOVIES_HD,
+    SEARCH_CAT_MOVIES_UHD,
     SEARCH_CAT_MUSIC,
     SEARCH_CAT_MUSIC_FLAC,
     SEARCH_CAT_MUSIC_MP3,
     SEARCH_CAT_SHOWS,
-    SEARCH_CAT_SHOWS_4K,
     SEARCH_CAT_SHOWS_HD,
+    SEARCH_CAT_SHOWS_UHD,
     SEARCH_CAT_XXX,
     SEARCH_CATEGORIES,
     SEASON_EP_REGEX,
@@ -604,9 +604,9 @@ def get_search_behavior_category(cat_id):
 
 SEARCH_SUBCATEGORY_CAPABILITY_BASE = {
     SEARCH_CAT_MOVIES_HD: SEARCH_CAT_MOVIES,
-    SEARCH_CAT_MOVIES_4K: SEARCH_CAT_MOVIES,
+    SEARCH_CAT_MOVIES_UHD: SEARCH_CAT_MOVIES,
     SEARCH_CAT_SHOWS_HD: SEARCH_CAT_SHOWS,
-    SEARCH_CAT_SHOWS_4K: SEARCH_CAT_SHOWS,
+    SEARCH_CAT_SHOWS_UHD: SEARCH_CAT_SHOWS,
     SEARCH_CAT_MUSIC_MP3: SEARCH_CAT_MUSIC,
     SEARCH_CAT_MUSIC_FLAC: SEARCH_CAT_MUSIC,
 }
@@ -674,9 +674,9 @@ def release_matches_search_category(search_category, release_title):
 
     normalized_title = _normalize_release_title_for_category_match(release_title)
 
-    # 4K categories: require explicit 4K signal (2160/4k), or UHD without lower-res tags.
+    # UHD categories: require explicit UHD signal (2160/4k), or UHD without lower-res tags.
     # This prevents false positives like "1080p ... UHD ...".
-    if behavior_category in (SEARCH_CAT_MOVIES_4K, SEARCH_CAT_SHOWS_4K):
+    if behavior_category in (SEARCH_CAT_MOVIES_UHD, SEARCH_CAT_SHOWS_UHD):
         if _STRONG_4K_PATTERN.search(normalized_title):
             return True
         if not _UHD_PATTERN.search(normalized_title):

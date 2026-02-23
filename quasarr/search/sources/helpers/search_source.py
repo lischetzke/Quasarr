@@ -21,6 +21,10 @@ class AbstractSearchSource(ABC):
         pass
 
     @property
+    def supports_absolute_numbering(self) -> bool:
+        return False
+
+    @property
     @abstractmethod
     def supported_categories(self) -> list[int]:
         pass

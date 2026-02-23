@@ -267,9 +267,9 @@ def _resolve_sf_redirect(url, user_agent):
         r.raise_for_status()
         if r.history:
             for resp in r.history:
-                debug(f"Redirected from {resp.url} to {r.url}")
+                debug(f"Redirected from <d>{resp.url}</d> to <d>{r.url}</d>")
             if "/404.html" in r.url:
-                info(f"Link redirected to 404 page: {r.url}")
+                info(f"Link redirected to 404 page: <d>{r.url}</d>")
                 return None
             return r.url
         else:

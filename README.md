@@ -88,11 +88,6 @@ You can manage categories in the Quasarr Web UI.
 ---
 
 ## Radarr / Sonarr / Lidarr
-
-> ⚠️ **Sonarr users:** Set all shows (including anime) to the **Standard** series type. Quasarr cannot find releases for
-> shows set to Anime/Absolute.
-
-
 Add Quasarr as both a **Newznab Indexer** and **SABnzbd Download Client** using your Quasarr URL and API Key.
 
 Be sure to set a category in the **SABnzbd Download client** (default: `movies` for Radarr, `tv` for Sonarr and `music`

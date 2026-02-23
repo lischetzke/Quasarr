@@ -140,12 +140,7 @@ def get_season_name(title, season, lang="jp"):
     """
     xem_data = get_all_season_names(title)
     if not xem_data:
-        warn(f"Could not retrieve season names for '{title}'")
-        return None
-
-    xem_data = xem_data.get("names", None)
-    if xem_data is None:
-        error(f"No names data found in XEM metadata for '{title}'")
+        debug("Could not find season names for <y>{}</y>", title)
         return None
 
     season_names = xem_data.get(str(season))
@@ -196,9 +191,4 @@ def get_all_season_names(title):
     if not names_data:
         return None
 
-    metadata = {
-        "tvdb_id": tvdb_id,
-        "names": names_data,
-    }
-
-    return metadata
+    return names_data

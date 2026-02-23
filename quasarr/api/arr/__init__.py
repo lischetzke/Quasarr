@@ -307,6 +307,7 @@ def setup_arr_routes(app):
                                     {categories_xml}
                                   </categories>
                                 </caps>"""
+
                 elif mode in ["movie", "tvsearch", "book", "music", "search"]:
                     releases = []
 
@@ -329,33 +330,36 @@ def setup_arr_routes(app):
                         request_from, requested_cat
                     )
 
-                    if mode == "movie":
-                        # supported params: imdbid
-                        imdb_id = getattr(request.query, "imdbid", "")
-                        releases = get_search_results(
-                            shared_state,
-                            request_from,
-                            search_category,
-                            imdb_id=imdb_id,
-                            offset=offset,
-                            limit=limit,
-                        )
-
-                    elif mode == "tvsearch":
-                        # supported params: imdbid, season, ep
+                    if mode in ["movie", "tvsearch"]:
                         imdb_id = getattr(request.query, "imdbid", "")
                         season = getattr(request.query, "season", None)
                         episode = getattr(request.query, "ep", None)
-                        releases = get_search_results(
-                            shared_state,
-                            request_from,
-                            search_category,
-                            imdb_id=imdb_id,
-                            season=season,
-                            episode=episode,
-                            offset=offset,
-                            limit=limit,
-                        )
+                        q = getattr(request.query, "q", None)
+                        supported = False if q else True
+
+                        if q and mode == "tvsearch" and imdb_id:
+                            try:
+                                episode = int(q)
+                                supported = True
+                            except:
+                                pass
+
+                        if supported:
+                            releases = get_search_results(
+                                shared_state,
+                                request_from,
+                                search_category,
+                                imdb_id=imdb_id,
+                                season=season,
+                                episode=episode,
+                                offset=offset,
+                                limit=limit,
+                            )
+                        else:
+                            # sonarr expects this but we will not support non-imdbid searches
+                            debug(
+                                f"Ignoring search request from <d>{request_from}</d> - only imdbid searches are supported"
+                            )
 
                     elif mode in ["book", "music"]:
                         author = getattr(request.query, "author", "")
@@ -371,17 +375,10 @@ def setup_arr_routes(app):
                         )
 
                     elif mode == "search":
-                        if "lazylibrarian" in request_from.lower():
-                            search_phrase = getattr(request.query, "q", "")
-                            releases = get_search_results(
-                                shared_state,
-                                request_from,
-                                search_category,
-                                search_phrase=search_phrase,
-                                offset=offset,
-                                limit=limit,
-                            )
-                        elif "lidarr" in request_from.lower():
+                        if request_from.lower() in [
+                            "lazylibrarian",
+                            "lidarr",
+                        ]:
                             search_phrase = getattr(request.query, "q", "")
                             releases = get_search_results(
                                 shared_state,
@@ -392,10 +389,12 @@ def setup_arr_routes(app):
                                 limit=limit,
                             )
                         else:
-                            # sonarr expects this but we will not support non-imdbid searches
                             debug(
-                                f"Ignoring search request from {request_from} - only imdbid searches are supported"
+                                f"Unsupported search mode '{mode}' from <d>{request_from}</d>"
                             )
+
+                    else:
+                        warn(f"Unknown search mode '{mode}' from <d>{request_from}</d>")
 
                     # XML Generation (releases are already sliced)
                     items = ""

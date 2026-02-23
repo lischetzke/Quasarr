@@ -20,14 +20,15 @@ FALLBACK_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537
 SEARCH_CATEGORY_DEFINITIONS = {
     "MOVIES": {"id": 2000, "name": "Movies", "emoji": "🎬"},
     "MOVIES_HD": {"id": 2040, "name": "Movies/HD", "emoji": "🎬"},
-    "MOVIES_4K": {"id": 2045, "name": "Movies/4K", "emoji": "🎬"},
+    "MOVIES_UHD": {"id": 2045, "name": "Movies/UHD", "emoji": "🎬"},
     "MUSIC": {"id": 3000, "name": "Audio", "emoji": "🎵"},
     "MUSIC_MP3": {"id": 3010, "name": "Audio/MP3", "emoji": "🎵"},
     "MUSIC_FLAC": {"id": 3040, "name": "Audio/FLAC", "emoji": "🎵"},
     "SHOWS": {"id": 5000, "name": "TV", "emoji": "📺"},
     "SHOWS_HD": {"id": 5040, "name": "TV/HD", "emoji": "📺"},
-    "SHOWS_4K": {"id": 5045, "name": "TV/4K", "emoji": "📺"},
-    "SHOWS_ANIME": {"id": 5070, "name": "Anime", "emoji": "⛩️"},
+    "SHOWS_UHD": {"id": 5045, "name": "TV/UHD", "emoji": "📺"},
+    "SHOWS_ANIME": {"id": 5070, "name": "TV/Anime", "emoji": "⛩️"},
+    "SHOWS_DOCUMENTARY": {"id": 5080, "name": "TV/Documentary", "emoji": "🎥"},
     "XXX": {"id": 6000, "name": "XXX", "emoji": "🔞"},
     "BOOKS": {"id": 7000, "name": "Books", "emoji": "📚"},
 }
@@ -35,14 +36,15 @@ SEARCH_CATEGORY_DEFINITIONS = {
 # Importable constants for search categories are generated from the source of truth above to ensure consistency and maintainability.
 SEARCH_CAT_MOVIES = SEARCH_CATEGORY_DEFINITIONS["MOVIES"]["id"]
 SEARCH_CAT_MOVIES_HD = SEARCH_CATEGORY_DEFINITIONS["MOVIES_HD"]["id"]
-SEARCH_CAT_MOVIES_4K = SEARCH_CATEGORY_DEFINITIONS["MOVIES_4K"]["id"]
+SEARCH_CAT_MOVIES_UHD = SEARCH_CATEGORY_DEFINITIONS["MOVIES_UHD"]["id"]
 SEARCH_CAT_MUSIC = SEARCH_CATEGORY_DEFINITIONS["MUSIC"]["id"]
 SEARCH_CAT_MUSIC_MP3 = SEARCH_CATEGORY_DEFINITIONS["MUSIC_MP3"]["id"]
 SEARCH_CAT_MUSIC_FLAC = SEARCH_CATEGORY_DEFINITIONS["MUSIC_FLAC"]["id"]
 SEARCH_CAT_SHOWS = SEARCH_CATEGORY_DEFINITIONS["SHOWS"]["id"]
 SEARCH_CAT_SHOWS_HD = SEARCH_CATEGORY_DEFINITIONS["SHOWS_HD"]["id"]
-SEARCH_CAT_SHOWS_4K = SEARCH_CATEGORY_DEFINITIONS["SHOWS_4K"]["id"]
+SEARCH_CAT_SHOWS_UHD = SEARCH_CATEGORY_DEFINITIONS["SHOWS_UHD"]["id"]
 SEARCH_CAT_SHOWS_ANIME = SEARCH_CATEGORY_DEFINITIONS["SHOWS_ANIME"]["id"]
+SEARCH_CAT_SHOWS_DOCUMENTARY = SEARCH_CATEGORY_DEFINITIONS["SHOWS_DOCUMENTARY"]["id"]
 SEARCH_CAT_XXX = SEARCH_CATEGORY_DEFINITIONS["XXX"]["id"]
 SEARCH_CAT_BOOKS = SEARCH_CATEGORY_DEFINITIONS["BOOKS"]["id"]
 
