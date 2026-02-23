@@ -693,10 +693,19 @@ class QuasarrClient:
 
     def wait_for_linkgrabber_idle(self, timeout=120, poll_interval=2):
         end_time = time.time() + timeout
+        not_grabbing_streak = 0
+
         while time.time() < end_time:
             _, _, state = self.get_downloads()
-            if state.get("is_stopped") or not state.get("is_collecting"):
-                return True
+            not_grabbing = state.get("is_stopped") or not state.get("is_collecting")
+            if not_grabbing:
+                not_grabbing_streak += 1
+                if not_grabbing_streak >= 2:
+                    return True
+                # First "not grabbing" can be transient, confirm after 3 seconds.
+                time.sleep(3)
+                continue
+            not_grabbing_streak = 0
             time.sleep(poll_interval)
         return False
 

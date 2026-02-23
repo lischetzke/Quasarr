@@ -232,6 +232,24 @@ ARCHIVE_EXTENSIONS = frozenset(
 # TIME & LOCALIZATION
 # ==============================================================================
 
+LANGUAGE_TO_ALPHA2 = {
+    "german": "DE",
+    "deutsch": "DE",
+    "de": "DE",
+    "english": "EN",
+    "englisch": "EN",
+    "en": "EN",
+    "japanese": "JP",
+    "japanisch": "JP",
+    "jp": "JP",
+}
+
+SUBTITLE_TOKEN_BY_ALPHA2 = {
+    "DE": "GerSub",
+    "EN": "EngSub",
+    "JP": "JapSub",
+}
+
 SESSION_MAX_AGE_SECONDS = 24 * 60 * 60  # 24 hours
 
 # Source of truth for month names and mappings

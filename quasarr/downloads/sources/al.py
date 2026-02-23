@@ -12,6 +12,7 @@ from urllib.parse import urlparse
 
 from bs4 import BeautifulSoup
 
+from quasarr.constants import LANGUAGE_TO_ALPHA2, SUBTITLE_TOKEN_BY_ALPHA2
 from quasarr.downloads.linkcrypters.al import decrypt_content, solve_captcha
 from quasarr.downloads.sources.helpers.abstract_source import AbstractDownloadSource
 from quasarr.providers.hostname_issues import mark_hostname_issue
@@ -46,7 +47,7 @@ class Source(AbstractDownloadSource):
             )
             return {}
 
-        release_id = password  # password field carries release_id for AL
+        release_id = _normalize_release_id(password)
 
         al = shared_state.values["config"]("Hostnames").get(Source.initials)
 
@@ -71,7 +72,7 @@ class Source(AbstractDownloadSource):
         title, release_id = _check_release(
             shared_state, details_html, release_id, title, episode_in_title
         )
-        if int(release_id) == 0:
+        if release_id == 0:
             info(f"No valid release ID found for {title} - Download failed!")
             return {}
 
@@ -283,6 +284,19 @@ def _roman_to_int(r: str) -> int:
     return total
 
 
+def _normalize_release_id(raw_release_id) -> int:
+    """
+    AL uses download-link password to transport release IDs.
+    Older/invalid payloads can provide None/empty/non-numeric values.
+    """
+    if raw_release_id in (None, "", "None"):
+        return 0
+    try:
+        return int(str(raw_release_id).strip())
+    except (TypeError, ValueError):
+        return 0
+
+
 def _derive_mirror(url):
     try:
         hostname = urlparse(url).netloc.lower()
@@ -440,6 +454,95 @@ def _extract_season_number_from_title(page_title, release_type, release_title=""
                 season_num = 1
 
     return season_num
+
+
+def _subtitle_lang_to_alpha2(lang: str) -> Optional[str]:
+    if not lang:
+        return None
+    normalized = re.sub(r"[^a-z]", "", lang.lower())
+    if not normalized:
+        return None
+    mapped = LANGUAGE_TO_ALPHA2.get(normalized)
+    if mapped:
+        return mapped
+    if len(normalized) == 2:
+        return normalized.upper()
+    return None
+
+
+def _subtitle_tokens(subtitle_langs: List[str]) -> List[str]:
+    tokens: List[str] = []
+    for lang in subtitle_langs:
+        code = _subtitle_lang_to_alpha2(lang)
+        token = SUBTITLE_TOKEN_BY_ALPHA2.get(code) if code else None
+        if token and token not in tokens:
+            tokens.append(token)
+    return tokens
+
+
+def _inject_subtitle_tokens_in_title(title: str, subtitle_langs: List[str]) -> str:
+    """
+    Canonical subtitle marker format for AL titles:
+    - `GerSub`, `EngSub`, `JapSub`
+    """
+    has_group = re.search(r"-[^.\s]+$", title)
+    title_without_group = title
+    group_suffix = ""
+    if has_group:
+        title_without_group, _, group = title.rpartition("-")
+        group_suffix = f"-{group}"
+
+    tokens = [t for t in title_without_group.split(".") if t]
+
+    subtitle_token_by_lower = {
+        token.lower(): token for token in SUBTITLE_TOKEN_BY_ALPHA2.values()
+    }
+    existing_subtitle_tokens: List[str] = []
+    first_existing_marker_idx = None
+
+    def add_unique_subtitle_token(token: str, target: List[str]) -> None:
+        canonical = subtitle_token_by_lower.get(token.lower())
+        if canonical and canonical not in target:
+            target.append(canonical)
+
+    # strip already-normalized subtitle tokens first and remember them as fallback.
+    cleaned_tokens: List[str] = []
+    for token in tokens:
+        if token.lower() in subtitle_token_by_lower:
+            if first_existing_marker_idx is None:
+                first_existing_marker_idx = len(cleaned_tokens)
+            add_unique_subtitle_token(token, existing_subtitle_tokens)
+            continue
+        cleaned_tokens.append(token)
+    tokens = cleaned_tokens
+
+    # Remove any residual "Subbed" marker; subtitle markers are explicit language tokens now.
+    first_subbed_idx = None
+    cleaned_tokens = []
+    for token in tokens:
+        if token.lower() == "subbed":
+            if first_subbed_idx is None:
+                first_subbed_idx = len(cleaned_tokens)
+            continue
+        cleaned_tokens.append(token)
+    tokens = cleaned_tokens
+
+    subtitle_tokens = _subtitle_tokens(subtitle_langs)
+    if not subtitle_tokens:
+        subtitle_tokens = existing_subtitle_tokens
+
+    if subtitle_tokens:
+        if first_subbed_idx is not None:
+            insert_at = first_subbed_idx
+        elif first_existing_marker_idx is not None:
+            insert_at = first_existing_marker_idx
+        else:
+            insert_at = len(tokens)
+        insert_at = max(0, min(insert_at, len(tokens)))
+        tokens[insert_at:insert_at] = subtitle_tokens
+
+    normalized_title = ".".join(tokens) + group_suffix
+    return sanitize_title(normalized_title)
 
 
 def _parse_info_from_feed_entry(block, series_page_title, release_type) -> ReleaseInfo:
@@ -669,6 +772,9 @@ def _parse_info_from_download_item(
                             flags=re.IGNORECASE,
                         )
 
+    if release_title:
+        release_title = _inject_subtitle_tokens_in_title(release_title, subtitle_langs)
+
     return ReleaseInfo(
         release_title=release_title,
         audio_langs=audio_langs,
@@ -727,10 +833,14 @@ def _guess_title(shared_state, page_title, release_info: ReleaseInfo) -> str:
         prefix = "German.DL"
     elif len(a) == 1 and "German" in a:
         prefix = "German"
-    elif a and "German" in su:
-        prefix = f"{a[0]}.Subbed"
+    elif a:
+        prefix = a[0]
     if prefix:
         parts.append(prefix)
+
+    subtitle_tokens = _subtitle_tokens(su)
+    if subtitle_tokens:
+        parts.extend(subtitle_tokens)
 
     if release_info.audio:
         parts.append(release_info.audio)
@@ -739,13 +849,14 @@ def _guess_title(shared_state, page_title, release_info: ReleaseInfo) -> str:
     title = ".".join(parts)
     if release_info.release_group:
         title += f"-{release_info.release_group}"
-    return sanitize_title(title)
+    return _inject_subtitle_tokens_in_title(title, su)
 
 
 def _check_release(shared_state, details_html, release_id, title, episode_in_title):
     soup = BeautifulSoup(details_html, "html.parser")
+    release_id = _normalize_release_id(release_id)
 
-    if int(release_id) == 0:
+    if release_id == 0:
         info(
             "Feed download detected, hard-coding release_id to 1 to achieve successful download"
         )
