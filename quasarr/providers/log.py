@@ -187,6 +187,16 @@ def _get_logger_for_module() -> _Logger:
     return get_logger(module_name)
 
 
+def get_source_logger(source: str) -> _Logger:
+    # get the calling module filename
+    frame = inspect.currentframe()
+    caller_frame = frame.f_back.f_back
+    module_name = caller_frame.f_globals["__name__"]
+
+    module_name += f".{source}"
+    return get_logger(module_name)
+
+
 def crit(msg: str, *args: Any, **kwargs: Any) -> None:
     _get_logger_for_module().crit(msg, *args, **kwargs)
 

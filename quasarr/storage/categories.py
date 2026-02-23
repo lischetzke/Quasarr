@@ -8,6 +8,7 @@ import re
 from quasarr.constants import (
     DOWNLOAD_CATEGORIES,
     SEARCH_CAT_SHOWS_ANIME,
+    SEARCH_CAT_SHOWS_DOCUMENTARY,
     SEARCH_CATEGORIES,
 )
 
@@ -217,6 +218,9 @@ def get_search_category_whitelist_owner(cat_id: int) -> int:
         return cat_id
 
     if cat_id == SEARCH_CAT_SHOWS_ANIME:
+        return cat_id
+
+    if cat_id == SEARCH_CAT_SHOWS_DOCUMENTARY:
         return cat_id
 
     if cat_id % 1000 == 0:

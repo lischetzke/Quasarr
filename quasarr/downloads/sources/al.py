@@ -624,7 +624,12 @@ def _parse_info_from_feed_entry(block, series_page_title, release_type) -> Relea
 
 
 def _parse_info_from_download_item(
-    tab, content, page_title=None, release_type=None, requested_episode=None
+    tab,
+    content,
+    page_title=None,
+    release_type=None,
+    requested_season=None,
+    requested_episode=None,
 ) -> ReleaseInfo:
     """
     Parse a BeautifulSoup 'tab' from a download item into ReleaseInfo.
@@ -722,13 +727,16 @@ def _parse_info_from_download_item(
         release_group = ""
 
     # determine season
-    season_num = _extract_season_from_synonyms(content)
-    if not season_num:
-        season_num = _find_season_in_release_notes(content)
-    if not season_num:
-        season_num = _extract_season_number_from_title(
-            page_title, release_type, release_title=release_title
-        )
+    if requested_season:
+        season_num = _extract_season_from_synonyms(content)
+        if not season_num:
+            season_num = _find_season_in_release_notes(content)
+        if not season_num:
+            season_num = _extract_season_number_from_title(
+                page_title, release_type, release_title=release_title
+            )
+    else:
+        season_num = None
 
     # check if season part info is present
     season_part: Optional[int] = None
@@ -791,7 +799,7 @@ def _parse_info_from_download_item(
     )
 
 
-def _guess_title(shared_state, page_title, release_info: ReleaseInfo) -> str:
+def _guess_title(page_title, release_info: ReleaseInfo) -> str:
     # remove labels
     clean_title = page_title.rsplit("(", 1)[0].strip()
     # Remove season/staffel info
@@ -910,7 +918,7 @@ def _check_release(shared_state, details_html, release_id, title, episode_in_tit
                     release_info.episode_min = int(episode_in_title)
                     release_info.episode_max = int(episode_in_title)
 
-                guessed_title = _guess_title(shared_state, page_title, release_info)
+                guessed_title = _guess_title(page_title, release_info)
                 if guessed_title and guessed_title.lower() != title.lower():
                     info(
                         f'Adjusted guessed release title to "{guessed_title}" from details page'

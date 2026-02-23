@@ -40,6 +40,7 @@ class Source(AbstractSearchSource):
     initials = "al"
     supports_imdb = True
     supports_phrase = False
+    supports_absolute_numbering = True
     supported_categories = [SEARCH_CAT_MOVIES, SEARCH_CAT_SHOWS, SEARCH_CAT_SHOWS_ANIME]
     requires_login = True
 
@@ -139,9 +140,7 @@ class Source(AbstractSearchSource):
                     release_info = _parse_info_from_feed_entry(
                         block, raw_base_title, release_type
                     )
-                    final_title = _guess_title(
-                        shared_state, raw_base_title, release_info
-                    )
+                    final_title = _guess_title(raw_base_title, release_info)
 
                     # Build payload using final_title
                     mb = 0  # size not available in feed
@@ -268,7 +267,7 @@ class Source(AbstractSearchSource):
                     last_redirect.url, redirect_location
                 )  # in case of relative URL
                 debug(
-                    f"{variant} redirected to {absolute_redirect_url} instead of search results page"
+                    f"<y>{variant}</y> redirected to <d>{absolute_redirect_url}</d> instead of search results page"
                 )
 
                 try:
@@ -330,7 +329,7 @@ class Source(AbstractSearchSource):
                 use_cache = ts and ts > datetime.now() - timedelta(seconds=threshold)
 
                 if use_cache and entry.get("html"):
-                    debug(f"Using cached content for '{url}'")
+                    debug(f"Using cached content for <d>{url}</d>")
                     data_html = entry["html"]
                 else:
                     entry = {"timestamp": datetime.now()}
@@ -355,6 +354,7 @@ class Source(AbstractSearchSource):
                         content,
                         page_title=title,
                         release_type=valid_type,
+                        requested_season=season,
                         requested_episode=episode,
                     )
 
@@ -404,10 +404,10 @@ class Source(AbstractSearchSource):
                     if release_info.release_title:
                         release_title = release_info.release_title
                     else:
-                        release_title = _guess_title(shared_state, title, release_info)
+                        release_title = _guess_title(title, release_info)
 
                     if season and release_info.season != int(season):
-                        debug(
+                        trace(
                             f"Excluding {release_title} due to season mismatch: {release_info.season} != {season}"
                         )
                         continue
