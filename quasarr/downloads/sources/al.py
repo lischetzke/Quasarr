@@ -628,7 +628,7 @@ def _parse_info_from_download_item(
     content,
     page_title=None,
     release_type=None,
-    requested_season=None,
+    requested_season=False,
     requested_episode=None,
 ) -> ReleaseInfo:
     """
@@ -903,6 +903,7 @@ def _check_release(shared_state, details_html, release_id, title, episode_in_tit
                 soup,
                 page_title=page_title,
                 release_type=release_type,
+                requested_season=True if release_type == "series" else False,
                 requested_episode=episode_in_title,
             )
             real_title = release_info.release_title

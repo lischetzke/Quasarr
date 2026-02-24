@@ -354,7 +354,7 @@ class Source(AbstractSearchSource):
                         content,
                         page_title=title,
                         release_type=valid_type,
-                        requested_season=season,
+                        requested_season=True if season else False,
                         requested_episode=episode,
                     )
 
