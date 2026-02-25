@@ -53,12 +53,45 @@ SEARCH_CATEGORIES = {
     for definition in SEARCH_CATEGORY_DEFINITIONS.values()
 }
 
+# Explicit cache-sharing families for search result population.
+# The owner key represents the category that should populate cache first whenever possible.
+# Categories not listed here are treated as standalone cache groups.
+SEARCH_CATEGORY_CACHE_FAMILIES = {
+    SEARCH_CAT_MOVIES: (
+        SEARCH_CAT_MOVIES,
+        SEARCH_CAT_MOVIES_HD,
+        SEARCH_CAT_MOVIES_UHD,
+    ),
+    SEARCH_CAT_MUSIC: (
+        SEARCH_CAT_MUSIC,
+        SEARCH_CAT_MUSIC_MP3,
+        SEARCH_CAT_MUSIC_FLAC,
+    ),
+    SEARCH_CAT_SHOWS: (
+        SEARCH_CAT_SHOWS,
+        SEARCH_CAT_SHOWS_HD,
+        SEARCH_CAT_SHOWS_UHD,
+    ),
+    SEARCH_CAT_SHOWS_ANIME: (SEARCH_CAT_SHOWS_ANIME,),
+    SEARCH_CAT_SHOWS_DOCUMENTARY: (SEARCH_CAT_SHOWS_DOCUMENTARY,),
+    SEARCH_CAT_XXX: (SEARCH_CAT_XXX,),
+    SEARCH_CAT_BOOKS: (SEARCH_CAT_BOOKS,),
+}
+
 # Default Set of Download Categories
 DOWNLOAD_CATEGORIES = {
     "movies": {"emoji": "🎬"},
     "music": {"emoji": "🎵"},
     "tv": {"emoji": "📺"},
     "docs": {"emoji": "📄"},
+}
+
+# Fallback category mapping by client type (used when no valid download category is provided)
+CLIENT_DOWNLOAD_CATEGORY_FALLBACK_MAP = {
+    "lazylibrarian": "docs",
+    "lidarr": "music",
+    "radarr": "movies",
+    "sonarr": "tv",
 }
 
 # ==============================================================================

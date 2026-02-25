@@ -19,6 +19,7 @@ import requests
 from PIL import Image
 
 from quasarr.constants import (
+    CLIENT_DOWNLOAD_CATEGORY_FALLBACK_MAP,
     MONTHS_MAP,
     MOVIE_REGEX,
     SEARCH_CAT_BOOKS,
@@ -33,6 +34,7 @@ from quasarr.constants import (
     SEARCH_CAT_SHOWS_UHD,
     SEARCH_CAT_XXX,
     SEARCH_CATEGORIES,
+    SEARCH_CATEGORY_CACHE_FAMILIES,
     SEASON_EP_REGEX,
 )
 from quasarr.providers.log import crit, debug, error, trace, warn
@@ -482,14 +484,7 @@ def determine_category(request_from, category=None):
         return category
 
     client_type = extract_client_type(request_from)
-    # Default mapping
-    category_map = {
-        "lazylibrarian": "docs",
-        "lidarr": "music",
-        "radarr": "movies",
-        "sonarr": "tv",
-    }
-    return category_map.get(client_type, "tv")
+    return CLIENT_DOWNLOAD_CATEGORY_FALLBACK_MAP.get(client_type, "tv")
 
 
 def get_base_search_category_id(cat_id):
@@ -611,6 +606,12 @@ SEARCH_SUBCATEGORY_CAPABILITY_BASE = {
     SEARCH_CAT_MUSIC_FLAC: SEARCH_CAT_MUSIC,
 }
 
+SEARCH_CACHE_OWNER_BY_CATEGORY = {
+    category_id: owner_id
+    for owner_id, category_ids in SEARCH_CATEGORY_CACHE_FAMILIES.items()
+    for category_id in category_ids
+}
+
 
 _HD_RESOLUTION_PATTERN = re.compile(r"\b(?:720p|720i|1080p|1080i|fullhd|fhd)\b", re.I)
 _STRONG_4K_PATTERN = re.compile(r"\b(?:2160p|2160i|4k)\b", re.I)
@@ -637,6 +638,60 @@ def get_search_capability_category(cat_id):
     if behavior_category is None:
         return None
     return SEARCH_SUBCATEGORY_CAPABILITY_BASE.get(behavior_category, behavior_category)
+
+
+def get_search_cache_owner_category(cat_id):
+    """
+    Resolve which category should own shared search result cache entries.
+
+    - Cache families are explicitly defined in constants for maintainability.
+    - Custom categories (100000+) keep independent cache ownership.
+    - Categories outside the mapping are standalone owners.
+    """
+    try:
+        cat_id = int(cat_id)
+    except (TypeError, ValueError):
+        return cat_id
+
+    if cat_id >= 100000:
+        return cat_id
+
+    return SEARCH_CACHE_OWNER_BY_CATEGORY.get(cat_id, cat_id)
+
+
+def get_search_cache_family_groups(categories):
+    """
+    Build explicit cache-family execution groups.
+
+    Returns an ordered list of tuples:
+    - (owner_category_id, [ordered_category_ids])
+
+    Semantics:
+    - Categories in the same group share one cache owner key.
+    - The first (lowest) category in a group is expected to populate cache.
+    - Remaining categories in the group are expected to run after it and reuse cache.
+    """
+    normalized = sorted(
+        {
+            int(cat_id)
+            for cat_id in categories
+            if isinstance(cat_id, int) or str(cat_id).isdigit()
+        }
+    )
+    grouped = {}
+    for category_id in normalized:
+        owner_id = get_search_cache_owner_category(category_id)
+        grouped.setdefault(owner_id, []).append(category_id)
+
+    return [(owner_id, sorted(grouped[owner_id])) for owner_id in sorted(grouped)]
+
+
+def format_search_cache_family_groups(groups):
+    """Format cache-family groups for logs."""
+    return ", ".join(
+        f"{owner_id}:[{','.join(str(cat) for cat in categories)}]"
+        for owner_id, categories in groups
+    )
 
 
 def has_source_capability_for_category(cat_id, supported_categories):
@@ -689,39 +744,82 @@ def release_matches_search_category(search_category, release_title):
     return bool(pattern.search(normalized_title))
 
 
+def determine_search_categories(request_from, cat_param=None):
+    """
+    Determine one or more numeric search categories from the cat parameter.
+
+    Behavior:
+    - Valid comma-separated categories are returned as a sorted unique list.
+    - If no valid categories are provided, fallback to client-based default.
+    """
+    if cat_param:
+        valid_categories = set()
+        invalid_tokens = []
+
+        for raw_cat in str(cat_param).split(","):
+            raw_cat = raw_cat.strip()
+            if not raw_cat:
+                continue
+            try:
+                cat_id = int(raw_cat)
+            except ValueError:
+                invalid_tokens.append(raw_cat)
+                continue
+
+            if search_category_exists(cat_id):
+                valid_categories.add(cat_id)
+            else:
+                invalid_tokens.append(raw_cat)
+
+        if valid_categories:
+            categories = sorted(valid_categories)
+            if len(categories) > 1:
+                debug(
+                    f"Resolved multi-category search request <g>{cat_param}</g> to <g>{','.join(str(c) for c in categories)}</g>"
+                )
+            return categories
+
+        if invalid_tokens:
+            warn(
+                f"Invalid search categories provided: <r>{','.join(invalid_tokens)}</r>. Falling back to client default."
+            )
+
+    # Fallback to deriving from user agent
+    client_type = extract_client_type(request_from)
+    if client_type == "radarr":
+        return [SEARCH_CAT_MOVIES]
+    elif client_type == "lidarr":
+        return [SEARCH_CAT_MUSIC]
+    elif client_type == "lazylibrarian":
+        return [SEARCH_CAT_BOOKS]
+    elif client_type == "sonarr":
+        return [SEARCH_CAT_SHOWS]
+    else:
+        warn(f"Unknown client type '{client_type}' from '{request_from}'")
+        return []
+
+
+def order_search_categories_for_execution(categories):
+    """
+    Order requested categories so that each cache family runs from lowest ID first.
+
+    This makes the least restrictive category in each family populate cache first.
+    """
+    ordered = []
+    for _, category_ids in get_search_cache_family_groups(categories):
+        ordered.extend(category_ids)
+    return ordered
+
+
 def determine_search_category(request_from, cat_param=None):
     """
     Determine the numeric search category based on the client type or cat parameter.
     Handles default and custom categories.
     """
-    if cat_param:
-        try:
-            # Handle comma-separated categories (e.g. "5000,5030,5040")
-            # We use the first valid one we can find a base for.
-            cats = [int(c) for c in cat_param.split(",")]
-            if len(cats) > 1:
-                warn(
-                    f"Only one category can be searched at once. You provided multiple: {cat_param}"
-                )
-            for cat in cats:
-                if search_category_exists(cat):
-                    return cat
-        except ValueError:
-            pass  # Fallback to user agent if cat param is invalid
-
-    # Fallback to deriving from user agent
-    client_type = extract_client_type(request_from)
-    if client_type == "radarr":
-        return SEARCH_CAT_MOVIES
-    elif client_type == "lidarr":
-        return SEARCH_CAT_MUSIC
-    elif client_type == "lazylibrarian":
-        return SEARCH_CAT_BOOKS
-    elif client_type == "sonarr":
-        return SEARCH_CAT_SHOWS
-    else:
-        warn(f"Unknown client type '{client_type}' from '{request_from}'")
+    categories = determine_search_categories(request_from, cat_param)
+    if not categories:
         return None
+    return categories[0]
 
 
 def extract_client_type(request_from):

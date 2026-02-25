@@ -7,6 +7,7 @@ import json
 
 from quasarr.constants import (
     AUTO_DECRYPT_PATTERNS,
+    CLIENT_DOWNLOAD_CATEGORY_FALLBACK_MAP,
     PROTECTED_PATTERNS,
 )
 from quasarr.downloads.linkcrypters.hide import decrypt_links_if_hide
@@ -61,12 +62,9 @@ def generate_deterministic_package_id(
         final_download_category = download_category
     else:
         # Fallback to client type mapping
-        download_category_map = {
-            "lazylibrarian": "docs",
-            "radarr": "movies",
-            "sonarr": "tv",
-        }
-        final_download_category = download_category_map.get(normalized_client, "tv")
+        final_download_category = CLIENT_DOWNLOAD_CATEGORY_FALLBACK_MAP.get(
+            normalized_client, "tv"
+        )
 
     # Create deterministic hash from combination using SHA256
     hash_input = f"{normalized_title}|{normalized_source}|{normalized_client}"

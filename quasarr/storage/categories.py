@@ -34,6 +34,20 @@ def _normalize_search_sources(sources):
     return normalized
 
 
+def get_search_category_ui_heading(name):
+    """
+    Return UI-only heading text for search categories without changing API names.
+
+    Standalone TV special categories are displayed without the "TV/" prefix
+    in the categories web UI heading.
+    """
+    if not isinstance(name, str):
+        return ""
+    if name.startswith("TV/"):
+        return name.split("/", 1)[1]
+    return name
+
+
 def get_download_categories():
     """Returns a sorted list of all category names, ensuring defaults exist."""
     db = DataBase("categories_download")

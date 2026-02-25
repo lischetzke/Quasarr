@@ -32,6 +32,7 @@ from quasarr.storage.categories import (
     get_download_category_mirrors,
     get_search_categories,
     get_search_category_sources,
+    get_search_category_ui_heading,
     get_search_category_whitelist_owner,
     update_download_category_mirrors,
     update_search_category_sources,
@@ -265,6 +266,7 @@ def setup_config(app, shared_state):
 
         for cat_id, details in default_search_cats:
             name = details["name"]
+            heading_name = get_search_category_ui_heading(name)
             emoji = details["emoji"]
             search_sources = get_search_category_sources(cat_id)
             base_source_category_id = get_search_capability_category(cat_id) or cat_id
@@ -295,7 +297,7 @@ def setup_config(app, shared_state):
             <div class="category-item">
                 <span class="category-emoji">{emoji}</span>
                 <div class="category-details">
-                    <span class="category-name">{name}</span>
+                    <span class="category-name">{heading_name}</span>
                     <span class="category-mirrors">Hostnames: {search_sources_str}</span>
                     <div class="category-subcategories">
                         {category_pills_html}

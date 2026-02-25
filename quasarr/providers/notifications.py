@@ -26,6 +26,17 @@ def _format_number(value):
     return str(value)
 
 
+def _format_balance(value):
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return f"{value:.2f}"
+    try:
+        return f"{float(value):.2f}"
+    except (TypeError, ValueError):
+        return str(value)
+
+
 def _build_solved_fields(details):
     if not details:
         return None
@@ -68,7 +79,7 @@ def _build_solved_fields(details):
         if provider_lines:
             fields.append(
                 {
-                    "name": "Providers Used",
+                    "name": "Providers",
                     "value": "\n".join(provider_lines),
                 }
             )
@@ -90,17 +101,15 @@ def _build_solved_fields(details):
                 continue
             label = f"{provider['name']}: " if provider.get("name") else ""
             balance_lines.append(
-                f"{label}{_format_number(provider['balance'])} {provider['currency']}"
+                f"{label}{_format_balance(provider['balance'])} {provider['currency']}"
             )
         if balance_lines:
-            fields.append(
-                {"name": "Remaining Balance", "value": "\n".join(balance_lines)}
-            )
+            fields.append({"name": "Balance", "value": "\n".join(balance_lines)})
     else:
         # Backward compatibility for older SponsorsHelper payloads.
         summary = details.get("summary")
         if summary:
-            fields.append({"name": "Providers Used", "value": str(summary)})
+            fields.append({"name": "Providers", "value": str(summary)})
 
         if details.get("cost") is not None and details.get("currency"):
             fields.append(
@@ -112,8 +121,8 @@ def _build_solved_fields(details):
         if details.get("balance") is not None and details.get("currency"):
             fields.append(
                 {
-                    "name": "Remaining Balance",
-                    "value": f"{_format_number(details['balance'])} {details['currency']}",
+                    "name": "Balance",
+                    "value": f"{_format_balance(details['balance'])} {details['currency']}",
                 }
             )
 

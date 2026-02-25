@@ -6,6 +6,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import timezone
 from email.utils import parsedate_to_datetime
+from threading import Lock
 
 from quasarr.constants import (
     SEARCH_CAT_BOOKS,
@@ -41,6 +42,7 @@ def get_search_results(
         determine_search_category,
         get_base_search_category_id,
         get_search_behavior_category,
+        get_search_cache_owner_category,
         get_search_capability_category,
         release_matches_search_category,
     )
@@ -70,8 +72,13 @@ def get_search_results(
         is_custom_search_category = int(search_category) >= 100000
     except (TypeError, ValueError):
         pass
+    # Cache keys are shared at the cache-family owner level.
+    # Multi-category callers should execute same-family categories in ascending order
+    # so the lowest category populates cache before stricter siblings run.
     cache_key_category = (
-        search_category if is_custom_search_category else capability_category
+        search_category
+        if is_custom_search_category
+        else get_search_cache_owner_category(behavior_search_category)
     )
 
     # Filter out sources that are not in the search category's whitelist
@@ -387,8 +394,13 @@ class SearchCache:
     def __init__(self):
         self.last_cleaned = time.time()
         self.cache = {}
+        self._lock = Lock()
 
     def clean(self, now):
+        with self._lock:
+            self._clean_locked(now)
+
+    def _clean_locked(self, now):
         if now - self.last_cleaned < 60:
             return
         keys_to_delete = [k for k, (_, exp) in self.cache.items() if now >= exp]
@@ -397,14 +409,22 @@ class SearchCache:
         self.last_cleaned = now
 
     def get(self, key):
-        val, exp = self.cache.get(key, (None, 0))
-        # Return tuple (value, expiry) if valid, else (None, 0)
-        return (val, exp) if time.time() < exp else (None, 0)
+        now = time.time()
+        with self._lock:
+            val, exp = self.cache.get(key, (None, 0))
+            if now < exp:
+                return (val, exp)
+
+            # Clean up stale key opportunistically.
+            if key in self.cache:
+                del self.cache[key]
+            return (None, 0)
 
     def set(self, key, value, ttl=300):
         now = time.time()
-        self.cache[key] = (value, now + ttl)
-        self.clean(now)
+        with self._lock:
+            self.cache[key] = (value, now + ttl)
+            self._clean_locked(now)
 
 
 search_cache = SearchCache()

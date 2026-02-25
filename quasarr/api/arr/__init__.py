@@ -4,6 +4,7 @@
 
 import traceback
 import xml.sax.saxutils as sax_utils
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from urllib.parse import parse_qs, urlparse
 from xml.etree import ElementTree
@@ -17,14 +18,46 @@ from quasarr.providers.auth import require_api_key
 from quasarr.providers.log import debug, error, info, warn
 from quasarr.providers.utils import (
     determine_category,
-    determine_search_category,
+    determine_search_categories,
+    format_search_cache_family_groups,
+    get_search_cache_family_groups,
     has_source_capability_for_category,
+    order_search_categories_for_execution,
     parse_payload,
 )
 from quasarr.providers.version import get_version
 from quasarr.search import get_search_results
 from quasarr.search.sources import get_sources
 from quasarr.storage.categories import get_download_categories, get_search_categories
+
+
+def _get_release_dedupe_key(release):
+    details = release.get("details", {}) if isinstance(release, dict) else {}
+
+    link = str(details.get("link", "") or "").strip()
+    if not link:
+        return None
+    return ("link", link)
+
+
+def _dedupe_releases(releases):
+    deduped = []
+    seen = set()
+    removed = 0
+
+    for release in releases:
+        key = _get_release_dedupe_key(release)
+        if key is None:
+            # Be conservative: keep entries without stable identity.
+            deduped.append(release)
+            continue
+        if key in seen:
+            removed += 1
+            continue
+        seen.add(key)
+        deduped.append(release)
+
+    return deduped, removed
 
 
 def setup_arr_routes(app):
@@ -323,12 +356,77 @@ def setup_arr_routes(app):
                         debug(f"Error parsing limit parameter: {e}")
                         limit = 1000
 
-                    # Extract first valid category from request
+                    # Extract and normalize one or more categories from request
                     requested_cat = getattr(request.query, "cat", None)
-
-                    search_category = determine_search_category(
+                    requested_categories = determine_search_categories(
                         request_from, requested_cat
                     )
+                    search_categories = order_search_categories_for_execution(
+                        requested_categories
+                    )
+                    cache_family_groups = get_search_cache_family_groups(
+                        requested_categories
+                    )
+
+                    if len(search_categories) > 1:
+                        debug(
+                            "Executing multi-category search request "
+                            f"<g>{requested_cat}</g> as categories "
+                            f"<g>{','.join(str(cat) for cat in search_categories)}</g> "
+                            "with cache groups "
+                            f"<g>{format_search_cache_family_groups(cache_family_groups)}</g>"
+                        )
+
+                    def run_search_for_categories(search_runner):
+                        if not search_categories:
+                            return []
+                        if len(search_categories) == 1:
+                            return search_runner(search_categories[0], offset, limit)
+
+                        # Run each cache-sharing family in sequence to ensure
+                        # lower/less-restrictive categories populate cache first.
+                        # Different families can run independently.
+                        fetch_limit = max(offset + limit, 1000)
+
+                        def run_cache_group(group_categories):
+                            group_results = []
+                            for category_id in group_categories:
+                                group_results.extend(
+                                    search_runner(category_id, 0, fetch_limit)
+                                )
+                            return group_results
+
+                        combined_results = []
+                        if len(cache_family_groups) == 1:
+                            combined_results = run_cache_group(search_categories)
+                        else:
+                            group_results = {}
+                            with ThreadPoolExecutor(
+                                max_workers=len(cache_family_groups)
+                            ) as executor:
+                                futures = {
+                                    executor.submit(
+                                        run_cache_group, group_categories
+                                    ): owner
+                                    for owner, group_categories in cache_family_groups
+                                }
+                                for future in as_completed(futures):
+                                    owner = futures[future]
+                                    group_results[owner] = future.result()
+
+                            for owner, _ in cache_family_groups:
+                                combined_results.extend(group_results.get(owner, []))
+
+                        deduped_results, removed_duplicates = _dedupe_releases(
+                            combined_results
+                        )
+                        if removed_duplicates > 0:
+                            debug(
+                                "Removed duplicate releases from multi-category response: "
+                                f"<r>{removed_duplicates}</r> duplicate entries filtered"
+                            )
+
+                        return deduped_results[offset : offset + limit]
 
                     if mode in ["movie", "tvsearch"]:
                         imdb_id = getattr(request.query, "imdbid", "")
@@ -345,15 +443,19 @@ def setup_arr_routes(app):
                                 pass
 
                         if supported:
-                            releases = get_search_results(
-                                shared_state,
-                                request_from,
-                                search_category,
-                                imdb_id=imdb_id,
-                                season=season,
-                                episode=episode,
-                                offset=offset,
-                                limit=limit,
+                            releases = run_search_for_categories(
+                                lambda category_id, request_offset, request_limit: (
+                                    get_search_results(
+                                        shared_state,
+                                        request_from,
+                                        category_id,
+                                        imdb_id=imdb_id,
+                                        season=season,
+                                        episode=episode,
+                                        offset=request_offset,
+                                        limit=request_limit,
+                                    )
+                                )
                             )
                         else:
                             # sonarr expects this but we will not support non-imdbid searches
@@ -365,13 +467,17 @@ def setup_arr_routes(app):
                         author = getattr(request.query, "author", "")
                         title = getattr(request.query, "title", "")
                         search_phrase = " ".join(filter(None, [author, title]))
-                        releases = get_search_results(
-                            shared_state,
-                            request_from,
-                            search_category,
-                            search_phrase=search_phrase,
-                            offset=offset,
-                            limit=limit,
+                        releases = run_search_for_categories(
+                            lambda category_id, request_offset, request_limit: (
+                                get_search_results(
+                                    shared_state,
+                                    request_from,
+                                    category_id,
+                                    search_phrase=search_phrase,
+                                    offset=request_offset,
+                                    limit=request_limit,
+                                )
+                            )
                         )
 
                     elif mode == "search":
@@ -380,13 +486,17 @@ def setup_arr_routes(app):
                             "lidarr",
                         ]:
                             search_phrase = getattr(request.query, "q", "")
-                            releases = get_search_results(
-                                shared_state,
-                                request_from,
-                                search_category,
-                                search_phrase=search_phrase,
-                                offset=offset,
-                                limit=limit,
+                            releases = run_search_for_categories(
+                                lambda category_id, request_offset, request_limit: (
+                                    get_search_results(
+                                        shared_state,
+                                        request_from,
+                                        category_id,
+                                        search_phrase=search_phrase,
+                                        offset=request_offset,
+                                        limit=request_limit,
+                                    )
+                                )
                             )
                         else:
                             debug(
