@@ -4,6 +4,7 @@
 
 import json
 import os
+import re
 
 import requests
 
@@ -14,6 +15,52 @@ from quasarr.providers.log import info
 silent_env = os.getenv("SILENT", "")
 silent = bool(silent_env)
 silent_max = silent_env.lower() == "max"
+
+
+def _canonicalize_solver_name(name):
+    raw = str(name).strip() if name is not None else ""
+    compact = raw.lower().replace(" ", "").replace("-", "").replace("_", "")
+    if compact in {"2captcha", "2captchacom"}:
+        return "2captcha", "2Captcha"
+    if compact in {"dbc", "deathbycaptcha", "deathbycaptchacom"}:
+        return "deathbycaptcha", "DeathByCaptcha"
+    if not raw:
+        return "unknown", "Unknown"
+    return compact, raw
+
+
+def _format_duration(value):
+    if value is None:
+        return None
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return None
+        # Already in HH:MM:SS-like format.
+        if stripped.count(":") == 2:
+            try:
+                parts = [int(part) for part in stripped.split(":")]
+                if len(parts) == 3:
+                    hours, minutes, seconds = parts
+                    total_seconds = max(0, (hours * 3600) + (minutes * 60) + seconds)
+                    hours = total_seconds // 3600
+                    minutes = (total_seconds % 3600) // 60
+                    seconds = total_seconds % 60
+                    return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+            except ValueError:
+                return None
+        match = re.fullmatch(r"(\d+(?:\.\d+)?)\s*[sS]?", stripped)
+        if match:
+            value = float(match.group(1))
+        else:
+            return None
+    if isinstance(value, (int, float)):
+        total_seconds = max(0, int(round(float(value))))
+        hours = total_seconds // 3600
+        minutes = (total_seconds % 3600) // 60
+        seconds = total_seconds % 60
+        return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+    return None
 
 
 def _format_number(value):
@@ -38,93 +85,87 @@ def _format_balance(value):
 
 
 def _build_solved_fields(details):
-    if not details:
+    if not isinstance(details, dict):
         return None
 
     fields = []
 
-    providers = details.get("providers")
-    normalized_providers = []
+    providers = details.get("solvers")
+    grouped_providers = []
+    grouped_provider_map = {}
     if isinstance(providers, list):
         for provider in providers:
             if not isinstance(provider, dict):
                 continue
-            name = provider.get("provider") or provider.get("name")
-            attempt = provider.get("attempt")
-            max_attempts = provider.get("max_attempts")
-            cost = provider.get("cost")
-            balance = provider.get("balance")
+            raw_name = provider.get("name")
+            solver_key, solver_display = _canonicalize_solver_name(raw_name)
+            if solver_key not in grouped_provider_map:
+                grouped_provider_map[solver_key] = {
+                    "solver_key": solver_key,
+                    "solver_display": solver_display,
+                    "attempts": 0,
+                    "has_attempts": False,
+                    "cost": None,
+                    "balance": None,
+                    "currency": None,
+                }
+                grouped_providers.append(grouped_provider_map[solver_key])
+
+            grouped_provider = grouped_provider_map[solver_key]
+
+            if provider.get("attempts") is not None:
+                try:
+                    grouped_provider["attempts"] += max(0, int(provider.get("attempts")))
+                    grouped_provider["has_attempts"] = True
+                except (TypeError, ValueError):
+                    pass
+            if provider.get("cost") is not None:
+                grouped_provider["cost"] = provider.get("cost")
+            if provider.get("balance") is not None:
+                grouped_provider["balance"] = provider.get("balance")
+            if provider.get("currency"):
+                grouped_provider["currency"] = provider.get("currency")
+
+    if grouped_providers:
+        preferred_order = {"2captcha": 0, "deathbycaptcha": 1}
+        sorted_providers = sorted(
+            grouped_providers,
+            key=lambda provider: (
+                preferred_order.get(provider.get("solver_key"), 99),
+                provider.get("solver_key", ""),
+            ),
+        )
+        for provider in sorted_providers:
+            value_parts = []
+            attempts = provider.get("attempts") if provider.get("has_attempts") else 0
+            value_parts.append(f"**Attempts:** {attempts}")
             currency = provider.get("currency")
-            normalized_providers.append(
-                {
-                    "name": name,
-                    "attempt": attempt,
-                    "max_attempts": max_attempts,
-                    "cost": cost,
-                    "balance": balance,
-                    "currency": currency,
-                }
-            )
+            if provider.get("cost") is not None:
+                cost_text = _format_number(provider.get("cost"))
+                value_parts.append(
+                    f"**Cost:** {cost_text} {currency}"
+                    if currency
+                    else f"**Cost:** {cost_text}"
+                )
+            if provider.get("balance") is not None:
+                balance_text = _format_balance(provider.get("balance"))
+                value_parts.append(
+                    f"**Balance:** {balance_text} {currency}"
+                    if currency
+                    else f"**Balance:** {balance_text}"
+                )
+            if value_parts:
+                fields.append(
+                    {
+                        "name": provider["solver_display"],
+                        "value": " | ".join(value_parts),
+                    }
+                )
 
-    if normalized_providers:
-        provider_lines = []
-        for provider in normalized_providers:
-            label = provider["name"] or "Unknown"
-            attempt = provider.get("attempt")
-            max_attempts = provider.get("max_attempts")
-            if attempt is not None and max_attempts is not None:
-                label += f" ({attempt}/{max_attempts} runs)"
-            provider_lines.append(label)
-
-        if provider_lines:
-            fields.append(
-                {
-                    "name": "Providers",
-                    "value": "\n".join(provider_lines),
-                }
-            )
-
-        cost_lines = []
-        for provider in normalized_providers:
-            if provider.get("cost") is None or not provider.get("currency"):
-                continue
-            label = f"{provider['name']}: " if provider.get("name") else ""
-            cost_lines.append(
-                f"{label}{_format_number(provider['cost'])} {provider['currency']}"
-            )
-        if cost_lines:
-            fields.append({"name": "Cost", "value": "\n".join(cost_lines)})
-
-        balance_lines = []
-        for provider in normalized_providers:
-            if provider.get("balance") is None or not provider.get("currency"):
-                continue
-            label = f"{provider['name']}: " if provider.get("name") else ""
-            balance_lines.append(
-                f"{label}{_format_balance(provider['balance'])} {provider['currency']}"
-            )
-        if balance_lines:
-            fields.append({"name": "Balance", "value": "\n".join(balance_lines)})
-    else:
-        # Backward compatibility for older SponsorsHelper payloads.
-        summary = details.get("summary")
-        if summary:
-            fields.append({"name": "Providers", "value": str(summary)})
-
-        if details.get("cost") is not None and details.get("currency"):
-            fields.append(
-                {
-                    "name": "Cost",
-                    "value": f"{_format_number(details['cost'])} {details['currency']}",
-                }
-            )
-        if details.get("balance") is not None and details.get("currency"):
-            fields.append(
-                {
-                    "name": "Balance",
-                    "value": f"{_format_balance(details['balance'])} {details['currency']}",
-                }
-            )
+    duration_value = details.get("duration_seconds")
+    formatted_duration = _format_duration(duration_value)
+    if formatted_duration:
+        fields.append({"name": "Duration", "value": formatted_duration})
 
     return fields or None
 

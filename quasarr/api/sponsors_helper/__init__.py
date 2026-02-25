@@ -126,11 +126,12 @@ def setup_sponsors_helper_routes(app):
             package_id = data.get("package_id")
             download_links = data.get("urls")
             password = data.get("password")
-            cost = data.get("cost")
-            summary = data.get("summary")
-            balance = data.get("balance")
-            currency = data.get("currency")
-            providers = data.get("providers")
+            notification = data.get("notification")
+
+            if not isinstance(notification, dict):
+                return abort(400, "Missing or invalid 'notification' object")
+            if not isinstance(notification.get("solvers"), list):
+                return abort(400, "Missing or invalid 'notification.solvers' list")
 
             info(
                 f"Received <green>{len(download_links)}</green> download links for <y>{title}</y>"
@@ -147,38 +148,26 @@ def setup_sponsors_helper_routes(app):
                     StatsHelper(shared_state).increment_captcha_decryptions_automatic()
                     shared_state.get_db("protected").delete(package_id)
 
-                    details = {}
-                    if isinstance(providers, list) and providers:
-                        details["providers"] = providers
-                    elif summary:
-                        details["summary"] = summary
-                    if cost is not None and currency:
-                        details["cost"] = cost
-                    if balance is not None and currency:
-                        details["balance"] = balance
-                        details["currency"] = currency
-
                     send_discord_message(
-                        shared_state, title=title, case="solved", details=details
+                        shared_state, title=title, case="solved", details=notification
                     )
                     log_msg = f"Download successfully started for <y>{title}</y>"
+                    providers = notification.get("solvers")
                     if isinstance(providers, list) and providers:
                         used_providers = []
                         for provider in providers:
                             if not isinstance(provider, dict):
                                 continue
-                            provider_name = provider.get("provider") or provider.get(
-                                "name"
-                            )
+                            provider_name = provider.get("name")
                             if provider_name:
                                 used_providers.append(str(provider_name))
                         if used_providers:
                             unique_providers = sorted(set(used_providers))
                             log_msg += f" | Providers: {', '.join(unique_providers)}"
-                    elif summary:
-                        log_msg += f" | {summary}"
-                    if balance is not None and currency:
-                        log_msg += f" | Balance: {balance} {currency}"
+                    if notification.get("duration_seconds") is not None:
+                        log_msg += (
+                            f" | Duration: {notification.get('duration_seconds')}s"
+                        )
                     info(log_msg)
                     return (
                         f"Downloaded {len(download_links)} download links for {title}"
