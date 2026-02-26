@@ -260,9 +260,11 @@ def _parse_posted_ago(txt):
 
 
 def _extract_size(text: str) -> dict:
-    match = re.search(r"(\d+(?:[\.,]\d+)?)\s*([A-Za-z]+)", text)
+    match = re.search(
+        r"(\d{1,3}(?:,\d{3})*(?:\.\d+)?|\d+(?:\.\d+)?)\s*([A-Za-z]+)", text
+    )
     if match:
-        size = match.group(1).replace(",", ".")
+        size = match.group(1).replace(",", "")
         unit = match.group(2)
         return {"size": size, "sizeunit": unit}
     return {"size": "0", "sizeunit": "MB"}
