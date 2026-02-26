@@ -19,13 +19,15 @@ services:
   # Optional (sponsor-only): automatic CAPTCHA solving / decryption helper
   sponsorshelper:
     container_name: 'SponsorsHelper'
-    image: 'ghcr.io/rix1337-sponsors/docker/helper:latest'
+    image: 'ghcr.io/rix1337/sponsors-helper:latest'
     restart: unless-stopped
     depends_on:
       - quasarr
+    volumes:
+      - '/path/to/sponsorshelper-config:/config'
     environment:
-      - 'QUASARR_URL=http://192.168.1.1:8080'
+      - 'QUASARR_URL=http://192.168.0.1:8080'
       - 'QUASARR_API_KEY=your_quasarr_api_key_here'
       - 'APIKEY_2CAPTCHA=your_2captcha_api_key_here'
-      - 'GITHUB_TOKEN=ghp_123.....456789'
+      - 'DEATHBYCAPTCHA_TOKEN=your_deathbycaptcha_token_here'
       - 'FLARESOLVERR_URL=http://10.10.0.1:8191/v1'
