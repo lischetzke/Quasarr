@@ -20,6 +20,8 @@ load_dotenv(override=True)
 
 # To change the log format, modify the _format variable. It uses loguru's formatting syntax.
 _format = "<d>{time:YYYY-MM-DDTHH:mm:ss}</d> <lvl>{level:5}</lvl>{extra[context]}<b><M>{extra[source]}</M></b>{extra[padding]} {message}"
+# The _context_max_width is used to calculate the padding for extra[context] based on the max amount of context emojis.
+_context_max_width = wcswidth("⬜⬜⬜")
 
 _subsequent_indent = 0
 _loggers = {}
@@ -50,19 +52,6 @@ def _read_env_log(key, default):
 
 
 _log_level = _read_env_log("LOG", 20)
-
-
-def _context_display_width(value: str) -> int:
-    """
-    Context column width used for padding.
-    Compensates for variation selectors that many terminals render as zero-width,
-    while wcwidth may count them as width 1, which can shift alignment by 1 cell.
-    """
-    return max(0, wcswidth(value) - value.count("\ufe0f"))
-
-
-# Keep this in the same width model as _context_display_width() so padding is stable.
-_context_max_width = _context_display_width("⬜⬜⬜")
 
 _context_replace = {
     "quasarr": "",  # /quasarr/*
@@ -135,8 +124,8 @@ class _Logger:
             contexts = []
         self.level = get_log_level(contexts)
         context, source = _contexts_to_str(contexts)
-        width = _context_display_width(context + source)
-        padding = max(0, _context_max_width - width)
+        width = wcswidth(context + source)
+        padding = _context_max_width - width
 
         self.logger_alt = logger.bind(
             context=context,
