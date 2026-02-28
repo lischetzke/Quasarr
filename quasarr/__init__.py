@@ -23,7 +23,7 @@ from quasarr.providers.log import (
     info,
     log_level_names,
 )
-from quasarr.providers.notifications import send_discord_message
+from quasarr.providers.notifications import send_notification
 from quasarr.providers.utils import (
     Unbuffered,
     check_flaresolverr,
@@ -178,6 +178,23 @@ def run():
                 error(f"Invalid Discord Webhook URL provided: {discord_env}")
         shared_state.update("discord", discord_url)
 
+        telegram_bot_token_env = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+        telegram_chat_id_env = os.environ.get("TELEGRAM_CHAT_ID", "")
+        telegram_token = ""
+        telegram_chat_id = ""
+        if telegram_bot_token_env:
+            telegram_token_pattern = r"^\d+:[A-Za-z0-9_-]{35,}$"
+            if re.match(telegram_token_pattern, telegram_bot_token_env):
+                if telegram_chat_id_env:
+                    telegram_token = telegram_bot_token_env
+                    telegram_chat_id = telegram_chat_id_env
+                else:
+                    error("TELEGRAM_BOT_TOKEN is set but TELEGRAM_CHAT_ID is missing")
+            else:
+                error("Invalid TELEGRAM_BOT_TOKEN format provided")
+        shared_state.update("telegram_bot_token", telegram_token)
+        shared_state.update("telegram_chat_id", telegram_chat_id)
+
         api_key = Config("API").get("key")
         if not api_key:
             api_key = shared_state.generate_api_key()
@@ -320,7 +337,7 @@ def update_checker(shared_state_dict, shared_state_lock):
                 info(f"Please update to {update_available} as soon as possible!")
                 info(f'Release notes at: "{link}"')
                 update_available = {"version": update_available, "link": link}
-                send_discord_message(
+                send_notification(
                     shared_state, message, "quasarr_update", details=update_available
                 )
 

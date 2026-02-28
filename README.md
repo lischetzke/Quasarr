@@ -14,7 +14,7 @@ indexers. It simply does not know what NZB files are.
 
 Quasarr includes a solution to quickly and easily decrypt protected links.
 [Active monthly Sponsors get access to SponsorsHelper to do so automatically.](https://github.com/rix1337/Quasarr?tab=readme-ov-file#sponsorshelper)
-Alternatively, follow the link from the console output (or discord notification) to solve CAPTCHAs manually.
+Alternatively, follow the link from the console output (or Discord/Telegram notification) to solve CAPTCHAs manually.
 Quasarr will confidently handle the rest. Some CAPTCHA types require [Tampermonkey](https://www.tampermonkey.net/) to be
 installed in your browser.
 
@@ -173,6 +173,8 @@ docker run -d \
   -e 'INTERNAL_ADDRESS'='http://192.168.0.1:8080' \
   -e 'EXTERNAL_ADDRESS'='https://foo.bar/' \
   -e 'DISCORD'='https://discord.com/api/webhooks/1234567890/ABCDEFGHIJKLMN' \
+  -e 'TELEGRAM_BOT_TOKEN'='123456789:ABCdefGHIjklMNOpqrSTUvwxYZ_0123456789a' \
+  -e 'TELEGRAM_CHAT_ID'='987654321' \
   -e 'USER'='admin' \
   -e 'PASS'='change-me' \
   -e 'AUTH'='form' \
@@ -186,9 +188,11 @@ docker run -d \
 | `INTERNAL_ADDRESS` | **Required.** Internal URL so Radarr/Sonarr/Lidarr/LazyLibrarian can reach Quasarr. **Must include port.** |
 | `EXTERNAL_ADDRESS` | Optional. External URL (e.g. reverse proxy). Always protect external access with authentication.           |
 | `DISCORD`          | Optional. Discord webhook URL for notifications.                                                           |
+| `TELEGRAM_BOT_TOKEN` | Optional. Telegram Bot API token for notifications. Create a bot via [@BotFather](https://t.me/BotFather). |
+| `TELEGRAM_CHAT_ID` | Optional. Telegram chat ID to send notifications to. Required when `TELEGRAM_BOT_TOKEN` is set.            |
 | `USER` / `PASS`    | Optional, but recommended! Username / Password to protect the web UI.                                      |
 | `AUTH`             | Authentication mode. Supported values: `form` or `basic`.                                                  |
-| `SILENT`           | Optional. If `True`, silences all Discord notifications except SponsorHelper error messages. If `MAX`, blocks all Discord messages except SponsorHelper failure messages. ||
+| `SILENT`           | Optional. If `True`, silences all notifications except SponsorHelper error messages. If `MAX`, blocks all notifications except SponsorHelper failure messages. |
 | `TZ`               | Optional. Timezone. Incorrect values may cause HTTPS/SSL issues.                                           |
 
 # Manual setup
@@ -203,11 +207,45 @@ docker run -d \
 export INTERNAL_ADDRESS=http://192.168.0.1:8080
 export EXTERNAL_ADDRESS=https://foo.bar/
 export DISCORD=https://discord.com/api/webhooks/1234567890/ABCDEFGHIJKLMN
+export TELEGRAM_BOT_TOKEN=123456789:ABCdefGHIjklMNOpqrSTUvwxYZ_0123456789a
+export TELEGRAM_CHAT_ID=987654321
 quasarr
   ```
 
-* `DISCORD` see `DISCORD`docker variable
-* `EXTERNAL_ADDRESS` see `EXTERNAL_ADDRESS`docker variable
+* `DISCORD` see `DISCORD` docker variable
+* `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` see docker variables above and [Setting up Telegram notifications](#setting-up-telegram-notifications)
+* `EXTERNAL_ADDRESS` see `EXTERNAL_ADDRESS` docker variable
+  
+# Notifications
+## Discord
+
+<details>
+<summary>Configure Discord</summary>
+
+1. Open your Discord server and go to **Server Settings → Integrations → Webhooks**.
+2. Click **New Webhook**, choose the target channel, and copy the **Webhook URL**.
+3. Set the `DISCORD` environment variable to this URL.  
+
+</details>
+
+## Telegram
+
+<details>
+<summary>Configure Telegram Bot</summary>
+
+1. **Create a bot** — Open Telegram and search for [@BotFather](https://t.me/BotFather). Send `/newbot` and follow the prompts to choose a name and username for your bot.
+2. **Copy the token** — BotFather will reply with an HTTP API token (e.g. `123456789:ABCdefGHI...`). This is your `TELEGRAM_BOT_TOKEN`.
+3. **Start a chat with the bot** — Open a chat with your new bot and send any message (e.g. `/start`). This is required so the bot can send messages back to you.
+4. **Get your chat ID** — Open the following URL in a browser (replace `<TOKEN>` with your bot token):
+   ```
+   https://api.telegram.org/bot<TOKEN>/getUpdates
+   ```
+   Look for `"chat":{"id":` in the JSON response. That number is your `TELEGRAM_CHAT_ID`.
+   > **Tip:** For a group chat, add the bot to the group first, send a message in the group, then call `getUpdates`.
+5. **Configure Quasarr** — Set both `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` in your environment (`.env` file, Docker `-e` flags, or `docker-compose.yml`). 
+  
+</details>
+<br>
 
 # Philosophy
 
