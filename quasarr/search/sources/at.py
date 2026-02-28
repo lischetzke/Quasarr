@@ -11,9 +11,11 @@ import requests
 from bs4 import BeautifulSoup
 
 from quasarr.constants import (
+    FEED_REQUEST_TIMEOUT_SECONDS,
     SEARCH_CAT_MOVIES,
     SEARCH_CAT_SHOWS,
     SEARCH_CAT_SHOWS_ANIME,
+    SEARCH_REQUEST_TIMEOUT_SECONDS,
 )
 from quasarr.downloads.sources.at import (
     _build_release_info_from_title,
@@ -82,6 +84,7 @@ class Source(AbstractSearchSource):
                 shared_state,
                 f"https://{host}/",
                 f"https://{host}/?disp=attachments",
+                FEED_REQUEST_TIMEOUT_SECONDS,
             )
         except Exception as e:
             warn(f"Error loading feed: {e}")
@@ -168,6 +171,7 @@ class Source(AbstractSearchSource):
                     shared_state,
                     f"https://{host}/search?q={query}",
                     f"https://{host}/search?q={query}&disp=attachments",
+                    SEARCH_REQUEST_TIMEOUT_SECONDS,
                 )
             except Exception as e:
                 warn(f"Error loading search for {variant['query']}: {e}")
@@ -225,11 +229,11 @@ class Source(AbstractSearchSource):
         return releases
 
 
-def _load_entries(shared_state, listing_url, attachments_url):
+def _load_entries(shared_state, listing_url, attachments_url, request_timeout):
     headers = {"User-Agent": shared_state.values["user_agent"]}
 
     def fetch(url):
-        response = requests.get(url, headers=headers, timeout=30)
+        response = requests.get(url, headers=headers, timeout=request_timeout)
         response.raise_for_status()
         return response.text
 

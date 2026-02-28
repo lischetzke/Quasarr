@@ -10,7 +10,10 @@ from urllib.parse import urlparse
 import requests
 from bs4 import BeautifulSoup
 
-from quasarr.constants import SHARE_HOSTERS_LOWERCASE
+from quasarr.constants import (
+    DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
+    SHARE_HOSTERS_LOWERCASE,
+)
 from quasarr.downloads.sources.helpers.abstract_source import AbstractDownloadSource
 from quasarr.downloads.sources.helpers.anime_title import (
     ReleaseInfo,
@@ -109,7 +112,11 @@ class Source(AbstractDownloadSource):
         headers = {"User-Agent": shared_state.values["user_agent"]}
 
         try:
-            response = requests.get(url, headers=headers, timeout=30)
+            response = requests.get(
+                url,
+                headers=headers,
+                timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
+            )
             response.raise_for_status()
         except Exception as e:
             info(f"Could not load release page for {title}: {e}")

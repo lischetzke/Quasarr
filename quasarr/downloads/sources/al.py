@@ -11,6 +11,7 @@ from urllib.parse import urlparse
 
 from bs4 import BeautifulSoup
 
+from quasarr.constants import DOWNLOAD_REQUEST_TIMEOUT_SECONDS
 from quasarr.downloads.linkcrypters.al import decrypt_content, solve_captcha
 from quasarr.downloads.sources.helpers.abstract_source import AbstractDownloadSource
 from quasarr.downloads.sources.helpers.anime_title import (
@@ -70,7 +71,12 @@ class Source(AbstractDownloadSource):
             mark_hostname_issue(Source.initials, "download", "Session error")
             return {}
 
-        details_page = fetch_via_flaresolverr(shared_state, "GET", url, timeout=30)
+        details_page = fetch_via_flaresolverr(
+            shared_state,
+            "GET",
+            url,
+            timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
+        )
         details_html = details_page.get("text", "")
         if not details_html:
             info(f"Failed to load details page for {title} at {url}")
@@ -108,7 +114,7 @@ class Source(AbstractDownloadSource):
                 method="POST",
                 target_url=post_url,
                 post_data=payload,
-                timeout=30,
+                timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
             )
 
             status = result.get("status_code")
@@ -168,7 +174,7 @@ class Source(AbstractDownloadSource):
                                     method="POST",
                                     target_url=post_url,
                                     post_data=payload,
-                                    timeout=30,
+                                    timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
                                 )
                                 try:
                                     response_json = check_solution.get("json", {})
