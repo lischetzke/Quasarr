@@ -8,7 +8,7 @@ import requests
 
 from quasarr.constants import SUPPRESS_NOTIFICATIONS
 from quasarr.providers.log import info
-from quasarr.providers.notifications._helpers import (
+from quasarr.providers.notifications.helpers import (
     QUASARR_AVATAR,
     SPONSORS_HELPER_URL,
     build_solved_data,

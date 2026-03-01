@@ -7,7 +7,7 @@ from html import escape
 import requests
 
 from quasarr.providers.log import info
-from quasarr.providers.notifications._helpers import (
+from quasarr.providers.notifications.helpers import (
     SPONSORS_HELPER_URL,
     build_solved_data,
     format_balance,

@@ -3,7 +3,7 @@
 # Project by https://github.com/rix1337
 
 from quasarr.providers.log import info
-from quasarr.providers.notifications._helpers import resolve_poster_url
+from quasarr.providers.notifications.helpers import resolve_poster_url
 from quasarr.providers.notifications.notification_types import (
     NotificationType,
     normalize_notification_type,
