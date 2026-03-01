@@ -35,7 +35,7 @@ from quasarr.providers.log import debug, info, trace, warn
 from quasarr.providers.utils import (
     convert_to_mb,
     generate_download_link,
-    get_search_behavior_category,
+    get_base_search_category_id,
     is_imdb_id,
     match_in_title,
     search_string_in_sanitized_title,
@@ -147,8 +147,8 @@ class Source(AbstractSearchSource):
         season = _normalize_search_number(season)
         episode = _normalize_search_number(episode)
 
-        behavior_category = get_search_behavior_category(search_category)
-        if behavior_category not in (
+        base_category = get_base_search_category_id(search_category)
+        if base_category not in (
             SEARCH_CAT_MOVIES,
             SEARCH_CAT_SHOWS,
             SEARCH_CAT_SHOWS_ANIME,
@@ -481,12 +481,12 @@ def _matches_entry_search(search_string, entry):
 
 
 def _matches_category(title, search_category):
-    behavior_category = get_search_behavior_category(search_category)
+    base_category = get_base_search_category_id(search_category)
 
-    if behavior_category == SEARCH_CAT_MOVIES:
+    if base_category == SEARCH_CAT_MOVIES:
         return not _looks_serial_release(title)
 
-    if behavior_category in (SEARCH_CAT_SHOWS, SEARCH_CAT_SHOWS_ANIME):
+    if base_category in (SEARCH_CAT_SHOWS, SEARCH_CAT_SHOWS_ANIME):
         return _looks_serial_release(title)
 
     return False
