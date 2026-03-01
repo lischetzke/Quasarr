@@ -14,7 +14,7 @@ indexers. It simply does not know what NZB files are.
 
 Quasarr includes a solution to quickly and easily decrypt protected links.
 [Active monthly Sponsors get access to SponsorsHelper to do so automatically.](https://github.com/rix1337/Quasarr?tab=readme-ov-file#sponsorshelper)
-Alternatively, follow the link from the console output (or Discord/Telegram notification) to solve CAPTCHAs manually.
+Alternatively, follow the link from the console output (or notification) to solve CAPTCHAs manually.
 Quasarr will confidently handle the rest. Some CAPTCHA types require [Tampermonkey](https://www.tampermonkey.net/) to be
 installed in your browser.
 
@@ -202,11 +202,10 @@ quasarr
   ```
 
 * `EXTERNAL_ADDRESS` see `EXTERNAL_ADDRESS` docker variable
-* Configure notifications in **Web UI → Notifications Configuration** (below FlareSolverr)
   
 # Notifications
-Configure notifications in **Web UI → Notifications Configuration** (below FlareSolverr):
-- Set provider credentials (Discord webhook, Telegram bot token/chat ID)
+Configure notifications in **Web UI → Notifications Configuration**:
+- Set provider credentials
 - Choose notification types per provider
 - Send a provider-specific test message directly from the UI
 
