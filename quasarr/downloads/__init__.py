@@ -15,7 +15,8 @@ from quasarr.downloads.packages import get_packages
 from quasarr.downloads.sources import get_sources as get_download_sources
 from quasarr.providers.hostname_issues import clear_hostname_issue, mark_hostname_issue
 from quasarr.providers.log import info, warn
-from quasarr.providers.notifications import send_discord_message
+from quasarr.providers.notifications import send_notification
+from quasarr.providers.notifications.notification_types import NotificationType
 from quasarr.providers.statistics import StatsHelper
 from quasarr.providers.utils import (
     download_package,
@@ -242,10 +243,10 @@ def process_links(
         info(
             f"Found <g>{len(classified['direct'])}</g> direct hoster links for {title}"
         )
-        send_discord_message(
+        send_notification(
             shared_state,
             title=title,
-            case="unprotected",
+            case=NotificationType.UNPROTECTED,
             imdb_id=imdb_id,
             source=source_url,
         )
@@ -265,10 +266,10 @@ def process_links(
             shared_state, classified["auto"], title, password, package_id
         )
         if result["success"]:
-            send_discord_message(
+            send_notification(
                 shared_state,
                 title=title,
-                case="unprotected",
+                case=NotificationType.UNPROTECTED,
                 imdb_id=imdb_id,
                 source=source_url,
             )
@@ -279,10 +280,10 @@ def process_links(
     # PRIORITY 3: Protected (filecrypt, tolink, keeplinks, junkies)
     if classified["protected"]:
         info(f"Found <g>{len(classified['protected'])}</g> protected links for {title}")
-        send_discord_message(
+        send_notification(
             shared_state,
             title=title,
-            case="captcha",
+            case=NotificationType.CAPTCHA,
             imdb_id=imdb_id,
             source=source_url,
         )

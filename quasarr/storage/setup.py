@@ -27,6 +27,10 @@ from quasarr.providers.html_templates import (
     render_success,
 )
 from quasarr.providers.log import info
+from quasarr.providers.notifications.notification_types import (
+    NotificationType,
+    get_user_configurable_notification_types,
+)
 from quasarr.providers.shared_state import extract_valid_hostname
 from quasarr.providers.utils import (
     check_flaresolverr,
@@ -37,6 +41,265 @@ from quasarr.providers.web_server import Server
 from quasarr.search.sources.helpers import get_login_required_hostnames
 from quasarr.storage.config import Config
 from quasarr.storage.sqlite_database import DataBase
+
+NOTIFICATION_PROVIDERS = ("discord", "telegram")
+NOTIFICATION_TYPES = get_user_configurable_notification_types()
+
+
+def _notification_toggle_key(provider, notification_type):
+    return f"{provider}_{notification_type.value}"
+
+
+def _notification_silent_key(provider, notification_type):
+    return f"{provider}_{notification_type.value}_silent"
+
+
+def _ensure_notification_defaults(notification_config):
+    existing_keys = {
+        key for key, _key_type, _value in getattr(notification_config, "__config__", [])
+    }
+    changed = False
+
+    for provider in NOTIFICATION_PROVIDERS:
+        for notification_type in NOTIFICATION_TYPES:
+            for config_key, default_value in (
+                (_notification_toggle_key(provider, notification_type), "true"),
+                (_notification_silent_key(provider, notification_type), "true"),
+            ):
+                if config_key in existing_keys:
+                    continue
+                notification_config.save(config_key, default_value)
+                existing_keys.add(config_key)
+                changed = True
+
+    return changed
+
+
+def _coerce_bool(value, default=False):
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in {"1", "true", "yes", "on"}:
+            return True
+        if lowered in {"0", "false", "no", "off"}:
+            return False
+    return bool(value)
+
+
+def _read_notification_settings(backfill_defaults=False):
+    notification_config = Config("Notifications")
+    if backfill_defaults:
+        _ensure_notification_defaults(notification_config)
+
+    settings = {
+        "discord_webhook": notification_config.get("discord_webhook") or "",
+        "telegram_bot_token": notification_config.get("telegram_bot_token") or "",
+        "telegram_chat_id": notification_config.get("telegram_chat_id") or "",
+        "toggles": {"discord": {}, "telegram": {}},
+        "silent": {"discord": {}, "telegram": {}},
+    }
+
+    for provider in NOTIFICATION_PROVIDERS:
+        for notification_type in NOTIFICATION_TYPES:
+            case_key = notification_type.value
+            settings["toggles"][provider][case_key] = bool(
+                notification_config.get(
+                    _notification_toggle_key(provider, notification_type)
+                )
+            )
+            settings["silent"][provider][case_key] = bool(
+                notification_config.get(
+                    _notification_silent_key(provider, notification_type)
+                )
+            )
+
+    return settings
+
+
+def _validate_notification_provider_credentials(
+    discord_webhook,
+    telegram_bot_token,
+    telegram_chat_id,
+):
+    discord_webhook_pattern = r"^https://discord\.com/api/webhooks/\d+/[\w-]+$"
+    telegram_token_pattern = r"^\d+:[A-Za-z0-9_-]{35,}$"
+
+    if discord_webhook and not re.match(discord_webhook_pattern, discord_webhook):
+        return "Invalid Discord Webhook URL"
+
+    if telegram_bot_token or telegram_chat_id:
+        if not telegram_bot_token or not telegram_chat_id:
+            return "Telegram setup requires both bot token and chat ID"
+        if not re.match(telegram_token_pattern, telegram_bot_token):
+            return "Invalid Telegram bot token format"
+
+    return None
+
+
+def refresh_notification_settings(shared_state, backfill_defaults=False):
+    settings = _read_notification_settings(backfill_defaults=backfill_defaults)
+
+    # Keep legacy shared_state keys for compatibility with existing callers.
+    shared_state.update("webhook", settings["discord_webhook"])
+    shared_state.update("discord", settings["discord_webhook"])
+    shared_state.update("telegram_bot_token", settings["telegram_bot_token"])
+    shared_state.update("telegram_chat_id", settings["telegram_chat_id"])
+
+    shared_state.update("notification_toggles", settings["toggles"])
+    shared_state.update("notification_silent", settings["silent"])
+    shared_state.update("notification_settings", settings)
+
+    return settings
+
+
+def initialize_notification_settings(shared_state):
+    return refresh_notification_settings(shared_state, backfill_defaults=True)
+
+
+def get_notification_settings_data(shared_state):
+    response.content_type = "application/json"
+    settings = refresh_notification_settings(shared_state)
+    return {"success": True, "settings": settings}
+
+
+def save_notification_settings(shared_state):
+    response.content_type = "application/json"
+
+    data = request.json
+    if not isinstance(data, dict):
+        return {"success": False, "message": "Invalid JSON payload"}
+
+    discord_webhook = str(data.get("discord_webhook", "")).strip()
+    telegram_bot_token = str(data.get("telegram_bot_token", "")).strip()
+    telegram_chat_id = str(data.get("telegram_chat_id", "")).strip()
+    toggles = data.get("toggles") if isinstance(data.get("toggles"), dict) else {}
+    silent = data.get("silent") if isinstance(data.get("silent"), dict) else {}
+
+    validation_error = _validate_notification_provider_credentials(
+        discord_webhook,
+        telegram_bot_token,
+        telegram_chat_id,
+    )
+    if validation_error:
+        return {"success": False, "message": validation_error}
+
+    notification_config = Config("Notifications")
+    notification_config.save("discord_webhook", discord_webhook)
+    notification_config.save("telegram_bot_token", telegram_bot_token)
+    notification_config.save("telegram_chat_id", telegram_chat_id)
+
+    for provider in NOTIFICATION_PROVIDERS:
+        provider_toggles = toggles.get(provider)
+        provider_silent = silent.get(provider)
+        for notification_type in NOTIFICATION_TYPES:
+            enabled_key = _notification_toggle_key(provider, notification_type)
+            current_enabled = bool(notification_config.get(enabled_key))
+            if (
+                isinstance(provider_toggles, dict)
+                and notification_type.value in provider_toggles
+            ):
+                next_enabled = _coerce_bool(
+                    provider_toggles.get(notification_type.value),
+                    current_enabled,
+                )
+            else:
+                next_enabled = current_enabled
+            notification_config.save(enabled_key, "true" if next_enabled else "false")
+
+            silent_key = _notification_silent_key(provider, notification_type)
+            current_silent = bool(notification_config.get(silent_key))
+            if (
+                isinstance(provider_silent, dict)
+                and notification_type.value in provider_silent
+            ):
+                next_silent = _coerce_bool(
+                    provider_silent.get(notification_type.value),
+                    current_silent,
+                )
+            else:
+                next_silent = current_silent
+            notification_config.save(silent_key, "true" if next_silent else "false")
+
+    settings = refresh_notification_settings(shared_state)
+
+    return {
+        "success": True,
+        "message": "Notification settings saved successfully",
+        "settings": settings,
+    }
+
+
+def send_notification_test(shared_state):
+    response.content_type = "application/json"
+
+    data = request.json
+    if not isinstance(data, dict):
+        return {"success": False, "message": "Invalid JSON payload"}
+
+    provider = str(data.get("provider", "")).strip().lower()
+    if provider not in NOTIFICATION_PROVIDERS:
+        return {"success": False, "message": "Unknown provider"}
+
+    settings = refresh_notification_settings(shared_state)
+    title = "Quasarr Notification Test"
+
+    if provider == "discord":
+        if not settings["discord_webhook"]:
+            return {
+                "success": False,
+                "message": "Discord webhook is not configured",
+            }
+        from quasarr.providers.notifications import discord
+
+        try:
+            sent = discord.send(
+                shared_state,
+                title=title,
+                case=NotificationType.TEST,
+                details={"provider": "Discord"},
+                silent=False,
+            )
+        except Exception as e:
+            info(f"Discord test notification error: {e}")
+            return {
+                "success": False,
+                "message": f"Failed to send Discord test message: {e}",
+            }
+        if sent:
+            return {"success": True, "message": "Discord test message sent"}
+        return {
+            "success": False,
+            "message": "Failed to send Discord test message",
+        }
+
+    if not settings["telegram_bot_token"] or not settings["telegram_chat_id"]:
+        return {
+            "success": False,
+            "message": "Telegram bot token and chat ID are required",
+        }
+
+    from quasarr.providers.notifications import telegram
+
+    try:
+        sent = telegram.send(
+            shared_state,
+            title=title,
+            case=NotificationType.TEST,
+            details={"provider": "Telegram"},
+            silent=False,
+        )
+    except Exception as e:
+        info(f"Telegram test notification error: {e}")
+        return {
+            "success": False,
+            "message": f"Failed to send Telegram test message: {e}",
+        }
+    if sent:
+        return {"success": True, "message": "Telegram test message sent"}
+    return {"success": False, "message": "Failed to send Telegram test message"}
 
 
 def render_reconnect_success(message, countdown_seconds=3):
