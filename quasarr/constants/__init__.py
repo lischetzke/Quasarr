@@ -148,6 +148,79 @@ SHARE_HOSTERS = [h[0] for h in HOSTERS]
 # Recommend only these
 RECOMMENDED_HOSTERS = [h[0] for h in HOSTERS if h[1]]
 
+# Evidence-backed root-token aliases for final mirror whitelist checks.
+# Sources used on 2026-03-02:
+# - JDownloader host plugins (mirror/jdownloader)
+# - pyLoad host plugins (pyload/pyload)
+#
+# Matching is performed on the pure mirror/root token derived from the final
+# HTTP hostname, ignoring TLDs and subdomains. Keep only root tokens here.
+MIRROR_TOKEN_ALIASES = {
+    "alterupload": "1fichier",
+    "cjoint": "1fichier",
+    "clickndownload": "clicknupload",
+    "ddl": "ddownload",
+    "ddlto": "ddownload",
+    "depositfiles": "turbobit",
+    "desfichiers": "1fichier",
+    "dfichiers": "1fichier",
+    "dl4free": "1fichier",
+    "dlbit": "turbobit",
+    "fayloobmennik": "turbobit",
+    "fboom": "keep2share",
+    "filedeluxe": "turbobit",
+    "fileboom": "keep2share",
+    "filemaster": "turbobit",
+    "flacmania": "turbobit",
+    "filernet": "filer",
+    "filhost": "turbobit",
+    "hil": "hitfile",
+    "hotshare": "turbobit",
+    "ifolder": "turbobit",
+    "k2s": "keep2share",
+    "k2share": "keep2share",
+    "keep2": "keep2share",
+    "keep2s": "keep2share",
+    "megadl": "1fichier",
+    "mesfichiers": "1fichier",
+    "nitro": "nitroflare",
+    "pjointe": "1fichier",
+    "piecejointe": "1fichier",
+    "publish2": "keep2share",
+    "rapidfile": "turbobit",
+    "rg": "rapidgator",
+    "sibit": "turbobit",
+    "tb": "turbobit",
+    "tenvoi": "1fichier",
+    "tezfiles": "keep2share",
+    "tourbobit": "turbobit",
+    "trbbt": "turbobit",
+    "trubobit": "turbobit",
+    "turb": "turbobit",
+    "turbo": "turbobit",
+    "turbabit": "turbobit",
+    "turbobeet": "turbobit",
+    "turbobi": "turbobit",
+    "turbobbit": "turbobit",
+    "turbobif": "turbobit",
+    "turbobit5": "turbobit",
+    "turbobita": "turbobit",
+    "turbobite": "turbobit",
+    "turbobith": "turbobit",
+    "turbobitn": "turbobit",
+    "turbobitt": "turbobit",
+    "turbobiyt": "turbobit",
+    "turbobyt": "turbobit",
+    "turbobyte": "turbobit",
+    "turboot": "turbobit",
+    "turboobit": "turbobit",
+    "turobit": "turbobit",
+    "twobit": "turbobit",
+    "ucdn": "ddownload",
+    "wayupload": "turbobit",
+    "xrfiles": "turbobit",
+}
+
 # ==============================================================================
 # REGEX PATTERNS (CONTENT & PARSING)
 # ==============================================================================

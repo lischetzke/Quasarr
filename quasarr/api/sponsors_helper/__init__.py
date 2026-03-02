@@ -8,14 +8,13 @@ from functools import wraps
 
 from bottle import abort, request
 
-from quasarr.downloads import fail
+from quasarr.downloads import fail, submit_final_download_urls
 from quasarr.providers import shared_state
 from quasarr.providers.auth import require_api_key
 from quasarr.providers.log import info, warn
 from quasarr.providers.notifications import send_notification
 from quasarr.providers.notifications.helpers.notification_types import NotificationType
 from quasarr.providers.statistics import StatsHelper
-from quasarr.providers.utils import download_package
 from quasarr.storage.categories import (
     get_download_category_from_package_id,
     get_download_category_mirrors,
@@ -139,15 +138,18 @@ def setup_sponsors_helper_routes(app):
             )
 
             if download_links:
-                downloaded = download_package(
-                    download_links, title, password, package_id, shared_state
+                submit_result = submit_final_download_urls(
+                    shared_state,
+                    download_links,
+                    title,
+                    password,
+                    package_id,
+                    remove_protected=True,
                 )
-                if downloaded:
-                    StatsHelper(shared_state).increment_package_with_links(
-                        download_links
-                    )
+                if submit_result["success"]:
+                    final_links = submit_result["links"]
+                    StatsHelper(shared_state).increment_package_with_links(final_links)
                     StatsHelper(shared_state).increment_captcha_decryptions_automatic()
-                    shared_state.get_db("protected").delete(package_id)
 
                     send_notification(
                         shared_state,
@@ -157,25 +159,30 @@ def setup_sponsors_helper_routes(app):
                     )
                     log_msg = f"Download successfully started for <y>{title}</y>"
                     providers = notification.get("solvers")
+                    used_providers = []
                     if isinstance(providers, list) and providers:
-                        used_providers = []
                         for provider in providers:
                             if not isinstance(provider, dict):
                                 continue
                             provider_name = provider.get("name")
                             if provider_name:
                                 used_providers.append(str(provider_name))
-                        if used_providers:
-                            unique_providers = sorted(set(used_providers))
-                            log_msg += f" | Providers: {', '.join(unique_providers)}"
+                    if used_providers:
+                        unique_providers = sorted(set(used_providers))
+                        log_msg += f" | Providers: {', '.join(unique_providers)}"
                     if notification.get("duration_seconds") is not None:
                         log_msg += (
                             f" | Duration: {notification.get('duration_seconds')}s"
                         )
                     info(log_msg)
-                    return (
-                        f"Downloaded {len(download_links)} download links for {title}"
-                    )
+                    return f"Downloaded {len(final_links)} download links for {title}"
+                elif submit_result.get("persisted_failure"):
+                    StatsHelper(shared_state).increment_failed_decryptions_automatic()
+                    return {
+                        "success": False,
+                        "failed": True,
+                        "reason": submit_result["reason"],
+                    }
                 else:
                     info(f"Download failed for <y>{title}</y>")
 
