@@ -60,7 +60,6 @@ def _read_notification_silent(notification_settings_db, key):
 
 def _read_notification_settings():
     notification_config = Config("Notifications")
-    notification_config.delete_legacy_keys()
     notification_settings_db = DataBase(NOTIFICATION_SETTINGS_TABLE)
 
     settings = {
@@ -148,7 +147,6 @@ def save_notification_settings(shared_state):
         return {"success": False, "message": validation_error}
 
     notification_config = Config("Notifications")
-    notification_config.delete_legacy_keys()
     notification_config.save("discord_webhook", discord_webhook)
     notification_config.save("telegram_bot_token", telegram_bot_token)
     notification_config.save("telegram_chat_id", telegram_chat_id)

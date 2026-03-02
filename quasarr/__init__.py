@@ -113,6 +113,7 @@ def run():
             sys.exit(1)
 
         shared_state.set_files(config_path)
+        Config.prune_unsupported_keys(shared_state.values["configfile"])
         shared_state.update("config", Config)
         shared_state.update("database", DataBase)
         supported_hostnames = extract_allowed_keys(Config._DEFAULT_CONFIG, "Hostnames")
