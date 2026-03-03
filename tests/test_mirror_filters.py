@@ -117,6 +117,36 @@ class SubmitFinalDownloadUrlsTests(unittest.TestCase):
         mock_fail.assert_called_once()
         mock_download_package.assert_not_called()
 
+    @patch("quasarr.downloads.download_package", return_value=True)
+    @patch(
+        "quasarr.downloads.get_download_category_mirrors", return_value=["DDownload"]
+    )
+    @patch("quasarr.downloads.get_download_category_from_package_id", return_value="tv")
+    def test_submit_removes_protected_package_after_success_when_requested(
+        self,
+        mock_get_category,
+        mock_get_mirrors,
+        mock_download_package,
+    ):
+        protected_db = MagicMock()
+        shared_state = MagicMock()
+        shared_state.get_db.return_value = protected_db
+
+        result = submit_final_download_urls(
+            shared_state,
+            ["https://mirror.ddownload.com/file/def"],
+            "Example.Release",
+            "",
+            "Quasarr_tv_deadbeefdeadbeefdeadbeefdeadbeef",
+            remove_protected=True,
+        )
+
+        self.assertTrue(result["success"])
+        protected_db.delete.assert_called_once_with(
+            "Quasarr_tv_deadbeefdeadbeefdeadbeefdeadbeef"
+        )
+        mock_download_package.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()

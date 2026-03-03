@@ -138,6 +138,13 @@ def _persist_failed_package(
     return {"success": False, "persisted_failure": True, "reason": reason}
 
 
+def _delete_protected_package(shared_state, package_id):
+    try:
+        shared_state.get_db("protected").delete(package_id)
+    except Exception as e:
+        info(f'Error removing protected package "{package_id}": {e}')
+
+
 def _format_mirror_token_list(tokens):
     cleaned = [str(token) for token in sorted(tokens) if token]
     return ", ".join(cleaned) if cleaned else "unknown"
@@ -179,6 +186,8 @@ def submit_final_download_urls(
 
     info(f"Sending {len(final_urls)} direct download links for {title}")
     if download_package(final_urls, title, password, package_id, shared_state):
+        if remove_protected:
+            _delete_protected_package(shared_state, package_id)
         return {"success": True, "links": final_urls}
     return {
         "success": False,
