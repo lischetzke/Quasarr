@@ -48,8 +48,11 @@ def update_session_via_flaresolverr(
     shared_state,
     sess,
     target_url: str,
-    timeout: int = DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
+    timeout: int | None = None,
 ):
+    if timeout is None:
+        timeout = DOWNLOAD_REQUEST_TIMEOUT_SECONDS
+
     # Check if FlareSolverr is available
     if not is_flaresolverr_available(shared_state):
         info("FlareSolverr is not configured. Cannot bypass Cloudflare protection.")
@@ -112,12 +115,15 @@ def ensure_session_cf_bypassed(
     session,
     url,
     headers,
-    timeout: int = DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
+    timeout: int | None = None,
 ):
     """
     Performs a GET and, if Cloudflare challenge or 403 is present, tries FlareSolverr.
     Returns tuple: (session, headers, response) or (None, None, None) on failure.
     """
+    if timeout is None:
+        timeout = DOWNLOAD_REQUEST_TIMEOUT_SECONDS
+
     try:
         resp = session.get(url, headers=headers, timeout=timeout)
     except requests.RequestException as e:
@@ -189,7 +195,7 @@ class FlareSolverrResponse:
 def flaresolverr_get(
     shared_state,
     url,
-    timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
+    timeout=None,
     session_id=None,
 ):
     """
@@ -203,6 +209,9 @@ def flaresolverr_get(
         raise RuntimeError(
             "FlareSolverr is not configured. Please configure it in the web UI."
         )
+
+    if timeout is None:
+        timeout = DOWNLOAD_REQUEST_TIMEOUT_SECONDS
 
     flaresolverr_url = shared_state.values["config"]("FlareSolverr").get("url")
     if not flaresolverr_url:
@@ -251,7 +260,7 @@ def flaresolverr_post(
     url,
     data=None,
     headers=None,
-    timeout=DOWNLOAD_REQUEST_TIMEOUT_SECONDS,
+    timeout=None,
     session_id=None,
 ):
     """
@@ -261,6 +270,9 @@ def flaresolverr_post(
         raise RuntimeError(
             "FlareSolverr is not configured. Please configure it in the web UI."
         )
+
+    if timeout is None:
+        timeout = DOWNLOAD_REQUEST_TIMEOUT_SECONDS
 
     flaresolverr_url = shared_state.values["config"]("FlareSolverr").get("url")
     if not flaresolverr_url:

@@ -45,12 +45,14 @@ from quasarr.storage.setup import (
     get_flaresolverr_status_data,
     get_notification_settings_data,
     get_skip_login,
+    get_timeout_slow_mode_settings_data,
     hostname_form_html,
     import_hostnames_from_url,
     save_flaresolverr_url,
     save_hostnames,
     save_jdownloader_settings,
     save_notification_settings,
+    save_timeout_slow_mode_settings,
     send_notification_test,
     verify_jdownloader_credentials,
 )
@@ -165,6 +167,16 @@ def setup_config(app, shared_state):
     @require_api_key
     def send_notification_test_api():
         return send_notification_test(shared_state)
+
+    @app.get("/api/timeouts/settings")
+    @require_api_key
+    def get_timeout_slow_mode_settings_api():
+        return get_timeout_slow_mode_settings_data(shared_state)
+
+    @app.post("/api/timeouts/settings")
+    @require_api_key
+    def save_timeout_slow_mode_settings_api():
+        return save_timeout_slow_mode_settings(shared_state)
 
     @app.get("/categories")
     def categories_ui():

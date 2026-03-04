@@ -237,6 +237,39 @@ def get_device():
     return values["device"]
 
 
+def run_device_request(request_name, request_fn, default=None):
+    """
+    Execute a JDownloader request with one graceful reconnect+retry on
+    auth/timeout errors.
+
+    Args:
+        request_name: Human-readable operation label for logs
+        request_fn: Callable accepting a connected device
+        default: Value returned if both attempts fail
+    """
+    try:
+        return request_fn(get_device())
+    except (TokenExpiredException, RequestTimeoutException, MYJDException) as e:
+        warn(
+            f'JDownloader request "{request_name}" failed ({type(e).__name__}). Retrying once after reconnect...'
+        )
+
+    update("device", False)
+    if not connect_device():
+        error(
+            f'JDownloader reconnect failed while handling "{request_name}". Returning fallback result.'
+        )
+        return default
+
+    try:
+        return request_fn(values["device"])
+    except (TokenExpiredException, RequestTimeoutException, MYJDException) as e:
+        error(
+            f'JDownloader request "{request_name}" failed after retry ({type(e).__name__}). Returning fallback result.'
+        )
+        return default
+
+
 def get_devices(user, password):
     jd = Myjdapi()
     jd.set_app_key("Quasarr")

@@ -14,6 +14,7 @@ import quasarr.providers.web_server
 from quasarr.api import get_api
 from quasarr.constants import FALLBACK_USER_AGENT
 from quasarr.providers import shared_state, version
+from quasarr.providers.hostname_issues import clear_all_hostname_issues
 from quasarr.providers.log import (
     crit,
     debug,
@@ -38,6 +39,7 @@ from quasarr.storage.setup import (
     hostname_credentials_config,
     hostnames_config,
     initialize_notification_settings,
+    initialize_timeout_slow_mode_settings,
     jdownloader_config,
     path_config,
 )
@@ -122,6 +124,12 @@ def run():
         shared_state.update("user_agent", FALLBACK_USER_AGENT)
         shared_state.update("helper_active", False)
 
+        cleared_hostname_issues = clear_all_hostname_issues()
+        if cleared_hostname_issues:
+            info(
+                f"Cleared {cleared_hostname_issues} stale hostname issue{'s' if cleared_hostname_issues != 1 else ''} on startup"
+            )
+
         hostnames = get_clean_hostnames(shared_state)
         if not hostnames:
             hostnames_config(shared_state)
@@ -170,6 +178,7 @@ def run():
             jdownloader_config(shared_state)
 
         initialize_notification_settings(shared_state)
+        initialize_timeout_slow_mode_settings(shared_state)
 
         api_key = Config("API").get("key")
         if not api_key:

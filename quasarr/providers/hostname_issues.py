@@ -62,3 +62,11 @@ def get_all_hostname_issues():
                 continue
 
     return issues
+
+
+def clear_all_hostname_issues():
+    db = _get_db("hostname_issues")
+    all_data = db.retrieve_all_titles() or []
+    for shorthand, _data in all_data:
+        db.delete(shorthand)
+    return len(all_data)

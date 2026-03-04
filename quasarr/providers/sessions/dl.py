@@ -172,7 +172,7 @@ def fetch_via_requests_session(
     target_url: str,
     post_data: dict = None,
     get_params: dict = None,
-    timeout: int = SESSION_REQUEST_TIMEOUT_SECONDS,
+    timeout: int | None = None,
 ):
     """
     Execute request using the session.
@@ -188,6 +188,9 @@ def fetch_via_requests_session(
     Returns:
         Response object
     """
+    if timeout is None:
+        timeout = SESSION_REQUEST_TIMEOUT_SECONDS
+
     sess = retrieve_and_validate_session(shared_state)
     if not sess:
         raise SkippedSiteError(

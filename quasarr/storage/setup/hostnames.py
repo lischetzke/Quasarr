@@ -25,14 +25,13 @@ from quasarr.providers.utils import extract_allowed_keys, extract_kv_pairs
 from quasarr.providers.web_server import Server
 from quasarr.search.sources.helpers import get_login_required_hostnames
 from quasarr.storage.config import Config
-from quasarr.storage.sqlite_database import DataBase
-
-from .common import (
+from quasarr.storage.setup.common import (
     add_no_cache_headers,
     render_reconnect_success,
     setup_auth,
 )
-from .flaresolverr import save_flaresolverr_url
+from quasarr.storage.setup.flaresolverr import save_flaresolverr_url
+from quasarr.storage.sqlite_database import DataBase
 
 
 def _escape_js_for_html_attr(s):

@@ -14,6 +14,10 @@ from quasarr.api.jdownloader import get_jdownloader_status
 from quasarr.api.packages import setup_packages_routes
 from quasarr.api.sponsors_helper import setup_sponsors_helper_routes
 from quasarr.api.statistics import setup_statistics
+from quasarr.constants import (
+    TIMEOUT_SLOW_MODE_DEFINITIONS,
+    TIMEOUT_SLOW_MODE_MULTIPLIER,
+)
 from quasarr.providers import shared_state
 from quasarr.providers.auth import (
     add_auth_hook,
@@ -188,6 +192,23 @@ def get_api(shared_state_dict, shared_state_lock):
         notification_cases_json = json.dumps(
             [case_key for case_key, _ in notification_cases]
         )
+        timeout_slow_mode_keys_json = json.dumps(
+            list(TIMEOUT_SLOW_MODE_DEFINITIONS.keys())
+        )
+        timeout_slow_mode_definitions_json = json.dumps(
+            {
+                timeout_key: {
+                    "base_seconds": int(timeout_data["base_seconds"]),
+                    "slow_seconds": int(
+                        timeout_data["base_seconds"] * TIMEOUT_SLOW_MODE_MULTIPLIER
+                    ),
+                }
+                for timeout_key, timeout_data in TIMEOUT_SLOW_MODE_DEFINITIONS.items()
+            }
+        )
+        timeout_slow_mode_settings = shared_state.values.get("timeout_slow_mode", {})
+        if not isinstance(timeout_slow_mode_settings, dict):
+            timeout_slow_mode_settings = {}
 
         def render_notification_toggle_rows(provider):
             provider_toggles = notification_toggles.get(provider, {})
@@ -225,6 +246,33 @@ def get_api(shared_state_dict, shared_state_lock):
 
         discord_toggle_rows = render_notification_toggle_rows("discord")
         telegram_toggle_rows = render_notification_toggle_rows("telegram")
+
+        timeout_slow_mode_cells = [
+            '<div class="notification-toggle-header">Timeout</div>',
+            '<div class="notification-toggle-header toggle-cell">Slow Mode</div>',
+        ]
+        for timeout_key, timeout_data in TIMEOUT_SLOW_MODE_DEFINITIONS.items():
+            timeout_label = timeout_data["label"]
+            checked = "checked" if timeout_slow_mode_settings.get(timeout_key) else ""
+            timeout_slow_mode_cells.append(
+                f"""
+                <div class="notification-toggle-label">
+                    {timeout_label}
+                    <div class="timeout-slow-mode-value" id="timeout-slow-mode-value-{timeout_key}"></div>
+                </div>
+                <div class="notification-toggle-input toggle-cell">
+                    <label class="notification-toggle-control">
+                        <input type="checkbox" id="timeout-slow-{timeout_key}" {checked}>
+                        <span class="notification-toggle-box" aria-hidden="true"></span>
+                    </label>
+                </div>
+                """
+            )
+        timeout_slow_mode_rows = (
+            '<div class="notification-toggle-grid timeout-toggle-grid">'
+            + "".join(timeout_slow_mode_cells)
+            + "</div>"
+        )
 
         info = f"""
         <h1><img src="{images.logo}" type="image/webp" alt="Quasarr logo" class="logo"/>Quasarr</h1>
@@ -277,6 +325,19 @@ def get_api(shared_state_dict, shared_state_lock):
                     <p style="margin-top: 15px;">
                         {render_button("Regenerate API Key", "secondary", {"onclick": "confirmRegenerateApiKey()"})}
                     </p>
+
+                    <div class="timeout-slow-mode-section">
+                        <h4>Timeouts</h4>
+                        <p class="api-hint">
+                            By default, Quasarr uses strict request timeouts so manual searches stay within a reasonable timeframe.
+                            Enable slow mode only if you are willing to wait longer on slow sites.
+                        </p>
+                        <div class="notification-toggle-list">
+                            {timeout_slow_mode_rows}
+                        </div>
+                        <div id="timeout-slow-mode-status" class="notification-status"></div>
+                        <p>{render_button("Save Slow Mode Settings", "primary", {"onclick": "saveTimeoutSlowModeSettings()", "type": "button", "id": "timeoutSlowModeSaveBtn"})}</p>
+                    </div>
                 </div>
             </details>
         </div>
@@ -552,6 +613,22 @@ def get_api(shared_state_dict, shared_state_lock):
                 background: var(--btn-secondary-hover, #545b62);
             }}
 
+            .timeout-slow-mode-section {{
+                margin-top: 18px;
+                padding-top: 14px;
+                border-top: 1px solid var(--card-border, #dee2e6);
+                text-align: left;
+            }}
+            .timeout-slow-mode-section h4 {{
+                margin: 0 0 8px 0;
+                font-size: 1em;
+            }}
+            .timeout-slow-mode-value {{
+                margin-top: 2px;
+                font-size: 0.82em;
+                color: var(--text-muted, #666);
+            }}
+
             .notification-provider-card {{
                 border: 1px solid var(--card-border, #dee2e6);
                 border-radius: 8px;
@@ -594,6 +671,9 @@ def get_api(shared_state_dict, shared_state_lock):
                 white-space: nowrap;
                 justify-self: center;
                 width: 96px;
+            }}
+            .notification-toggle-grid.timeout-toggle-grid {{
+                grid-template-columns: minmax(0, 1fr) 96px;
             }}
             .notification-toggle-grid .notification-toggle-input {{
                 display: flex;
@@ -654,6 +734,9 @@ def get_api(shared_state_dict, shared_state_lock):
                     grid-template-columns: minmax(0, 1fr) repeat(2, 72px);
                     column-gap: 12px;
                 }}
+                .notification-toggle-grid.timeout-toggle-grid {{
+                    grid-template-columns: minmax(0, 1fr) 72px;
+                }}
                 .notification-toggle-grid .notification-toggle-header.toggle-cell,
                 .notification-toggle-grid .toggle-cell {{
                     width: 72px;
@@ -663,6 +746,9 @@ def get_api(shared_state_dict, shared_state_lock):
                 .notification-toggle-grid {{
                     grid-template-columns: minmax(0, 1fr) repeat(2, 64px);
                     column-gap: 8px;
+                }}
+                .notification-toggle-grid.timeout-toggle-grid {{
+                    grid-template-columns: minmax(0, 1fr) 64px;
                 }}
                 .notification-toggle-grid .notification-toggle-header {{
                     font-size: 0.8em;
@@ -903,6 +989,8 @@ def get_api(shared_state_dict, shared_state_lock):
             }}
 
             var notificationCases = {notification_cases_json};
+            var timeoutSlowModeKeys = {timeout_slow_mode_keys_json};
+            var timeoutSlowModeDefinitions = {timeout_slow_mode_definitions_json};
 
             function setNotificationStatus(elementId, message, isSuccess) {{
                 var statusElement = document.getElementById(elementId);
@@ -1019,6 +1107,89 @@ def get_api(shared_state_dict, shared_state_lock):
                     setNotificationStatus(statusId, '❌ ' + error.message, false);
                 }}
             }}
+
+            function collectTimeoutSlowModePayload() {{
+                var settings = {{}};
+                timeoutSlowModeKeys.forEach(function(timeoutKey) {{
+                    var checkbox = document.getElementById('timeout-slow-' + timeoutKey);
+                    settings[timeoutKey] = !!(checkbox && checkbox.checked);
+                }});
+                return {{ settings: settings }};
+            }}
+
+            function renderTimeoutSlowModeValue(timeoutKey) {{
+                var meta = timeoutSlowModeDefinitions[timeoutKey];
+                var checkbox = document.getElementById('timeout-slow-' + timeoutKey);
+                var valueElement = document.getElementById('timeout-slow-mode-value-' + timeoutKey);
+                if (!meta || !checkbox || !valueElement) {{
+                    return;
+                }}
+
+                var effectiveSeconds = checkbox.checked
+                    ? meta.slow_seconds
+                    : meta.base_seconds;
+                var modeLabel = checkbox.checked ? 'Slow Mode' : 'Normal';
+                valueElement.textContent = 'Current: ' + effectiveSeconds + 's (' + modeLabel + ')';
+            }}
+
+            function bindTimeoutSlowModePreview() {{
+                timeoutSlowModeKeys.forEach(function(timeoutKey) {{
+                    var checkbox = document.getElementById('timeout-slow-' + timeoutKey);
+                    if (!checkbox) {{
+                        return;
+                    }}
+
+                    renderTimeoutSlowModeValue(timeoutKey);
+                    checkbox.addEventListener('change', function() {{
+                        renderTimeoutSlowModeValue(timeoutKey);
+                    }});
+                }});
+            }}
+
+            async function saveTimeoutSlowModeSettings() {{
+                var saveButton = document.getElementById('timeoutSlowModeSaveBtn');
+                setNotificationStatus('timeout-slow-mode-status', 'Saving slow mode settings...', true);
+
+                if (saveButton) {{
+                    saveButton.disabled = true;
+                    saveButton.textContent = 'Saving...';
+                }}
+
+                try {{
+                    var response = await quasarrApiFetch('/api/timeouts/settings', {{
+                        method: 'POST',
+                        headers: {{ 'Content-Type': 'application/json' }},
+                        body: JSON.stringify(collectTimeoutSlowModePayload())
+                    }});
+                    var data = await response.json();
+                    if (!response.ok || !data.success) {{
+                        throw new Error(data.message || 'Failed to save slow mode settings');
+                    }}
+
+                    if (data.settings && typeof data.settings === 'object') {{
+                        timeoutSlowModeKeys.forEach(function(timeoutKey) {{
+                            if (Object.prototype.hasOwnProperty.call(data.settings, timeoutKey)) {{
+                                var checkbox = document.getElementById('timeout-slow-' + timeoutKey);
+                                if (checkbox) {{
+                                    checkbox.checked = !!data.settings[timeoutKey];
+                                }}
+                            }}
+                            renderTimeoutSlowModeValue(timeoutKey);
+                        }});
+                    }}
+
+                    setNotificationStatus('timeout-slow-mode-status', '✅ ' + data.message, true);
+                }} catch (error) {{
+                    setNotificationStatus('timeout-slow-mode-status', '❌ ' + error.message, false);
+                }} finally {{
+                    if (saveButton) {{
+                        saveButton.disabled = false;
+                        saveButton.textContent = 'Save Slow Mode Settings';
+                    }}
+                }}
+            }}
+
+            bindTimeoutSlowModePreview();
         </script>
         """
         # Add logout link for form auth

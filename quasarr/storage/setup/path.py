@@ -11,8 +11,7 @@ import quasarr.providers.web_server
 from quasarr.providers.html_templates import render_button, render_form
 from quasarr.providers.log import info
 from quasarr.providers.web_server import Server
-
-from .common import (
+from quasarr.storage.setup.common import (
     add_no_cache_headers,
     render_reconnect_success,
     setup_auth,

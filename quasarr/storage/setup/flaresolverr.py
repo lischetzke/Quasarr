@@ -17,13 +17,12 @@ from quasarr.providers.log import info
 from quasarr.providers.utils import check_flaresolverr
 from quasarr.providers.web_server import Server
 from quasarr.storage.config import Config
-from quasarr.storage.sqlite_database import DataBase
-
-from .common import (
+from quasarr.storage.setup.common import (
     add_no_cache_headers,
     render_reconnect_success,
     setup_auth,
 )
+from quasarr.storage.sqlite_database import DataBase
 
 
 def save_flaresolverr_url(shared_state, is_setup=False):

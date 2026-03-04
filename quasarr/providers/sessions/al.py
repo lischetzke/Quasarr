@@ -241,7 +241,7 @@ def fetch_via_flaresolverr(
     method: str,
     target_url: str,
     post_data: dict = None,
-    timeout: int = SESSION_REQUEST_TIMEOUT_SECONDS,
+    timeout: int | None = None,
 ):
     """
     Load (or recreate) the requests.Session from DB.
@@ -255,6 +255,9 @@ def fetch_via_flaresolverr(
     - post_data: dict of form-fields if method=="POST"
     - timeout: seconds (FlareSolverr's internal maxTimeout = timeout*1000 ms)
     """
+    if timeout is None:
+        timeout = SESSION_REQUEST_TIMEOUT_SECONDS
+
     # Check if FlareSolverr is available
     if not is_flaresolverr_available(shared_state):
         info(
@@ -369,7 +372,7 @@ def fetch_via_requests_session(
     method: str,
     target_url: str,
     post_data: dict = None,
-    timeout: int = SESSION_REQUEST_TIMEOUT_SECONDS,
+    timeout: int | None = None,
     year: int = None,
 ):
     """
@@ -377,6 +380,9 @@ def fetch_via_requests_session(
     - post_data: for POST only (will be sent as form-data unless you explicitly JSON-encode)
     - timeout: seconds
     """
+    if timeout is None:
+        timeout = SESSION_REQUEST_TIMEOUT_SECONDS
+
     sess = retrieve_and_validate_session(shared_state)
     if not sess:
         raise SkippedSiteError(

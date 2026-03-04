@@ -392,7 +392,14 @@ def package_id_exists(shared_state, package_id):
     if shared_state.get_db("failed").retrieve(package_id):
         return True
 
-    data = get_packages(shared_state) or {}
+    data = (
+        shared_state.run_device_request(
+            "load package state for duplicate detection",
+            lambda _device: get_packages(shared_state),
+            default={},
+        )
+        or {}
+    )
 
     for section in ("queue", "history"):
         for pkg in data.get(section, []) or []:

@@ -3,6 +3,7 @@
 # Project by https://github.com/rix1337
 
 import re
+import sys
 
 # ==============================================================================
 # CRITICAL CONFIGURATION
@@ -12,10 +13,111 @@ import re
 FALLBACK_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36"
 
 # Standard request timeout budgets.
-SEARCH_REQUEST_TIMEOUT_SECONDS = 15
-FEED_REQUEST_TIMEOUT_SECONDS = 30
-DOWNLOAD_REQUEST_TIMEOUT_SECONDS = 30
-SESSION_REQUEST_TIMEOUT_SECONDS = 30
+# Slow mode multiplies each base timeout by this factor.
+TIMEOUT_SLOW_MODE_MULTIPLIER = 3
+
+# Table storing per-timeout slow mode flags.
+TIMEOUT_SLOW_MODE_TABLE = "timeout_slow_mode"
+
+# Timeout settings shown in the Web UI.
+TIMEOUT_SLOW_MODE_DEFINITIONS = {
+    "search": {"label": "Search Timeout", "base_seconds": 15},
+    "feed": {"label": "Feed Timeout", "base_seconds": 30},
+    "download": {"label": "Download Timeout", "base_seconds": 30},
+    "session": {"label": "Session Timeout", "base_seconds": 30},
+}
+
+
+def _coerce_timeout_bool(value, default=False):
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in {"1", "true", "yes", "on"}:
+            return True
+        if lowered in {"0", "false", "no", "off"}:
+            return False
+    return bool(value)
+
+
+def _is_timeout_slow_mode_enabled(timeout_key):
+    try:
+        from quasarr.providers import shared_state
+
+        settings = shared_state.values.get("timeout_slow_mode")
+        if isinstance(settings, dict):
+            return _coerce_timeout_bool(settings.get(timeout_key), default=False)
+    except Exception:
+        return False
+
+    return False
+
+
+_TIMEOUT_RUNTIME_KEY_TO_NAME = {
+    "search": "SEARCH_REQUEST_TIMEOUT_SECONDS",
+    "feed": "FEED_REQUEST_TIMEOUT_SECONDS",
+    "download": "DOWNLOAD_REQUEST_TIMEOUT_SECONDS",
+    "session": "SESSION_REQUEST_TIMEOUT_SECONDS",
+}
+
+
+def _calculate_timeout_value(timeout_key, slow_mode_enabled):
+    base_seconds = int(TIMEOUT_SLOW_MODE_DEFINITIONS[timeout_key]["base_seconds"])
+    if slow_mode_enabled:
+        return int(base_seconds * TIMEOUT_SLOW_MODE_MULTIPLIER)
+    return base_seconds
+
+
+def apply_timeout_slow_mode_settings(settings=None):
+    if not isinstance(settings, dict):
+        settings = {
+            timeout_key: _is_timeout_slow_mode_enabled(timeout_key)
+            for timeout_key in TIMEOUT_SLOW_MODE_DEFINITIONS
+        }
+
+    resolved_timeout_values = {}
+    for timeout_key, const_name in _TIMEOUT_RUNTIME_KEY_TO_NAME.items():
+        slow_mode_enabled = _coerce_timeout_bool(
+            settings.get(timeout_key),
+            default=False,
+        )
+        resolved_timeout_values[const_name] = _calculate_timeout_value(
+            timeout_key,
+            slow_mode_enabled,
+        )
+
+    for const_name, timeout_value in resolved_timeout_values.items():
+        globals()[const_name] = timeout_value
+
+    for module_name, module in list(sys.modules.items()):
+        if module_name != "quasarr" and not module_name.startswith("quasarr."):
+            continue
+
+        module_dict = getattr(module, "__dict__", None)
+        if not isinstance(module_dict, dict):
+            continue
+
+        for const_name, timeout_value in resolved_timeout_values.items():
+            if const_name in module_dict:
+                module_dict[const_name] = timeout_value
+
+    return resolved_timeout_values
+
+
+SEARCH_REQUEST_TIMEOUT_SECONDS = int(
+    TIMEOUT_SLOW_MODE_DEFINITIONS["search"]["base_seconds"]
+)
+FEED_REQUEST_TIMEOUT_SECONDS = int(
+    TIMEOUT_SLOW_MODE_DEFINITIONS["feed"]["base_seconds"]
+)
+DOWNLOAD_REQUEST_TIMEOUT_SECONDS = int(
+    TIMEOUT_SLOW_MODE_DEFINITIONS["download"]["base_seconds"]
+)
+SESSION_REQUEST_TIMEOUT_SECONDS = int(
+    TIMEOUT_SLOW_MODE_DEFINITIONS["session"]["base_seconds"]
+)
 
 # Notification providers exposed in config/UI.
 NOTIFICATION_PROVIDERS = ("discord", "telegram")

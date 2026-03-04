@@ -1293,21 +1293,27 @@ def get_recently_searched(shared_state, context, timeout_seconds):
 def download_package(links, title, password, package_id, shared_state):
     links = [sanitize_url(link) for link in links]
 
-    device = shared_state.get_device()
-    downloaded = device.linkgrabber.add_links(
-        params=[
-            {
-                "autostart": False,
-                "links": json.dumps(links),
-                "packageName": title,
-                "extractPassword": password,
-                "priority": "DEFAULT",
-                "downloadPassword": password,
-                "destinationFolder": "Quasarr/<jd:packagename>",
-                "comment": package_id,
-                "overwritePackagizerRules": True,
-            }
-        ]
+    def submit(device):
+        return device.linkgrabber.add_links(
+            params=[
+                {
+                    "autostart": False,
+                    "links": json.dumps(links),
+                    "packageName": title,
+                    "extractPassword": password,
+                    "priority": "DEFAULT",
+                    "downloadPassword": password,
+                    "destinationFolder": "Quasarr/<jd:packagename>",
+                    "comment": package_id,
+                    "overwritePackagizerRules": True,
+                }
+            ]
+        )
+
+    downloaded = shared_state.run_device_request(
+        "submit links to linkgrabber",
+        submit,
+        default=False,
     )
     return downloaded
 
