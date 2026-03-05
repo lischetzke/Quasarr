@@ -3,6 +3,9 @@ name: Pull Requests
 on:
   workflow_dispatch:
   pull_request:
+  push:
+    branches:
+      - dev
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -54,7 +57,7 @@ jobs:
 
   version:
     needs: [ quality-check ]
-    if: needs.quality-check.outputs.changes_pushed != 'true' && ((github.head_ref == 'dev' && github.base_ref == 'main') || (github.event_name == 'workflow_dispatch' && github.ref_name == 'dev'))
+    if: needs.quality-check.outputs.changes_pushed != 'true' && ((github.event_name == 'pull_request' && github.head_ref == 'dev' && github.base_ref == 'main') || ((github.event_name == 'workflow_dispatch' || github.event_name == 'push') && github.ref_name == 'dev'))
     runs-on: ubuntu-latest
     timeout-minutes: 1
     outputs:
@@ -78,7 +81,7 @@ jobs:
 
   build-wheel:
     needs: [ quality-check, version ]
-    if: needs.quality-check.outputs.changes_pushed != 'true' && ((github.head_ref == 'dev' && github.base_ref == 'main') || (github.event_name == 'workflow_dispatch' && github.ref_name == 'dev'))
+    if: needs.quality-check.outputs.changes_pushed != 'true' && ((github.event_name == 'pull_request' && github.head_ref == 'dev' && github.base_ref == 'main') || ((github.event_name == 'workflow_dispatch' || github.event_name == 'push') && github.ref_name == 'dev'))
     runs-on: ubuntu-latest
     timeout-minutes: 3
     outputs:
@@ -109,7 +112,7 @@ jobs:
 
   build-exe:
     needs: [ quality-check, version ]
-    if: needs.quality-check.outputs.changes_pushed != 'true' && ((github.head_ref == 'dev' && github.base_ref == 'main') || (github.event_name == 'workflow_dispatch' && github.ref_name == 'dev'))
+    if: needs.quality-check.outputs.changes_pushed != 'true' && ((github.event_name == 'pull_request' && github.head_ref == 'dev' && github.base_ref == 'main') || ((github.event_name == 'workflow_dispatch' || github.event_name == 'push') && github.ref_name == 'dev'))
     runs-on: windows-latest
     timeout-minutes: 3
     env:
@@ -208,7 +211,7 @@ jobs:
 
   build-docker-amd64:
     needs: [ quality-check, version, build-wheel ]
-    if: needs.quality-check.outputs.changes_pushed != 'true' && ((github.head_ref == 'dev' && github.base_ref == 'main') || (github.event_name == 'workflow_dispatch' && github.ref_name == 'dev'))
+    if: needs.quality-check.outputs.changes_pushed != 'true' && ((github.event_name == 'pull_request' && github.head_ref == 'dev' && github.base_ref == 'main') || ((github.event_name == 'workflow_dispatch' || github.event_name == 'push') && github.ref_name == 'dev'))
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
@@ -241,7 +244,7 @@ jobs:
 
   build-docker-arm64:
     needs: [ quality-check, version, build-wheel ]
-    if: needs.quality-check.outputs.changes_pushed != 'true' && ((github.head_ref == 'dev' && github.base_ref == 'main') || (github.event_name == 'workflow_dispatch' && github.ref_name == 'dev'))
+    if: needs.quality-check.outputs.changes_pushed != 'true' && ((github.event_name == 'pull_request' && github.head_ref == 'dev' && github.base_ref == 'main') || ((github.event_name == 'workflow_dispatch' || github.event_name == 'push') && github.ref_name == 'dev'))
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 3
     steps:
